@@ -1,0 +1,17 @@
+[Unit]
+Description=TabletPi Immich kiosk
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+# Talk to the running labwc Wayland session on seat0.
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=GDK_BACKEND=wayland
+ExecStart=/home/vwillcox/tabletpi/build/linux/arm64/release/bundle/tabletpi
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,12 @@
+{
+  "immichUrl": "https://immich.example.com",
+  "apiKey": "PASTE_YOUR_IMMICH_API_KEY_HERE",
+  "pinHash": null,
+  "protectedAlbumIds": [],
+  "slideshow": {
+    "intervalSeconds": 6,
+    "transition": "fade",
+    "shuffle": true,
+    "includeVideos": false
+  }
+}
