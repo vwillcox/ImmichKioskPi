@@ -9,6 +9,7 @@ import '../services/locked_folder_service.dart';
 import '../services/media_cache.dart';
 import '../services/weather_service.dart';
 import '../widgets/weather_overlay.dart';
+import 'about_screen.dart';
 import 'setup_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -140,6 +141,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => _confirmPower(
                 title: 'Power off', action: 'poweroff', verb: 'Power off'),
           ),
+          const Divider(height: 32),
+          _section('About'),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About ImmichKioskPi'),
+            subtitle: const Text(
+                'Version, open-source libraries, licences and credits'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AboutScreen()),
+            ),
+          ),
+
           const SizedBox(height: 24),
           Center(
             child: Text('Immich Kiosk - Pi • Immich viewer',

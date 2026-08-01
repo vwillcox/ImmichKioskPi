@@ -12,6 +12,7 @@ import 'services/immich_service.dart';
 import 'services/locked_folder_service.dart';
 import 'services/media_cache.dart';
 import 'services/weather_service.dart';
+import 'screens/about_screen.dart';
 import 'screens/album_screen.dart';
 import 'screens/gallery_screen.dart';
 import 'screens/home_screen.dart';
@@ -132,6 +133,9 @@ class _RootGate extends StatelessWidget {
           assetCount: 0,
         ),
       );
+    }
+    if ((Platform.environment['IMMICH_KIOSK_TEST_ABOUT'] ?? '').isNotEmpty) {
+      return const AboutScreen();
     }
     final testLocked = Platform.environment['IMMICH_KIOSK_TEST_LOCKED'];
     if (testLocked != null && testLocked.isNotEmpty) {

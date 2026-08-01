@@ -40,6 +40,7 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 - Starts on boot, restarts automatically if it crashes
 - Restart / power-off buttons in Settings
 - Aggressive on-disk caching so it's fast and works well on a slow network
+- An **About** screen listing every library, licence and credit
 
 ---
 
@@ -235,6 +236,8 @@ Tap the gear icon on the home screen:
 - **Slideshow** — seconds per photo, transition style, shuffle
 - **Storage** — how much the photo cache is using, with a Clear button
 - **Device** — Restart and Power off
+- **About** — version, the open-source libraries used with their licences and
+  links, and credits for code adapted from elsewhere
 
 ---
 
@@ -263,6 +266,21 @@ journalctl --user -u immich_kiosk_pi -f
 The window is fullscreen and borderless by default. Set `IMMICH_KIOSK_WINDOWED=1`
 to run it in a normal window while debugging.
 
+#### Debug launch hooks
+
+Environment variables that boot straight into one screen — handy for capturing
+screenshots or testing a screen in isolation. They're inert unless set.
+
+| Variable | Opens |
+|---|---|
+| `IMMICH_KIOSK_TEST_ALBUMGRID=<albumId>` | an album's asset grid (`IMMICH_KIOSK_TEST_ALBUMNAME` sets its title) |
+| `IMMICH_KIOSK_TEST_GALLERY=<albumId>` | the photo viewer (`IMMICH_KIOSK_TEST_GALLERY_INDEX` picks the photo) |
+| `IMMICH_KIOSK_TEST_SLIDESHOW=<albumId>` | the slideshow |
+| `IMMICH_KIOSK_TEST_VIDEO=<assetId>` | the video player |
+| `IMMICH_KIOSK_TEST_LOCKED=<pin>` | the Locked Folder, unlocked |
+| `IMMICH_KIOSK_TEST_LOCKED_VIDEO=<pin>` | the first locked video |
+| `IMMICH_KIOSK_TEST_ABOUT=1` | the About screen |
+
 ### Project layout
 
 ```
@@ -279,8 +297,10 @@ lib/
     media_cache.dart           # on-disk image cache + memory tuning
     api_cache.dart             # cached API responses
     weather_service.dart       # Open-Meteo forecast and geocoding
+  config/credits.dart          # attribution data shown on the About screen
   screens/                     # home, album, gallery, video, slideshow,
-                               # locked folder, settings, setup, PIN pad
+                               # locked folder, settings, setup, PIN pad,
+                               # about
   widgets/                     # cached image, back button, weather overlay
 ```
 
@@ -347,6 +367,9 @@ file is git-ignored.
 ---
 
 ## Third-party libraries
+
+The same list is available on the device under **Settings → About**, so
+attribution travels with the app rather than living only here.
 
 Built with [Flutter](https://flutter.dev) (BSD-3-Clause,
 [source](https://github.com/flutter/flutter)).
