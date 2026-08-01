@@ -142,7 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 24),
           Center(
-            child: Text('ImmichKioskPi • Immich viewer',
+            child: Text('Immich Kiosk - Pi • Immich viewer',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.3))),
           ),
           const SizedBox(height: 24),
