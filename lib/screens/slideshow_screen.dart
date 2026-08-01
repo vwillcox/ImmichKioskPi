@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -30,6 +31,8 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
   int _index = 0;
   bool _playing = true;
   bool _chrome = false;
+  bool _ready = false; // first image decoded and ready to show
+  bool _advancing = false;
   Timer? _timer;
 
   @override
@@ -39,7 +42,34 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
     if (widget.settings.shuffle) {
       _order.shuffle(Random());
     }
+    // Decode the first image before showing anything, so the slideshow starts
+    // on a fully-laid-out photo rather than animating an empty frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startWhenReady());
+  }
+
+  ImageProvider _providerFor(int i) => CachedNetworkImageProvider(
+        widget.source.previewUrl(_order[i].id),
+        headers: widget.source.authHeaders,
+      );
+
+  /// Fully decode the image at [i]. Bounded so a broken/slow image can't stall
+  /// the slideshow.
+  Future<void> _decode(int i) async {
+    if (!mounted || _order.isEmpty) return;
+    try {
+      await precacheImage(_providerFor(i), context)
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {
+      // Fall through and display anyway; the Image widget shows its own error.
+    }
+  }
+
+  Future<void> _startWhenReady() async {
+    await _decode(_index);
+    if (!mounted) return;
+    setState(() => _ready = true);
     _start();
+    _precacheNeighbor();
   }
 
   void _start() {
@@ -56,25 +86,25 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
     _playing = false;
   }
 
-  void _next() {
-    if (_order.isEmpty) return;
-    setState(() => _index = (_index + 1) % _order.length);
+  /// Move to [target], but only swap once its image is decoded — that way the
+  /// transition and Ken Burns pan always run on a complete, correctly-sized
+  /// photo instead of starting mid-load.
+  Future<void> _goTo(int target) async {
+    if (_order.isEmpty || _advancing) return;
+    _advancing = true;
+    await _decode(target);
+    if (mounted) setState(() => _index = target);
+    _advancing = false;
     _precacheNeighbor();
   }
 
-  void _prev() {
-    if (_order.isEmpty) return;
-    setState(() => _index = (_index - 1 + _order.length) % _order.length);
-  }
+  void _next() => _goTo((_index + 1) % _order.length);
+
+  void _prev() => _goTo((_index - 1 + _order.length) % _order.length);
 
   void _precacheNeighbor() {
-    if (_order.length < 2) return;
-    final nextId = _order[(_index + 1) % _order.length].id;
-    precacheImage(
-      CachedNetworkImageProvider(widget.source.previewUrl(nextId),
-          headers: widget.source.authHeaders),
-      context,
-    );
+    if (_order.length < 2 || !mounted) return;
+    precacheImage(_providerFor((_index + 1) % _order.length), context);
   }
 
   @override
@@ -96,18 +126,26 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
     }
 
     final asset = _order[_index];
-    final provider = CachedNetworkImageProvider(
-      widget.source.previewUrl(asset.id),
-      headers: widget.source.authHeaders,
-    );
     final t = widget.settings.transition;
 
-    Widget slide = _SlideImage(
-      key: ValueKey(asset.id),
-      provider: provider,
-      kenBurns: t == SlideshowTransition.kenBurns,
-      durationSeconds: widget.settings.intervalSeconds,
-    );
+    // Nothing is shown until the first photo is decoded, so no animation ever
+    // runs against a half-loaded image.
+    final Widget slide = !_ready
+        ? const SizedBox.expand(
+            key: ValueKey('loading'),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        : _SlideImage(
+            key: ValueKey(asset.id),
+            provider: _providerFor(_index),
+            // Small, cheap image used only for the blurred backdrop.
+            backdropProvider: CachedNetworkImageProvider(
+              widget.source.thumbUrl(asset.id),
+              headers: widget.source.authHeaders,
+            ),
+            kenBurns: t == SlideshowTransition.kenBurns,
+            durationSeconds: widget.settings.intervalSeconds,
+          );
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -231,14 +269,18 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
   }
 }
 
-/// One slide. Optionally applies a slow Ken Burns zoom/pan while shown.
+/// One slide. The photo is always shown whole (BoxFit.contain) and any Ken
+/// Burns motion starts from that fitted state. A blurred, dimmed copy fills
+/// the letterbox area so portrait photos don't sit on hard black bars.
 class _SlideImage extends StatefulWidget {
   final ImageProvider provider;
+  final ImageProvider? backdropProvider;
   final bool kenBurns;
   final int durationSeconds;
   const _SlideImage({
     super.key,
     required this.provider,
+    this.backdropProvider,
     required this.kenBurns,
     required this.durationSeconds,
   });
@@ -275,28 +317,52 @@ class _SlideImageState extends State<_SlideImage>
 
   @override
   Widget build(BuildContext context) {
+    // The whole photo, scaled to fit the screen without cropping.
     final img = Image(
       image: widget.provider,
-      fit: BoxFit.cover,
+      fit: BoxFit.contain,
       width: double.infinity,
       height: double.infinity,
       gaplessPlayback: true,
     );
-    if (!widget.kenBurns) {
-      return SizedBox.expand(child: img);
+
+    Widget foreground = SizedBox.expand(child: img);
+    if (widget.kenBurns) {
+      foreground = AnimatedBuilder(
+        animation: _c,
+        builder: (context, child) {
+          // Starts at 1.0 — the fitted image — then drifts gently.
+          final scale = 1.0 + 0.10 * _c.value;
+          final align = Alignment.lerp(_from, _to, _c.value)!;
+          return Transform.scale(scale: scale, alignment: align, child: child);
+        },
+        child: foreground,
+      );
     }
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, child) {
-        final scale = 1.0 + 0.12 * _c.value;
-        final align = Alignment.lerp(_from, _to, _c.value)!;
-        return Transform.scale(
-          scale: scale,
-          alignment: align,
-          child: child,
-        );
-      },
-      child: SizedBox.expand(child: img),
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Static blurred fill. Uses the small thumbnail so the blur is cheap
+        // on the Pi, and sits outside the Ken Burns transform so it isn't
+        // re-blurred every frame.
+        if (widget.backdropProvider != null)
+          RepaintBoundary(
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Image(
+                image: widget.backdropProvider!,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black),
+              ),
+            ),
+          ),
+        const ColoredBox(color: Color(0x8C000000)),
+        foreground,
+      ],
     );
   }
 }
