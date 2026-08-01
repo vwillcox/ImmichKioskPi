@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# One-time Raspberry Pi setup for the TabletPi Immich app.
+# One-time Raspberry Pi setup for the ImmichKioskPi Immich app.
 # Run this ON THE PI: bash pi-setup.sh
 # It installs the Flutter toolchain + native libs needed to build & run the app.
 set -euo pipefail
 
-echo "==> TabletPi Pi setup starting"
+echo "==> ImmichKioskPi Pi setup starting"
 echo "==> Installing system build dependencies (needs sudo)..."
 sudo apt-get update
 sudo apt-get install -y \

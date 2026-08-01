@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Interactively store Immich email+password into the TabletPi config (for the
+# Interactively store Immich email+password into the ImmichKioskPi config (for the
 # Locked Folder feature) and stage the Locked Folder PIN for a one-time test.
 # Run on the Pi:  bash ~/set-immich-login.sh
 set -e
-CONFIG="$HOME/.config/tabletpi/config.json"
+CONFIG="$HOME/.config/immich_kiosk_pi/config.json"
 [ -f "$CONFIG" ] || { echo "Config not found at $CONFIG"; exit 1; }
 
 read -rp "Immich email: " EMAIL

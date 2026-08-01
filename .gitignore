@@ -46,7 +46,7 @@ app.*.map.json
 
 # Runtime secrets (never commit)
 config.json
-/tabletpi.iml
+/immich_kiosk_pi.iml
 
 # Local Claude Code settings — can contain allowlisted commands with API keys
 .claude/settings.local.json

@@ -174,7 +174,7 @@ class ImmichService with ImmichUrls implements MediaSource {
       final id = a.thumbnailAssetId;
       if (id == null) continue;
       try {
-        await TabletPiCache.manager.downloadFile(
+        await ImmichKioskPiCache.manager.downloadFile(
           thumbUrl(id),
           authHeaders: authHeaders,
         );

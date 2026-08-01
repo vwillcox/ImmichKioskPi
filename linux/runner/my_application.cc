@@ -25,10 +25,10 @@ static void my_application_activate(GApplication* application) {
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
-  // Kiosk: borderless, fullscreen touch app. Set TABLETPI_WINDOWED=1 to run in
+  // Kiosk: borderless, fullscreen touch app. Set IMMICH_KIOSK_WINDOWED=1 to run in
   // a normal decorated window for debugging on a desktop.
-  gboolean windowed = (g_getenv("TABLETPI_WINDOWED") != nullptr);
-  gtk_window_set_title(window, "TabletPi");
+  gboolean windowed = (g_getenv("IMMICH_KIOSK_WINDOWED") != nullptr);
+  gtk_window_set_title(window, "ImmichKioskPi");
   if (windowed) {
     gtk_window_set_default_size(window, 1280, 800);
   } else {

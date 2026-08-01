@@ -12,7 +12,7 @@ import 'media_cache.dart';
 class ApiCache {
   ApiCache._();
 
-  static Directory get _dir => Directory(p.join(TabletPiCache.root, 'api'));
+  static Directory get _dir => Directory(p.join(ImmichKioskPiCache.root, 'api'));
 
   static File _fileFor(String key) {
     final safe = key.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');

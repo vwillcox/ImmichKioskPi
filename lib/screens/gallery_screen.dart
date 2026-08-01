@@ -91,12 +91,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
                     imageProvider: CachedNetworkImageProvider(
                       source.previewUrl(a.id),
                       headers: source.authHeaders,
-                      cacheManager: TabletPiCache.manager,
+                      cacheManager: ImmichKioskPiCache.manager,
                     ),
                     fallbackProvider: CachedNetworkImageProvider(
                       source.originalUrl(a.id),
                       headers: source.authHeaders,
-                      cacheManager: TabletPiCache.manager,
+                      cacheManager: ImmichKioskPiCache.manager,
                     ),
                     onZoomChanged: (z) {
                       if (z != _zoomed) setState(() => _zoomed = z);
@@ -353,7 +353,7 @@ class _VideoPoster extends StatelessWidget {
         CachedNetworkImage(
           imageUrl: source.previewUrl(asset.id),
           httpHeaders: source.authHeaders,
-          cacheManager: TabletPiCache.manager,
+          cacheManager: ImmichKioskPiCache.manager,
           fit: BoxFit.contain,
         ),
         Center(

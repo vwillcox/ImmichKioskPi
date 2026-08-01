@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
 
-/// Loads/saves [AppConfig] to ~/.config/tabletpi/config.json and notifies
+/// Loads/saves [AppConfig] to ~/.config/immich_kiosk_pi/config.json and notifies
 /// listeners on change. A single instance is shared app-wide.
 class ConfigService extends ChangeNotifier {
   AppConfig _config = AppConfig();
@@ -19,12 +19,31 @@ class ConfigService extends ChangeNotifier {
   bool get isConfigured => _config.isConfigured;
   SlideshowSettings get slideshow => _config.slideshow;
 
-  File get _file {
-    final home = Platform.environment['HOME'] ?? '.';
-    return File('$home/.config/tabletpi/config.json');
+  static String get _home => Platform.environment['HOME'] ?? '.';
+
+  File get _file => File('$_home/.config/immich_kiosk_pi/config.json');
+
+  /// Location used before the project was renamed from TabletPi.
+  File get _legacyFile => File('$_home/.config/tabletpi/config.json');
+
+  /// Carry an existing TabletPi config over on first run after the rename, so
+  /// upgrades don't lose the server URL, API key or saved login.
+  Future<void> _migrateLegacyConfig() async {
+    try {
+      final f = _file;
+      if (await f.exists()) return;
+      final legacy = _legacyFile;
+      if (!await legacy.exists()) return;
+      await f.parent.create(recursive: true);
+      await legacy.copy(f.path);
+      debugPrint('Migrated config from ${legacy.path} to ${f.path}');
+    } catch (e) {
+      debugPrint('ConfigService migration error: $e');
+    }
   }
 
   Future<void> load() async {
+    await _migrateLegacyConfig();
     try {
       final f = _file;
       if (await f.exists()) {

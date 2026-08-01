@@ -8,8 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 [ -f "$SCRIPT_DIR/local.env" ] && . "$SCRIPT_DIR/local.env"
 
-PI="${PI_HOST:-pi@tabletpi.local}"
-PI_DIR="${PI_DIR:-/home/pi/tabletpi}"
+PI="${PI_HOST:-pi@raspberrypi.local}"
+PI_DIR="${PI_DIR:-/home/pi/immich_kiosk_pi}"
 HERE="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ssh "$PI" "mkdir -p '$PI_DIR'"

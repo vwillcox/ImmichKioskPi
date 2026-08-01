@@ -142,7 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 24),
           Center(
-            child: Text('TabletPi • Immich viewer',
+            child: Text('ImmichKioskPi • Immich viewer',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.3))),
           ),
           const SizedBox(height: 24),
@@ -447,7 +447,7 @@ class _CacheTileState extends State<_CacheTile> {
   }
 
   Future<void> _measure() async {
-    final b = await TabletPiCache.diskUsageBytes();
+    final b = await ImmichKioskPiCache.diskUsageBytes();
     if (mounted) setState(() => _bytes = b);
   }
 
@@ -462,7 +462,7 @@ class _CacheTileState extends State<_CacheTile> {
 
   Future<void> _clear() async {
     setState(() => _busy = true);
-    await TabletPiCache.clear();
+    await ImmichKioskPiCache.clear();
     await _measure();
     if (mounted) {
       setState(() => _busy = false);
@@ -480,7 +480,7 @@ class _CacheTileState extends State<_CacheTile> {
       subtitle: Text(
         _bytes == null
             ? 'Measuring…'
-            : '${_human(_bytes!)} on disk  •  ~/.cache/tabletpi',
+            : '${_human(_bytes!)} on disk  •  ~/.cache/immich_kiosk_pi',
       ),
       trailing: _busy
           ? const SizedBox(

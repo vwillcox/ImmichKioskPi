@@ -1,5 +1,5 @@
 [Unit]
-Description=TabletPi Immich kiosk
+Description=ImmichKioskPi Immich kiosk
 PartOf=graphical-session.target
 After=graphical-session.target
 
@@ -10,7 +10,7 @@ Type=simple
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=WAYLAND_DISPLAY=wayland-0
 Environment=GDK_BACKEND=wayland
-ExecStart=%h/tabletpi/build/linux/arm64/release/bundle/tabletpi
+ExecStart=%h/immich_kiosk_pi/build/linux/arm64/release/bundle/immich_kiosk_pi
 Restart=on-failure
 RestartSec=2
 

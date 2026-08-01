@@ -1,4 +1,4 @@
-// Basic smoke test for the TabletPi app shell.
+// Basic smoke test for the ImmichKioskPi app shell.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

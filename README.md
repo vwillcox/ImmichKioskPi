@@ -1,4 +1,4 @@
-# TabletPi
+# ImmichKioskPi
 
 A touchscreen photo frame and media browser for your own [Immich](https://immich.app)
 server, built for a Raspberry Pi with a DSI touch display.
@@ -78,15 +78,15 @@ cp scripts/local.env.example scripts/local.env
 Edit it with your Pi's SSH details:
 
 ```sh
-PI_HOST=pi@tabletpi.local
-PI_DIR=/home/pi/tabletpi
+PI_HOST=pi@immich_kiosk_pi.local
+PI_DIR=/home/pi/immich_kiosk_pi
 ```
 
 This file is git-ignored, so your username and hostname stay out of the repo.
 
 ### 3. Add your Immich details
 
-Create `~/.config/tabletpi/config.json` **on the Pi** (see
+Create `~/.config/immich_kiosk_pi/config.json` **on the Pi** (see
 [`config.example.json`](config.example.json)):
 
 ```json
@@ -100,7 +100,7 @@ Generate the API key in Immich under **Account Settings → API Keys**. Keep the
 file private:
 
 ```bash
-chmod 600 ~/.config/tabletpi/config.json
+chmod 600 ~/.config/immich_kiosk_pi/config.json
 ```
 
 You can also enter these on first run, though a keyboard is easier than the
@@ -121,11 +121,11 @@ On the Pi:
 
 ```bash
 mkdir -p ~/.config/systemd/user ~/.config/labwc
-cp deploy/tabletpi.service ~/.config/systemd/user/
+cp deploy/immich_kiosk_pi.service ~/.config/systemd/user/
 cp deploy/labwc-autostart ~/.config/labwc/autostart
 chmod +x ~/.config/labwc/autostart
 systemctl --user daemon-reload
-systemctl --user enable --now tabletpi
+systemctl --user enable --now immich_kiosk_pi
 ```
 
 The service file uses systemd's `%h` and `%U` specifiers, so it works whatever
@@ -154,7 +154,7 @@ bash deploy/set-immich-login.sh
 ```
 
 It prompts for your email and password (hidden) and stores them in
-`~/.config/tabletpi/config.json`. A **Locked Folder** tile then appears on the
+`~/.config/immich_kiosk_pi/config.json`. A **Locked Folder** tile then appears on the
 home screen; tap it and enter your PIN.
 
 > Your password is stored in plain text in that file, readable only by your
@@ -219,11 +219,11 @@ override `PI_HOST` / `PI_DIR` as environment variables.
 Handy service commands on the Pi:
 
 ```bash
-systemctl --user restart tabletpi
-journalctl --user -u tabletpi -f
+systemctl --user restart immich_kiosk_pi
+journalctl --user -u immich_kiosk_pi -f
 ```
 
-The window is fullscreen and borderless by default. Set `TABLETPI_WINDOWED=1`
+The window is fullscreen and borderless by default. Set `IMMICH_KIOSK_WINDOWED=1`
 to run it in a normal window while debugging.
 
 ### Project layout
@@ -266,7 +266,7 @@ session token rather than an API key.
 
 ### Caching
 
-Images and API responses are cached under `~/.cache/tabletpi` — deliberately
+Images and API responses are cached under `~/.cache/immich_kiosk_pi` — deliberately
 **not** in `/tmp`, which on Raspberry Pi OS is a RAM-backed tmpfs. The cache
 holds up to 20,000 files for a year, so restarts are near-instant. Clear it any
 time from **Settings → Storage**.
@@ -276,7 +276,7 @@ time from **Settings → Storage**.
 ## Troubleshooting
 
 **Nothing appears on screen**
-Check the service is running: `systemctl --user status tabletpi`. It needs the
+Check the service is running: `systemctl --user status immich_kiosk_pi`. It needs the
 labwc Wayland session to already be up — that's why it's started from
 `~/.config/labwc/autostart`.
 
@@ -291,7 +291,7 @@ the player forces software decoding. If you've changed that, change it back in
 
 **Text fields are hard to fill in**
 There's no on-screen keyboard, so the server URL, API key and login are easiest
-to set by editing `~/.config/tabletpi/config.json` over SSH. The numeric PIN pad
+to set by editing `~/.config/immich_kiosk_pi/config.json` over SSH. The numeric PIN pad
 is custom-built and works fine by touch.
 
 **Harmless log noise**
@@ -302,9 +302,9 @@ ALSA probe from media_kit; audio still works.
 
 ## Privacy
 
-TabletPi talks only to your own Immich server and to Open-Meteo for the weather.
+ImmichKioskPi talks only to your own Immich server and to Open-Meteo for the weather.
 There's no analytics and no third-party service. Your credentials live in
-`~/.config/tabletpi/config.json` on the device and are never committed — that
+`~/.config/immich_kiosk_pi/config.json` on the device and are never committed — that
 file is git-ignored.
 
 ---

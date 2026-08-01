@@ -12,7 +12,7 @@ if [ -z "$USER_NAME" ]; then
   echo "Could not determine the desktop user. Re-run with: sudo bash $0"
   exit 1
 fi
-RULE=/etc/polkit-1/rules.d/50-tabletpi-power.rules
+RULE=/etc/polkit-1/rules.d/50-immich_kiosk_pi-power.rules
 
 cat > "$RULE" <<EOF
 // Allow $USER_NAME to power off / reboot the kiosk without authentication.

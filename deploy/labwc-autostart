@@ -1,9 +1,9 @@
 #!/bin/sh
 # labwc runs this after the Wayland compositor is up. Install to
-# ~/.config/labwc/autostart. Starts the TabletPi kiosk as a user service.
+# ~/.config/labwc/autostart. Starts the ImmichKioskPi kiosk as a user service.
 
 # Make the compositor env available to the systemd user manager.
 systemctl --user import-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR GDK_BACKEND 2>/dev/null
 
 # Launch (or relaunch) the app.
-systemctl --user restart tabletpi.service
+systemctl --user restart immich_kiosk_pi.service

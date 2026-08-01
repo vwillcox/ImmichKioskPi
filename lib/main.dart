@@ -26,7 +26,7 @@ void main() async {
   MediaKit.ensureInitialized();
   // Big in-memory image budget — the Pi has 8 GB and revisited photos should
   // redisplay with no decode cost.
-  TabletPiCache.configureImageCache();
+  ImmichKioskPiCache.configureImageCache();
 
   final config = ConfigService();
   await config.load();
@@ -42,18 +42,18 @@ void main() async {
         ChangeNotifierProvider(create: (_) => LockedFolderService(config)),
         ChangeNotifierProvider.value(value: weather),
       ],
-      child: const TabletPiApp(),
+      child: const ImmichKioskPiApp(),
     ),
   );
 }
 
-class TabletPiApp extends StatelessWidget {
-  const TabletPiApp({super.key});
+class ImmichKioskPiApp extends StatelessWidget {
+  const ImmichKioskPiApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TabletPi',
+      title: 'ImmichKioskPi',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       // The DSI touchscreen is delivered as mouse/unknown pointer events on
@@ -85,18 +85,18 @@ class _RootGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Dev aids for headless verification (only active when the env var is set):
-    //   TABLETPI_TEST_VIDEO=<assetId>       boot into the video player
-    //   TABLETPI_TEST_SLIDESHOW=<albumId>   boot into the slideshow
-    //   TABLETPI_TEST_GALLERY=<albumId>     boot into the photo gallery
+    //   IMMICH_KIOSK_TEST_VIDEO=<assetId>       boot into the video player
+    //   IMMICH_KIOSK_TEST_SLIDESHOW=<albumId>   boot into the slideshow
+    //   IMMICH_KIOSK_TEST_GALLERY=<albumId>     boot into the photo gallery
     final immich = context.read<ImmichService>();
-    final testVideo = Platform.environment['TABLETPI_TEST_VIDEO'];
+    final testVideo = Platform.environment['IMMICH_KIOSK_TEST_VIDEO'];
     if (testVideo != null && testVideo.isNotEmpty) {
       return VideoPlayerScreen(
         asset: Asset(id: testVideo, type: AssetType.video),
         source: immich,
       );
     }
-    final testSlideshow = Platform.environment['TABLETPI_TEST_SLIDESHOW'];
+    final testSlideshow = Platform.environment['IMMICH_KIOSK_TEST_SLIDESHOW'];
     if (testSlideshow != null && testSlideshow.isNotEmpty) {
       return _DebugAlbumLoader(
         albumId: testSlideshow,
@@ -108,7 +108,7 @@ class _RootGate extends StatelessWidget {
         ),
       );
     }
-    final testGallery = Platform.environment['TABLETPI_TEST_GALLERY'];
+    final testGallery = Platform.environment['IMMICH_KIOSK_TEST_GALLERY'];
     if (testGallery != null && testGallery.isNotEmpty) {
       return _DebugAlbumLoader(
         albumId: testGallery,
@@ -116,28 +116,28 @@ class _RootGate extends StatelessWidget {
         builder: (imgs) => GalleryScreen(
           assets: imgs,
           initialIndex: int.tryParse(
-                  Platform.environment['TABLETPI_TEST_GALLERY_INDEX'] ?? '') ??
+                  Platform.environment['IMMICH_KIOSK_TEST_GALLERY_INDEX'] ?? '') ??
               0,
           source: immich,
         ),
       );
     }
 
-    final testAlbumGrid = Platform.environment['TABLETPI_TEST_ALBUMGRID'];
+    final testAlbumGrid = Platform.environment['IMMICH_KIOSK_TEST_ALBUMGRID'];
     if (testAlbumGrid != null && testAlbumGrid.isNotEmpty) {
       return AlbumScreen(
         album: Album(
           id: testAlbumGrid,
-          name: Platform.environment['TABLETPI_TEST_ALBUMNAME'] ?? 'Album',
+          name: Platform.environment['IMMICH_KIOSK_TEST_ALBUMNAME'] ?? 'Album',
           assetCount: 0,
         ),
       );
     }
-    final testLocked = Platform.environment['TABLETPI_TEST_LOCKED'];
+    final testLocked = Platform.environment['IMMICH_KIOSK_TEST_LOCKED'];
     if (testLocked != null && testLocked.isNotEmpty) {
       return _DebugLockedLoader(pin: testLocked);
     }
-    final testLockedVideo = Platform.environment['TABLETPI_TEST_LOCKED_VIDEO'];
+    final testLockedVideo = Platform.environment['IMMICH_KIOSK_TEST_LOCKED_VIDEO'];
     if (testLockedVideo != null && testLockedVideo.isNotEmpty) {
       return _DebugLockedVideoLoader(pin: testLockedVideo);
     }
