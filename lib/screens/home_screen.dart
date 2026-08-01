@@ -183,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   PreferredSizeWidget _normalAppBar() => AppBar(
-        title: const Text('ImmichKioskPi'),
+        title: const Text('Immich Kiosk - Pi'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
