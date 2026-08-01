@@ -16,11 +16,16 @@ class SlideshowScreen extends StatefulWidget {
   final List<Asset> images;
   final MediaSource source;
   final SlideshowSettings settings;
+
+  /// Optional label shown in the chrome, e.g. "3 albums".
+  final String? title;
+
   const SlideshowScreen({
     super.key,
     required this.images,
     required this.source,
     required this.settings,
+    this.title,
   });
 
   @override
@@ -171,6 +176,22 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
       backgroundColor: Colors.black,
       body: GestureDetector(
         onTap: () => setState(() => _chrome = !_chrome),
+        // Swipe left/right to change photo, swipe down to leave the slideshow.
+        onHorizontalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if (v.abs() < 200) return;
+          _stop(); // manual navigation pauses the timer
+          if (v < 0) {
+            _next();
+          } else {
+            _prev();
+          }
+          setState(() {});
+        },
+        onVerticalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if (v > 300) Navigator.of(context).maybePop();
+        },
         child: Stack(
           children: [
             Positioned.fill(
@@ -215,6 +236,11 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
                       child: Row(
                         children: [
                           const BigBackButton(),
+                          const SizedBox(width: 12),
+                          if (widget.title != null)
+                            Text(widget.title!,
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 18)),
                           const Spacer(),
                           Text('${_index + 1} / ${_order.length}',
                               style: const TextStyle(

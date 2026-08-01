@@ -50,9 +50,34 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   bool _controlsVisible = true;
   bool _seeking = false;
 
+  // Gesture feedback ("+10s", "70%") shown briefly in the centre.
+  String? _hud;
+  Timer? _hudTimer;
+  double _volume = 100;
+  Duration _dragStartPosition = Duration.zero;
+  bool _zoomed = false;
+
+  void _showHud(String text) {
+    _hudTimer?.cancel();
+    setState(() => _hud = text);
+    _hudTimer = Timer(const Duration(milliseconds: 900), () {
+      if (mounted) setState(() => _hud = null);
+    });
+  }
+
+  void _skip(int seconds) {
+    final target = _position + Duration(seconds: seconds);
+    final clamped = target < Duration.zero
+        ? Duration.zero
+        : (target > _duration ? _duration : target);
+    _player.seek(clamped);
+    _showHud('${seconds > 0 ? '+' : ''}${seconds}s');
+  }
+
   @override
   void initState() {
     super.initState();
+    _transform.addListener(_onZoomChanged);
     _open();
     _subs.add(_player.stream.position.listen((p) {
       if (!_seeking && mounted) setState(() => _position = p);
@@ -75,8 +100,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     ));
   }
 
+  void _onZoomChanged() {
+    final z = _transform.value.getMaxScaleOnAxis() > 1.02;
+    if (z != _zoomed && mounted) setState(() => _zoomed = z);
+  }
+
   @override
   void dispose() {
+    _hudTimer?.cancel();
+    _transform.removeListener(_onZoomChanged);
     for (final s in _subs) {
       s.cancel();
     }
@@ -108,14 +140,63 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => setState(() => _controlsVisible = !_controlsVisible),
+        // Double-tap the left/right third to skip; middle toggles play/pause.
+        onDoubleTapDown: (d) {
+          final w = MediaQuery.of(context).size.width;
+          final x = d.globalPosition.dx;
+          if (x < w / 3) {
+            _skip(-10);
+          } else if (x > w * 2 / 3) {
+            _skip(10);
+          } else {
+            _player.playOrPause();
+          }
+        },
+        onDoubleTap: () {},
+        // Horizontal drag scrubs through the video.
+        onHorizontalDragStart: _zoomed ? null : (_) => _dragStartPosition = _position,
+        onHorizontalDragUpdate: _zoomed ? null : (d) {
+          if (_duration == Duration.zero) return;
+          final w = MediaQuery.of(context).size.width;
+          // Full width of the screen ≈ the whole clip.
+          final deltaMs =
+              (d.localPosition.dx / w) * _duration.inMilliseconds;
+          var target = _dragStartPosition + Duration(milliseconds: deltaMs.toInt());
+          if (target < Duration.zero) target = Duration.zero;
+          if (target > _duration) target = _duration;
+          setState(() {
+            _seeking = true;
+            _position = target;
+          });
+          _showHud(_fmt(target));
+        },
+        onHorizontalDragEnd: _zoomed ? null : (_) async {
+          await _player.seek(_position);
+          if (mounted) setState(() => _seeking = false);
+        },
+        // Vertical drag adjusts volume; a flick down closes the player.
+        onVerticalDragUpdate: _zoomed ? null : (d) {
+          final h = MediaQuery.of(context).size.height;
+          final next = (_volume - (d.delta.dy / h) * 200).clamp(0.0, 100.0);
+          if ((next - _volume).abs() < 0.5) return;
+          _volume = next;
+          _player.setVolume(_volume);
+          _showHud('Volume ${_volume.round()}%');
+        },
+        onVerticalDragEnd: _zoomed ? null : (d) {
+          if ((d.primaryVelocity ?? 0) > 700) Navigator.of(context).maybePop();
+        },
         child: Stack(
           children: [
-            // Zoomable video surface.
+            // Zoomable video surface. Single-finger panning is only enabled
+            // once zoomed in — otherwise InteractiveViewer would win the
+            // gesture arena and swallow the scrub/volume/dismiss drags.
             Positioned.fill(
               child: InteractiveViewer(
                 transformationController: _transform,
                 minScale: 1.0,
                 maxScale: 5.0,
+                panEnabled: _zoomed,
                 child: Video(
                   controller: _controller,
                   controls: NoVideoControls,
@@ -190,6 +271,30 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                 ),
               ),
             ),
+
+            // Transient gesture feedback (skip / scrub / volume).
+            if (_hud != null)
+              Center(
+                child: AnimatedOpacity(
+                  opacity: 1,
+                  duration: const Duration(milliseconds: 120),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 26, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.66),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Text(
+                      _hud!,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 34,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ),
 
             // Always-visible, large back target.
             const Positioned(top: 10, left: 12, child: BigBackButton()),

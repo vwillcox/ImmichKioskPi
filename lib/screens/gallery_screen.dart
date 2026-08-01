@@ -31,10 +31,12 @@ class GalleryScreen extends StatefulWidget {
 }
 
 class _GalleryScreenState extends State<GalleryScreen> {
-  late final PageController _pageController =
-      PageController(initialPage: widget.initialIndex);
+  late final PageController _pageController = PageController(
+    initialPage: widget.initialIndex,
+  );
   late int _index = widget.initialIndex;
   bool _zoomed = false;
+  bool _chrome = true;
 
   @override
   void dispose() {
@@ -43,13 +45,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   void _openVideo(Asset a) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => VideoPlayerScreen(
-        asset: a,
-        source: widget.source,
-        onBeforePlay: widget.onBeforeVideo,
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VideoPlayerScreen(
+          asset: a,
+          source: widget.source,
+          onBeforePlay: widget.onBeforeVideo,
+        ),
       ),
-    ));
+    );
   }
 
   @override
@@ -57,81 +61,109 @@ class _GalleryScreenState extends State<GalleryScreen> {
     final source = widget.source;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageController,
-            // Disable horizontal paging while a photo is zoomed so panning works.
-            physics: _zoomed
-                ? const NeverScrollableScrollPhysics()
-                : const PageScrollPhysics(),
-            itemCount: widget.assets.length,
-            onPageChanged: (i) => setState(() {
-              _index = i;
-              _zoomed = false;
-            }),
-            itemBuilder: (context, i) {
-              final a = widget.assets[i];
-              if (a.isImage) {
-                return ZoomablePhoto(
-                  imageProvider: CachedNetworkImageProvider(
-                    source.previewUrl(a.id),
-                    headers: source.authHeaders,
-                    cacheManager: TabletPiCache.manager,
-                  ),
-                  fallbackProvider: CachedNetworkImageProvider(
-                    source.originalUrl(a.id),
-                    headers: source.authHeaders,
-                    cacheManager: TabletPiCache.manager,
-                  ),
-                  onZoomChanged: (z) {
-                    if (z != _zoomed) setState(() => _zoomed = z);
-                  },
+      body: GestureDetector(
+        // Tap hides/shows the chrome; a downward flick closes the viewer.
+        onTap: () => setState(() => _chrome = !_chrome),
+        onVerticalDragEnd: _zoomed
+            ? null
+            : (d) {
+                if ((d.primaryVelocity ?? 0) > 500) {
+                  Navigator.of(context).maybePop();
+                }
+              },
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _pageController,
+              // Disable horizontal paging while a photo is zoomed so panning works.
+              physics: _zoomed
+                  ? const NeverScrollableScrollPhysics()
+                  : const PageScrollPhysics(),
+              itemCount: widget.assets.length,
+              onPageChanged: (i) => setState(() {
+                _index = i;
+                _zoomed = false;
+              }),
+              itemBuilder: (context, i) {
+                final a = widget.assets[i];
+                if (a.isImage) {
+                  return ZoomablePhoto(
+                    imageProvider: CachedNetworkImageProvider(
+                      source.previewUrl(a.id),
+                      headers: source.authHeaders,
+                      cacheManager: TabletPiCache.manager,
+                    ),
+                    fallbackProvider: CachedNetworkImageProvider(
+                      source.originalUrl(a.id),
+                      headers: source.authHeaders,
+                      cacheManager: TabletPiCache.manager,
+                    ),
+                    onZoomChanged: (z) {
+                      if (z != _zoomed) setState(() => _zoomed = z);
+                    },
+                  );
+                }
+                return _VideoPoster(
+                  asset: a,
+                  source: source,
+                  onPlay: () => _openVideo(a),
                 );
-              }
-              return _VideoPoster(
-                asset: a,
-                source: source,
-                onPlay: () => _openVideo(a),
-              );
-            },
-          ),
+              },
+            ),
 
-          // Always-visible top bar with a large back target.
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.only(top: 8, left: 8, right: 20, bottom: 8),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black87, Colors.transparent],
+            // Top bar with a large back target; fades with the chrome.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AnimatedOpacity(
+                opacity: _chrome ? 1 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: IgnorePointer(
+                  ignoring: !_chrome,
+                  child: Container(
+                    padding: const EdgeInsets.only(
+                      top: 8,
+                      left: 8,
+                      right: 20,
+                      bottom: 8,
+                    ),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.black87, Colors.transparent],
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const BigBackButton(),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black45,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '${_index + 1} / ${widget.assets.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              child: Row(
-                children: [
-                  const BigBackButton(),
-                  const Spacer(),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '${_index + 1} / ${widget.assets.length}',
-                      style: const TextStyle(color: Colors.white, fontSize: 18),
-                    ),
-                  ),
-                ],
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -163,6 +195,7 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
   Animation<Matrix4>? _animation;
   TapDownDetails? _doubleTapDetails;
   bool _useFallback = false;
+  bool _zoomedIn = false;
   static const double _minScale = 1.0;
   static const double _maxScale = 5.0;
 
@@ -173,8 +206,9 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
   }
 
   void _reportZoom() {
-    final scale = _tc.value.getMaxScaleOnAxis();
-    widget.onZoomChanged(scale > 1.02);
+    final zoomed = _tc.value.getMaxScaleOnAxis() > 1.02;
+    if (zoomed != _zoomedIn && mounted) setState(() => _zoomedIn = zoomed);
+    widget.onZoomChanged(zoomed);
   }
 
   @override
@@ -204,9 +238,11 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
       } else {
         final x = -pos.dx * (scale - 1);
         final y = -pos.dy * (scale - 1);
-        _animateTo(Matrix4.identity()
-          ..translate(x, y)
-          ..scale(scale));
+        _animateTo(
+          Matrix4.identity()
+            ..translate(x, y)
+            ..scale(scale),
+        );
       }
     }
   }
@@ -229,6 +265,9 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
             minScale: _minScale,
             maxScale: _maxScale,
             clipBehavior: Clip.none,
+            // Only pan once zoomed in, otherwise InteractiveViewer swallows
+            // the page-swipe and swipe-down-to-dismiss gestures.
+            panEnabled: _zoomedIn,
             child: Center(
               child: Image(
                 image: _useFallback && widget.fallbackProvider != null
@@ -245,8 +284,11 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
                     return const Center(child: CircularProgressIndicator());
                   }
                   return const Center(
-                    child: Icon(Icons.broken_image_outlined,
-                        color: Colors.white38, size: 64),
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white38,
+                      size: 64,
+                    ),
                   );
                 },
               ),

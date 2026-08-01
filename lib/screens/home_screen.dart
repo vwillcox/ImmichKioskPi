@@ -5,12 +5,14 @@ import 'package:provider/provider.dart';
 
 import '../models/immich_models.dart';
 import '../services/immich_service.dart';
+import '../services/config_service.dart';
 import '../services/locked_folder_service.dart';
 import '../widgets/remote_image.dart';
 import 'album_screen.dart';
 import 'locked_folder_screen.dart';
 import 'pin_screen.dart';
 import 'settings_screen.dart';
+import 'slideshow_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,6 +25,10 @@ class _HomeScreenState extends State<HomeScreen> {
   late final ImmichService _immich = context.read<ImmichService>();
   List<Album>? _albums;
   String? _error;
+
+  /// Ids of albums picked for a combined slideshow. Non-empty = selection mode.
+  final Set<String> _selected = {};
+  bool get _selectionMode => _selected.isNotEmpty;
 
   @override
   void initState() {
@@ -71,6 +77,65 @@ class _HomeScreenState extends State<HomeScreen> {
     ));
   }
 
+  // ---- Multi-select -----------------------------------------------------
+
+  void _toggleSelect(Album album) {
+    setState(() {
+      if (!_selected.remove(album.id)) _selected.add(album.id);
+    });
+  }
+
+  void _clearSelection() => setState(_selected.clear);
+
+  /// Gather every photo from the selected albums into one slideshow.
+  Future<void> _slideshowFromSelection() async {
+    final ids = _selected.toList();
+    if (ids.isEmpty) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final images = <Asset>[];
+    final seen = <String>{};
+    try {
+      final results = await Future.wait(
+        ids.map((id) => _immich.getAlbumAssets(id)),
+      );
+      for (final assets in results) {
+        for (final a in assets) {
+          if (a.isImage && seen.add(a.id)) images.add(a);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        _snack('Could not load the selected albums: $e');
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop(); // dismiss loading
+
+    if (images.isEmpty) {
+      _snack('No photos in the selected albums');
+      return;
+    }
+    final count = ids.length;
+    _clearSelection();
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => SlideshowScreen(
+        images: images,
+        source: _immich,
+        settings: context.read<ConfigService>().slideshow,
+        title: '$count album${count == 1 ? '' : 's'}',
+      ),
+    ));
+  }
+
   Future<void> _openLockedFolder() async {
     final locked = context.read<LockedFolderService>();
     final pin = await Navigator.of(context).push<String>(MaterialPageRoute(
@@ -110,7 +175,14 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: _selectionMode ? _selectionAppBar() : _normalAppBar(),
+      // The weather overlay is deliberately not shown here — it's for the
+      // slideshow (photo-frame mode) only.
+      body: _buildBody(),
+    );
+  }
+
+  PreferredSizeWidget _normalAppBar() => AppBar(
         title: const Text('TabletPi'),
         actions: [
           IconButton(
@@ -127,12 +199,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 8),
         ],
-      ),
-      // The weather overlay is deliberately not shown here — it's for the
-      // slideshow (photo-frame mode) only.
-      body: _buildBody(),
-    );
-  }
+      );
+
+  PreferredSizeWidget _selectionAppBar() => AppBar(
+        backgroundColor: const Color(0xFF1E2740),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          tooltip: 'Cancel selection',
+          onPressed: _clearSelection,
+        ),
+        title: Text('${_selected.length} selected'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: FilledButton.icon(
+              onPressed: _slideshowFromSelection,
+              icon: const Icon(Icons.slideshow),
+              label: const Text('Slideshow'),
+            ),
+          ),
+        ],
+      );
 
   Widget _buildBody() {
     if (_error != null) {
@@ -192,7 +279,12 @@ class _HomeScreenState extends State<HomeScreen> {
           return _AlbumTile(
             album: album,
             immich: _immich,
-            onTap: () => _openAlbum(album),
+            selected: _selected.contains(album.id),
+            selectionMode: _selectionMode,
+            // In selection mode a tap toggles; otherwise it opens the album.
+            onTap: () =>
+                _selectionMode ? _toggleSelect(album) : _openAlbum(album),
+            onLongPress: () => _toggleSelect(album),
           );
         },
       ),
@@ -253,33 +345,77 @@ class _LockedFolderTile extends StatelessWidget {
 class _AlbumTile extends StatelessWidget {
   final Album album;
   final ImmichService immich;
+  final bool selected;
+  final bool selectionMode;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
   const _AlbumTile({
     required this.album,
     required this.immich,
+    required this.selected,
+    required this.selectionMode,
     required this.onTap,
+    required this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
     return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: selected
+            ? BorderSide(color: accent, width: 3)
+            : BorderSide.none,
+      ),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: album.thumbnailAssetId != null
-                  ? RemoteImage(
-                      url: immich.thumbUrl(album.thumbnailAssetId!),
-                      fallbackUrl: immich.previewUrl(album.thumbnailAssetId!),
-                      headers: immich.authHeaders,
-                    )
-                  : const ColoredBox(
-                      color: Color(0xFF20232E),
-                      child: Icon(Icons.photo_album_outlined,
-                          size: 48, color: Colors.white30),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  album.thumbnailAssetId != null
+                      ? RemoteImage(
+                          url: immich.thumbUrl(album.thumbnailAssetId!),
+                          fallbackUrl:
+                              immich.previewUrl(album.thumbnailAssetId!),
+                          headers: immich.authHeaders,
+                        )
+                      : const ColoredBox(
+                          color: Color(0xFF20232E),
+                          child: Icon(Icons.photo_album_outlined,
+                              size: 48, color: Colors.white30),
+                        ),
+                  if (selected)
+                    ColoredBox(color: accent.withValues(alpha: 0.28)),
+                  if (selectionMode)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: AnimatedScale(
+                        scale: selected ? 1.0 : 0.85,
+                        duration: const Duration(milliseconds: 150),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: selected ? accent : Colors.black54,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white70, width: 2),
+                          ),
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            selected ? Icons.check : Icons.circle_outlined,
+                            size: 22,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
                     ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),

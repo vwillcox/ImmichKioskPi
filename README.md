@@ -7,8 +7,8 @@ mode on labwc/Wayland.
 ## Features
 
 - Browse Immich albums (auto-fetched cover thumbnails, non-empty first)
-- Full-screen photo viewer with zoom (double-tap + on-screen +/- buttons) and
-  swipe between assets
+- Full-screen photo viewer with pinch-zoom, double-tap zoom and swipe between
+  assets
 - **Video playback** (libmpv via `media_kit`) with a **playback-speed** selector
   (0.25×–2×), seek bar, and zoom
 - **Slideshow** with configurable interval and **transitions** (fade / slide / Ken Burns),
@@ -20,22 +20,44 @@ mode on labwc/Wayland.
   on tap and animates back on a second tap. Uses Open-Meteo + postcodes.io —
   **no API key required**. Location defaults to `CO1 1ZY`; corner, location and
   °C/°F are configurable in Settings.
+- **Multi-select albums**: long-press albums on the home grid and play them all
+  as one combined slideshow
+- Aggressive **caching** on the NVMe (images, album lists) for instant restarts
 - Touch-friendly **settings / control panel**: connection, Locked Folder status,
-  weather, slideshow options, and **Restart / Power off**
+  weather, slideshow, cache size, and **Restart / Power off**
 
-### Touch input notes
+### Gestures
 
-Flutter's Linux/labwc embedder delivers the DSI touchscreen as **mouse pointer
-events**, not multi-touch. Consequences baked into the app:
+Multi-touch is enabled on the DSI panel (`ili_v3`), so the full gesture set is
+available:
 
-- **No pinch-zoom** (needs true multi-touch) — zoom uses double-tap and the
-  on-screen +/- buttons instead.
-- Drag-to-scroll is enabled for all pointer kinds via a custom `ScrollBehavior`
-  (otherwise touch drag wouldn't scroll grids).
-- There's **no on-screen keyboard**, so text fields (server URL, API key, email,
-  password) are set from `config.json` / SSH, not the touchscreen. The numeric
-  PIN pad is custom and works by touch.
-- Boots straight into the app fullscreen; auto-restart on crash
+| Where | Gesture | Action |
+|---|---|---|
+| Albums grid | long-press | start multi-select |
+| Albums grid | tap (in selection) | add/remove album |
+| Photo viewer | pinch / double-tap | zoom in & out |
+| Photo viewer | drag (zoomed) | pan |
+| Photo viewer | swipe left/right | previous / next |
+| Photo viewer | swipe down | close |
+| Photo viewer | tap | hide/show chrome |
+| Slideshow | swipe left/right | previous / next (pauses) |
+| Slideshow | swipe down | exit |
+| Slideshow | tap | hide/show controls |
+| Video | double-tap left/right | skip ∓10s |
+| Video | double-tap centre | play / pause |
+| Video | drag horizontally | scrub |
+| Video | drag vertically | volume |
+| Video | swipe down | close |
+| Video | pinch | zoom |
+
+Drag-scrolling is enabled for every pointer kind via a custom `ScrollBehavior`.
+Gestures that would fight `InteractiveViewer` are disabled while zoomed, and
+panning is only enabled once zoomed in, so each gesture reaches the right
+handler. On-screen +/- zoom buttons remain as a fallback.
+
+Note there is **no on-screen keyboard**, so text fields (server URL, API key,
+email, password) are set from `config.json` / SSH. The numeric PIN pad is
+custom and works by touch.
 
 ## Hardware / target
 
@@ -47,24 +69,32 @@ events**, not multi-touch. Consequences baked into the app:
 
 ```
 lib/
-  main.dart                 # providers + root gate (setup vs home)
-  theme.dart                # dark, touch-first theme
-  config/app_config.dart    # config model (connection, PIN, protected, slideshow)
-  models/immich_models.dart # Album, Asset
+  main.dart                    # providers + root gate (setup vs home)
+  theme.dart                   # dark, touch-first theme
+  config/app_config.dart       # config model (connection, weather, slideshow)
+  models/immich_models.dart    # Album, Asset
   services/
-    config_service.dart     # loads/saves ~/.config/tabletpi/config.json
-    immich_service.dart      # Immich REST client (dio)
-    session_state.dart       # PIN unlock state for the session
+    config_service.dart        # loads/saves ~/.config/tabletpi/config.json
+    immich_service.dart        # Immich REST client (dio) + response caching
+    locked_folder_service.dart # session login, PIN unlock, re-lock
+    media_source.dart          # api-key vs Bearer media URLs/headers
+    media_cache.dart           # NVMe-pinned image cache + image-cache tuning
+    api_cache.dart             # JSON-on-disk cache for API responses
+    weather_service.dart       # Open-Meteo forecast + geocoding
   screens/
-    home_screen.dart         # albums grid (+ lock badges, PIN gate)
-    album_screen.dart        # asset grid + Slideshow button
-    gallery_screen.dart      # pinch-zoom swipe gallery (photo_view)
-    video_player_screen.dart # media_kit player + speed controls
-    slideshow_screen.dart    # auto-advancing transitions
-    settings_screen.dart     # control panel
-    setup_screen.dart        # first-run / edit connection
-    pin_screen.dart          # numeric PIN pad
-  widgets/remote_image.dart  # cached image with x-api-key header
+    home_screen.dart           # albums grid, multi-select, Locked Folder tile
+    album_screen.dart          # asset grid + Slideshow button
+    gallery_screen.dart        # pinch-zoom swipe gallery
+    video_player_screen.dart   # media_kit player, speed + gesture controls
+    slideshow_screen.dart      # auto-advancing transitions
+    locked_folder_screen.dart  # locked assets grid
+    settings_screen.dart       # control panel
+    setup_screen.dart          # first-run / edit connection
+    pin_screen.dart            # numeric PIN pad
+  widgets/
+    remote_image.dart          # cached image w/ auth headers + retry/fallback
+    big_back_button.dart       # 64px touch-friendly back target
+    weather_overlay.dart       # corner panel -> full-screen 7-day forecast
 ```
 
 **Immich endpoints used** (server v3.x): `GET /api/albums`,
