@@ -21,6 +21,10 @@ dependencies:
   # Images with auth headers + disk cache
   cached_network_image: ^3.4.1
 
+  # Disk cache control (pinned to the NVMe, not tmpfs /tmp)
+  flutter_cache_manager: ^3.4.2
+  file: ^7.0.1
+
 
   # Video (libmpv-backed; supports playback speed on Linux)
   media_kit: ^1.1.11

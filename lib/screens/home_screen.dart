@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -25,19 +27,41 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadFast();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _albums = null;
-      _error = null;
-    });
+  /// Paint from the disk cache immediately (instant cold start), then refresh
+  /// from the server in the background.
+  Future<void> _loadFast() async {
+    final cached = await _immich.getCachedAlbums();
+    if (cached != null && cached.isNotEmpty && mounted) {
+      setState(() => _albums = cached);
+    }
+    await _load(silent: cached != null && cached.isNotEmpty);
+  }
+
+  Future<void> _load({bool silent = false, bool force = false}) async {
+    if (!silent) {
+      setState(() {
+        _albums = null;
+        _error = null;
+      });
+    }
     try {
-      final a = await _immich.getAlbums();
-      if (mounted) setState(() => _albums = a);
+      final a = await _immich.getAlbums(forceRefresh: force);
+      if (mounted) {
+        setState(() {
+          _albums = a;
+          _error = null;
+        });
+      }
+      // Warm every album cover into the disk cache in the background so the
+      // whole grid is populated before it's scrolled.
+      unawaited(_immich.warmAlbumCovers(a));
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      // Keep showing cached content if we have it; only surface a hard error
+      // when there's nothing on screen.
+      if (mounted && _albums == null) setState(() => _error = '$e');
     }
   }
 
@@ -92,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
-            onPressed: _load,
+            onPressed: () => _load(force: true),
           ),
           IconButton(
             icon: const Icon(Icons.settings),
@@ -128,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(color: Colors.white54)),
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: _load,
+                onPressed: () => _load(force: true),
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
               ),
@@ -150,7 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: () => _load(silent: true, force: true),
       child: GridView.builder(
         padding: const EdgeInsets.all(14),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(

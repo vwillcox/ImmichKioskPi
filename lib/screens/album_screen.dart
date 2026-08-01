@@ -1,9 +1,13 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/immich_models.dart';
 import '../services/config_service.dart';
 import '../services/immich_service.dart';
+import '../services/media_cache.dart';
 import '../services/media_source.dart';
 import '../widgets/remote_image.dart';
 import 'gallery_screen.dart';
@@ -25,19 +29,66 @@ class _AlbumScreenState extends State<AlbumScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadFast();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _assets = null;
-      _error = null;
-    });
+  /// Paint from the disk cache first, then refresh from the server.
+  Future<void> _loadFast() async {
+    final cached = await _immich.getCachedAlbumAssets(widget.album.id);
+    if (cached != null && cached.isNotEmpty && mounted) {
+      setState(() => _assets = cached);
+    }
+    await _load(silent: cached != null && cached.isNotEmpty);
+  }
+
+  Future<void> _load({bool silent = false, bool force = false}) async {
+    if (!silent) {
+      setState(() {
+        _assets = null;
+        _error = null;
+      });
+    }
     try {
-      final a = await _immich.getAlbumAssets(widget.album.id);
-      if (mounted) setState(() => _assets = a);
+      final a =
+          await _immich.getAlbumAssets(widget.album.id, forceRefresh: force);
+      if (mounted) {
+        setState(() {
+          _assets = a;
+          _error = null;
+        });
+        _warmThumbnails(a);
+      }
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      if (mounted && _assets == null) setState(() => _error = '$e');
+    }
+  }
+
+  /// Pull this album's thumbnails into the cache so scrolling is instant, and
+  /// pre-warm the first few full-size previews for the viewer.
+  void _warmThumbnails(List<Asset> assets) {
+    for (final a in assets) {
+      precacheImage(
+        CachedNetworkImageProvider(
+          _immich.thumbUrl(a.id),
+          headers: _immich.authHeaders,
+          cacheManager: TabletPiCache.manager,
+        ),
+        context,
+      );
+    }
+    unawaited(_warmPreviews(assets.where((a) => a.isImage).take(12).toList()));
+  }
+
+  Future<void> _warmPreviews(List<Asset> assets) async {
+    for (final a in assets) {
+      try {
+        await TabletPiCache.manager.downloadFile(
+          _immich.previewUrl(a.id),
+          authHeaders: _immich.authHeaders,
+        );
+      } catch (_) {
+        // Best effort — it will simply load on demand instead.
+      }
     }
   }
 
@@ -92,7 +143,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
   Widget _buildBody(List<Asset>? assets) {
     if (_error != null) {
-      return _ErrorState(message: _error!, onRetry: _load);
+      return _ErrorState(message: _error!, onRetry: () => _load(force: true));
     }
     if (assets == null) {
       return const Center(child: CircularProgressIndicator());

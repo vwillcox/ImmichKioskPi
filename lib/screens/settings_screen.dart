@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../config/app_config.dart';
 import '../services/config_service.dart';
 import '../services/locked_folder_service.dart';
+import '../services/media_cache.dart';
 import '../services/weather_service.dart';
 import '../widgets/weather_overlay.dart';
 import 'setup_screen.dart';
@@ -118,6 +119,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 32),
           _section('Slideshow'),
           const _SlideshowSettingsTile(),
+
+          const Divider(height: 32),
+          _section('Storage'),
+          const _CacheTile(),
 
           const Divider(height: 32),
           _section('Device'),
@@ -419,6 +424,68 @@ class _SlideshowSettingsTile extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+/// Shows how much the on-disk media cache is using, with a way to clear it.
+class _CacheTile extends StatefulWidget {
+  const _CacheTile();
+
+  @override
+  State<_CacheTile> createState() => _CacheTileState();
+}
+
+class _CacheTileState extends State<_CacheTile> {
+  int? _bytes;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _measure();
+  }
+
+  Future<void> _measure() async {
+    final b = await TabletPiCache.diskUsageBytes();
+    if (mounted) setState(() => _bytes = b);
+  }
+
+  String _human(int b) {
+    if (b < 1024) return '$b B';
+    if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(0)} KB';
+    if (b < 1024 * 1024 * 1024) {
+      return '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(b / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  Future<void> _clear() async {
+    setState(() => _busy = true);
+    await TabletPiCache.clear();
+    await _measure();
+    if (mounted) {
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cache cleared')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.sd_storage_outlined),
+      title: const Text('Photo cache'),
+      subtitle: Text(
+        _bytes == null
+            ? 'Measuring…'
+            : '${_human(_bytes!)} on disk  •  ~/.cache/tabletpi',
+      ),
+      trailing: _busy
+          ? const SizedBox(
+              width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
+          : TextButton(onPressed: _clear, child: const Text('Clear')),
     );
   }
 }

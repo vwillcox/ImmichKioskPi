@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
 import '../models/immich_models.dart';
+import '../services/media_cache.dart';
 import '../services/media_source.dart';
 import '../widgets/big_back_button.dart';
 import '../widgets/weather_overlay.dart';
@@ -50,6 +51,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
   ImageProvider _providerFor(int i) => CachedNetworkImageProvider(
         widget.source.previewUrl(_order[i].id),
         headers: widget.source.authHeaders,
+        cacheManager: TabletPiCache.manager,
       );
 
   /// Fully decode the image at [i]. Bounded so a broken/slow image can't stall
@@ -102,9 +104,26 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
 
   void _prev() => _goTo((_index - 1 + _order.length) % _order.length);
 
+  /// Pull a deep runway of upcoming slides into the cache. The Pi has ample
+  /// disk and RAM, so keeping several ahead means transitions never wait on
+  /// the network even if it hiccups.
+  static const int _lookahead = 8;
+
   void _precacheNeighbor() {
     if (_order.length < 2 || !mounted) return;
-    precacheImage(_providerFor((_index + 1) % _order.length), context);
+    for (var step = 1; step <= _lookahead && step < _order.length; step++) {
+      final i = (_index + step) % _order.length;
+      precacheImage(_providerFor(i), context);
+      // Also warm the small backdrop image used behind letterboxed photos.
+      precacheImage(
+        CachedNetworkImageProvider(
+          widget.source.thumbUrl(_order[i].id),
+          headers: widget.source.authHeaders,
+          cacheManager: TabletPiCache.manager,
+        ),
+        context,
+      );
+    }
   }
 
   @override
@@ -142,6 +161,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
             backdropProvider: CachedNetworkImageProvider(
               widget.source.thumbUrl(asset.id),
               headers: widget.source.authHeaders,
+              cacheManager: TabletPiCache.manager,
             ),
             kenBurns: t == SlideshowTransition.kenBurns,
             durationSeconds: widget.settings.intervalSeconds,

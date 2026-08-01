@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../services/media_cache.dart';
+
 /// Cached network image that sends the Immich x-api-key header, retries on
 /// failure with staggered backoff (the DSI home grid loads ~30 thumbnails at
 /// once and the server drops some concurrent connections), and optionally
@@ -71,6 +73,7 @@ class _RemoteImageState extends State<RemoteImage> {
       key: ValueKey('$_activeUrl#$_attempt'),
       imageUrl: _activeUrl,
       httpHeaders: widget.headers,
+      cacheManager: TabletPiCache.manager,
       fit: widget.fit,
       fadeInDuration: const Duration(milliseconds: 200),
       placeholder: (_, __) => const _Placeholder(loading: true),

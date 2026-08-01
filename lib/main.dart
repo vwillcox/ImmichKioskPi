@@ -10,6 +10,7 @@ import 'models/immich_models.dart';
 import 'services/config_service.dart';
 import 'services/immich_service.dart';
 import 'services/locked_folder_service.dart';
+import 'services/media_cache.dart';
 import 'services/weather_service.dart';
 import 'screens/gallery_screen.dart';
 import 'screens/home_screen.dart';
@@ -22,6 +23,9 @@ import 'theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  // Big in-memory image budget — the Pi has 8 GB and revisited photos should
+  // redisplay with no decode cost.
+  TabletPiCache.configureImageCache();
 
   final config = ConfigService();
   await config.load();

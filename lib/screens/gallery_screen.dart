@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../models/immich_models.dart';
+import '../services/media_cache.dart';
 import '../services/media_source.dart';
 import '../widgets/big_back_button.dart';
 import 'video_player_screen.dart';
@@ -76,10 +77,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   imageProvider: CachedNetworkImageProvider(
                     source.previewUrl(a.id),
                     headers: source.authHeaders,
+                    cacheManager: TabletPiCache.manager,
                   ),
                   fallbackProvider: CachedNetworkImageProvider(
                     source.originalUrl(a.id),
                     headers: source.authHeaders,
+                    cacheManager: TabletPiCache.manager,
                   ),
                   onZoomChanged: (z) {
                     if (z != _zoomed) setState(() => _zoomed = z);
@@ -308,6 +311,7 @@ class _VideoPoster extends StatelessWidget {
         CachedNetworkImage(
           imageUrl: source.previewUrl(asset.id),
           httpHeaders: source.authHeaders,
+          cacheManager: TabletPiCache.manager,
           fit: BoxFit.contain,
         ),
         Center(
