@@ -11,8 +11,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  cupertino_icons: ^1.0.8
-
   # State
   provider: ^6.1.2
 
@@ -32,10 +30,8 @@ dependencies:
   media_kit_video: ^1.2.5
   media_kit_libs_video: ^1.0.5
 
-  # PIN hashing + paths
-  crypto: ^3.0.6
+  # Path joining for cache locations
   path: ^1.9.0
-  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:
