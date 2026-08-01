@@ -43,6 +43,31 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 
 ---
 
+## Screenshots
+
+| Albums | Album contents |
+|---|---|
+| ![Albums grid](docs/screenshots/01-home-albums.jpg) | ![Album contents](docs/screenshots/02-album-view.jpg) |
+| The home grid, with the Locked Folder tile first. Long-press albums to pick several for one slideshow. | An album's photos, with the Slideshow button in the bar. |
+
+| Photo viewer | Slideshow with weather |
+|---|---|
+| ![Photo viewer](docs/screenshots/03-photo-viewer.jpg) | ![Slideshow with weather overlay](docs/screenshots/04-slideshow-weather.jpg) |
+| Full-screen viewer — pinch, double-tap or the +/− buttons to zoom. | Photo-frame mode: the whole image fits, edges filled with a blur, and the weather panel in the corner. |
+
+### Slideshow in motion
+
+Ken Burns pan with a cross-fade between slides:
+
+![Slideshow animation](docs/screenshots/05-slideshow-animation.gif)
+
+*(Also available as [MP4](docs/screenshots/05-slideshow-animation.mp4) at higher quality.)*
+
+> Screenshots use albums without people in them. On the albums grid every
+> thumbnail is deliberately pixelated, since that page shows personal photos.
+
+---
+
 ## What you need
 
 - **Raspberry Pi 5** (or Pi 4) with a DSI touch display — developed against a
