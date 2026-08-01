@@ -1,5 +1,6 @@
 name: tabletpi
-description: "Touchscreen Immich browser for a Raspberry Pi DSI display."
+description: "Touchscreen Immich photo/video browser for a Raspberry Pi DSI display."
+# Licensed under the MIT License — see LICENSE.
 publish_to: 'none'
 version: 1.0.0+1
 

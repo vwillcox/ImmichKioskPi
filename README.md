@@ -306,3 +306,9 @@ TabletPi talks only to your own Immich server and to Open-Meteo for the weather.
 There's no analytics and no third-party service. Your credentials live in
 `~/.config/tabletpi/config.json` on the device and are never committed — that
 file is git-ignored.
+
+---
+
+## Licence
+
+[MIT](LICENSE) — do what you like with it, no warranty.
