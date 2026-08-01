@@ -3,9 +3,14 @@
 # Usage: scripts/sync.sh
 set -euo pipefail
 
-PI="${PI_HOST:-vwillcox@tabletpi.local}"
-PI_DIR="${PI_DIR:-/home/vwillcox/tabletpi}"
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Load local overrides (git-ignored) so usernames/hosts stay out of the repo.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+[ -f "$SCRIPT_DIR/local.env" ] && . "$SCRIPT_DIR/local.env"
+
+PI="${PI_HOST:-pi@tabletpi.local}"
+PI_DIR="${PI_DIR:-/home/pi/tabletpi}"
+HERE="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ssh "$PI" "mkdir -p '$PI_DIR'"
 

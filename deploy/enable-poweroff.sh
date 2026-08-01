@@ -7,7 +7,11 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-USER_NAME="${SUDO_USER:-vwillcox}"
+USER_NAME="${SUDO_USER:-$(logname 2>/dev/null || true)}"
+if [ -z "$USER_NAME" ]; then
+  echo "Could not determine the desktop user. Re-run with: sudo bash $0"
+  exit 1
+fi
 RULE=/etc/polkit-1/rules.d/50-tabletpi-power.rules
 
 cat > "$RULE" <<EOF

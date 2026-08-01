@@ -50,3 +50,6 @@ config.json
 
 # Local Claude Code settings — can contain allowlisted commands with API keys
 .claude/settings.local.json
+
+# Local machine-specific script settings (host/user)
+scripts/local.env

@@ -5,11 +5,12 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-# Talk to the running labwc Wayland session on seat0.
-Environment=XDG_RUNTIME_DIR=/run/user/1000
+# Talk to the running labwc Wayland session. %h = this user's home directory,
+# %U = this user's UID, so the unit works for any username.
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=WAYLAND_DISPLAY=wayland-0
 Environment=GDK_BACKEND=wayland
-ExecStart=/home/vwillcox/tabletpi/build/linux/arm64/release/bundle/tabletpi
+ExecStart=%h/tabletpi/build/linux/arm64/release/bundle/tabletpi
 Restart=on-failure
 RestartSec=2
 
