@@ -12,6 +12,7 @@ import 'services/immich_service.dart';
 import 'services/locked_folder_service.dart';
 import 'services/media_cache.dart';
 import 'services/weather_service.dart';
+import 'screens/album_screen.dart';
 import 'screens/gallery_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/locked_folder_screen.dart';
@@ -112,11 +113,26 @@ class _RootGate extends StatelessWidget {
       return _DebugAlbumLoader(
         albumId: testGallery,
         immich: immich,
-        builder: (imgs) =>
-            GalleryScreen(assets: imgs, initialIndex: 0, source: immich),
+        builder: (imgs) => GalleryScreen(
+          assets: imgs,
+          initialIndex: int.tryParse(
+                  Platform.environment['TABLETPI_TEST_GALLERY_INDEX'] ?? '') ??
+              0,
+          source: immich,
+        ),
       );
     }
 
+    final testAlbumGrid = Platform.environment['TABLETPI_TEST_ALBUMGRID'];
+    if (testAlbumGrid != null && testAlbumGrid.isNotEmpty) {
+      return AlbumScreen(
+        album: Album(
+          id: testAlbumGrid,
+          name: Platform.environment['TABLETPI_TEST_ALBUMNAME'] ?? 'Album',
+          assetCount: 0,
+        ),
+      );
+    }
     final testLocked = Platform.environment['TABLETPI_TEST_LOCKED'];
     if (testLocked != null && testLocked.isNotEmpty) {
       return _DebugLockedLoader(pin: testLocked);
