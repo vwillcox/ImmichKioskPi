@@ -92,6 +92,18 @@ bash scripts/pi-setup.sh
 This installs Flutter, the Linux build dependencies and libmpv. It needs `sudo`
 and downloads a few hundred MB, so give it a few minutes.
 
+```bash
+nano ~/.config/labwc/rc.xml
+```
+
+Edit that file 
+
+```xml
+<touch deviceName="<your touch device>" mapToOutput="DSI-1" mouseEmulation="no"/>
+```
+
+Find the device name via libinput list-devices (or let Screen Configuration write the entry, then edit it). Reboot after. CNX Software tested exactly this and got all 10 points tracking correctly afterwards
+
 ### 2. Point the helper scripts at your Pi
 
 On the machine you're building from:
