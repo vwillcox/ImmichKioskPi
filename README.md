@@ -49,6 +49,8 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
   reappears the moment playback resumes
 
 **Built for a kiosk**
+- On-screen panels **drift slowly** by a few pixels so nothing sits on the same
+  pixels for long — guards an always-on display against image retention
 - Starts on boot, restarts automatically if it crashes
 - Restart / power-off buttons in Settings
 - Aggressive on-disk caching so it's fast and works well on a slow network
@@ -380,6 +382,17 @@ screenshots or testing a screen in isolation. They're inert unless set.
 | `IMMICH_KIOSK_TEST_LOCKED_VIDEO=<pin>` | the first locked video |
 | `IMMICH_KIOSK_TEST_ABOUT=1` | the About screen |
 | `IMMICH_KIOSK_TEST_NOWPLAYING=1` | the now-playing panel on a blank background |
+
+### Screen burn-in
+
+The weather and now-playing panels are the only things that stay put on an
+always-on display, so they drift continuously within a 24px radius, tracing a
+slow Lissajous path (17- and 23-minute periods on the two axes, recomputed
+every 20 seconds — about two pixels a step, below the threshold of notice).
+
+The panels' margin is deliberately larger than the drift amplitude: if a panel
+clamped against a screen edge it would sit still there, which is the problem
+this is meant to solve. See `lib/widgets/burn_in_drift.dart`.
 
 ### Project layout
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'burn_in_drift.dart';
+
 import '../config/app_config.dart';
 import '../services/config_service.dart';
 import '../services/weather_service.dart';
@@ -104,7 +106,7 @@ class WeatherOverlay extends StatefulWidget {
 
   const WeatherOverlay({
     super.key,
-    this.margin = const EdgeInsets.all(16),
+    this.margin = const EdgeInsets.all(28),
     this.compact = false,
   });
 
@@ -113,7 +115,7 @@ class WeatherOverlay extends StatefulWidget {
 }
 
 class _WeatherOverlayState extends State<WeatherOverlay>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, BurnInDriftMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 420),
@@ -128,7 +130,14 @@ class _WeatherOverlayState extends State<WeatherOverlay>
   bool get _expanded => _controller.value > 0.5;
 
   @override
+  void initState() {
+    super.initState();
+    startDrift();
+  }
+
+  @override
   void dispose() {
+    stopDrift();
     _controller.dispose();
     super.dispose();
   }
@@ -160,7 +169,8 @@ class _WeatherOverlayState extends State<WeatherOverlay>
       child: LayoutBuilder(
         builder: (context, constraints) {
           final screen = Size(constraints.maxWidth, constraints.maxHeight);
-          final collapsed = _collapsedRect(screen, settings.corner);
+          final collapsed =
+              applyDrift(_collapsedRect(screen, settings.corner), screen);
           final expanded = _expandedRect(screen);
 
           return AnimatedBuilder(

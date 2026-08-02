@@ -2,6 +2,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'burn_in_drift.dart';
+
 import '../config/app_config.dart';
 import '../services/config_service.dart';
 import '../services/now_playing_service.dart';
@@ -21,14 +23,14 @@ String _fmt(Duration d) {
 /// Place inside a Stack that fills the screen (slideshow only).
 class NowPlayingOverlay extends StatefulWidget {
   final EdgeInsets margin;
-  const NowPlayingOverlay({super.key, this.margin = const EdgeInsets.all(16)});
+  const NowPlayingOverlay({super.key, this.margin = const EdgeInsets.all(28)});
 
   @override
   State<NowPlayingOverlay> createState() => _NowPlayingOverlayState();
 }
 
 class _NowPlayingOverlayState extends State<NowPlayingOverlay>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, BurnInDriftMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 420),
@@ -43,7 +45,14 @@ class _NowPlayingOverlayState extends State<NowPlayingOverlay>
   bool get _expanded => _controller.value > 0.5;
 
   @override
+  void initState() {
+    super.initState();
+    startDrift();
+  }
+
+  @override
   void dispose() {
+    stopDrift();
     _controller.dispose();
     super.dispose();
   }
@@ -69,7 +78,8 @@ class _NowPlayingOverlayState extends State<NowPlayingOverlay>
       child: LayoutBuilder(
         builder: (context, constraints) {
           final screen = Size(constraints.maxWidth, constraints.maxHeight);
-          final collapsed = _collapsedRect(screen, settings.corner);
+          final collapsed =
+              applyDrift(_collapsedRect(screen, settings.corner), screen);
           final expanded = _expandedRect(screen);
 
           return AnimatedBuilder(
