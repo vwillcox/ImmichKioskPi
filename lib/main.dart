@@ -38,7 +38,8 @@ void main() async {
   unawaited(weather.refresh());
 
   // Reads what the paired phone is playing over Bluetooth AVRCP.
-  final nowPlaying = NowPlayingService();
+  final nowPlaying = NowPlayingService()
+    ..preferAudioRouted = config.config.nowPlaying.playAudioHere;
   unawaited(nowPlaying.start());
 
   runApp(

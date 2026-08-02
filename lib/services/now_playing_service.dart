@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dbus/dbus.dart';
 import 'package:dio/dio.dart';
@@ -66,6 +67,16 @@ class NowPlayingService extends ChangeNotifier {
 
   int _volume = 0; // raw AVRCP value, 0-127
   int _volumeBeforeMute = 0;
+
+  /// Whether the Pi is set to take the phone's audio (A2DP sink enabled).
+  /// When false the phone keeps its own audio — headphones, its own speaker —
+  /// and this display is purely a remote control. AVRCP metadata and transport
+  /// keep working either way.
+  ///
+  /// This mirrors the chosen setting rather than probing PipeWire links: links
+  /// only exist while audio is actively streaming, so a paused track would
+  /// otherwise look like the audio had been disconnected.
+  bool get audioRouted => _preferAudioRouted;
 
   /// Volume as 0..1 for the UI.
   double get volume => (_volume / _maxVolume).clamp(0.0, 1.0);
@@ -199,6 +210,16 @@ class NowPlayingService extends ChangeNotifier {
     _playerPath = path;
     _player = DBusRemoteObject(_client!, name: _bluez, path: DBusObjectPath(path));
     await _refreshAll();
+    // Re-apply the "control only" preference: PipeWire turns the audio profile
+    // back on by itself when the phone reconnects.
+    if (!_preferAudioRouted) await setAudioRouted(false);
+  }
+
+  /// Desired routing, set from Settings and re-applied on reconnect.
+  bool _preferAudioRouted = true;
+  set preferAudioRouted(bool v) {
+    _preferAudioRouted = v;
+    unawaited(setAudioRouted(v));
   }
 
   void _detach() {
@@ -316,6 +337,44 @@ class NowPlayingService extends ChangeNotifier {
       }
     } catch (_) {
       // The player can vanish mid-poll when the phone disconnects.
+    }
+  }
+
+  // ---- Audio routing ------------------------------------------------------
+
+  /// The Bluetooth card id in PipeWire, needed to switch its profile.
+  Future<String?> _bluezCardId() async {
+    try {
+      final r = await Process.run('wpctl', ['status']);
+      if (r.exitCode != 0) return null;
+      for (final line in (r.stdout as String).split('\n')) {
+        if (line.contains('[bluez5]')) {
+          final m = RegExp(r'(\d+)\.').firstMatch(line);
+          if (m != null) return m.group(1);
+        }
+      }
+    } catch (e) {
+      debugPrint('bluez card lookup error: $e');
+    }
+    return null;
+  }
+
+  /// Choose whether the Pi plays the phone's audio, or only controls it.
+  ///
+  /// Profile "off" stops the A2DP sink so the phone keeps its audio (e.g. to
+  /// headphones) while AVRCP metadata and transport still work — verified on
+  /// the device. Note PipeWire may re-enable the profile when the phone
+  /// reconnects, so this is applied again on reconnect.
+  Future<void> setAudioRouted(bool routed) async {
+    _preferAudioRouted = routed;
+    notifyListeners();
+    final id = await _bluezCardId();
+    if (id == null) return;
+    try {
+      // 0 = Off, 65536 = Audio Gateway (A2DP Source & HSP/HFP AG)
+      await Process.run('wpctl', ['set-profile', id, routed ? '65536' : '0']);
+    } catch (e) {
+      debugPrint('setAudioRouted error: $e');
     }
   }
 

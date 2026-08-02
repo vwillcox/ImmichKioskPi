@@ -544,6 +544,27 @@ class _NowPlayingSettingsTile extends StatelessWidget {
           },
         ),
         if (s.enabled)
+          SwitchListTile(
+            secondary: Icon(
+              s.playAudioHere ? Icons.speaker : Icons.headphones,
+              color: s.playAudioHere ? null : const Color(0xFF7FE3A1),
+            ),
+            title: const Text('Play the audio on this device'),
+            subtitle: Text(
+              s.playAudioHere
+                  ? 'Music plays through the Pi\'s speaker.'
+                  : 'Music stays on the phone (e.g. your headphones) and this '
+                      'screen is just a remote control.',
+            ),
+            isThreeLine: !s.playAudioHere,
+            value: s.playAudioHere,
+            onChanged: (v) {
+              s.playAudioHere = v;
+              config.save();
+              service.preferAudioRouted = v;
+            },
+          ),
+        if (s.enabled)
           ListTile(
             leading: const Icon(Icons.picture_in_picture_alt),
             title: const Text('Position'),

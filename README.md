@@ -43,6 +43,8 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
   shuffle, and a volume slider with mute** — the controls drive the phone
 - Works with any app on the phone (Spotify, YouTube Music, podcasts) because it
   reads Bluetooth AVRCP rather than any one service's API
+- Optionally **leave the audio on the phone** (headphones) and use the kiosk
+  purely as a remote control
 
 **Built for a kiosk**
 - Starts on boot, restarts automatically if it crashes
@@ -218,8 +220,20 @@ appears in the slideshow; tap it to expand, tap again to shrink.
 > audio stream, so the phone's audio plays through the **Pi**, not the phone.
 > That's inherent to this approach, not a choice of implementation.
 
-PipeWire routes the incoming stream to whatever output is active — a USB
-speaker, for example. Check the link with:
+#### Using headphones on the phone
+
+If you'd rather the music kept playing on the phone — Bluetooth headphones, its
+own speaker — turn **Settings → Now playing → "Play the audio on this device"**
+off. The Pi then stops acting as an audio sink, but the panel keeps showing the
+track and the controls still work: this display becomes a pure remote.
+
+That works because AVRCP's control channel is independent of the A2DP audio
+stream, so `org.bluez.MediaPlayer1` survives with the audio profile switched
+off. The setting is re-applied whenever the phone reconnects, since PipeWire
+turns the audio profile back on by itself.
+
+With the setting on, PipeWire routes the incoming stream to whatever output is
+active — a USB speaker, for example. Check the link with:
 
 ```bash
 pw-link -l | grep bluez
@@ -227,6 +241,11 @@ pw-link -l | grep bluez
 
 (Note `pactl` may not be installed on Raspberry Pi OS; `pw-link` and `wpctl`
 are the PipeWire tools that are.)
+
+Two things that look like faults but aren't: those links only exist while audio
+is **actively streaming**, so a paused track shows none; and `wpctl inspect`
+can report a stale `bluez5.profile`. Neither is a reliable way to tell whether
+audio routing is enabled — the setting itself is the source of truth.
 
 The volume slider sets **AVRCP absolute volume**, i.e. the level the phone is
 sending — the same control as the phone's own volume buttons. It is not a

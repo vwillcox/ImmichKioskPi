@@ -138,21 +138,29 @@ class NowPlayingSettings {
   bool enabled;
   OverlayCorner corner;
 
+  /// Whether the Pi plays the phone's audio (A2DP sink). Turn this off to keep
+  /// audio on the phone — headphones, say — and use this display purely as a
+  /// remote control. Metadata and transport keep working either way.
+  bool playAudioHere;
+
   NowPlayingSettings({
     this.enabled = true,
     this.corner = OverlayCorner.bottomLeft,
+    this.playAudioHere = true,
   });
 
   factory NowPlayingSettings.fromJson(Map<String, dynamic> j) {
     return NowPlayingSettings(
       enabled: j['enabled'] as bool? ?? true,
       corner: _cornerFromString(j['corner'] as String?),
+      playAudioHere: j['playAudioHere'] as bool? ?? true,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'enabled': enabled,
         'corner': cornerToString(corner),
+        'playAudioHere': playAudioHere,
       };
 }
 
