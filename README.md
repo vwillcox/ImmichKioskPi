@@ -45,6 +45,8 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
   reads Bluetooth AVRCP rather than any one service's API
 - Optionally **leave the audio on the phone** (headphones) and use the kiosk
   purely as a remote control
+- Tidies itself away: the panel hides after a minute of nothing playing and
+  reappears the moment playback resumes
 
 **Built for a kiosk**
 - Starts on boot, restarts automatically if it crashes

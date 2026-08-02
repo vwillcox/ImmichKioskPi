@@ -86,6 +86,15 @@ class NowPlayingService extends ChangeNotifier {
   StreamSubscription<DBusSignal>? _signalSub;
   Timer? _positionTimer;
 
+  /// How long the panel lingers after the music stops before hiding itself.
+  static const Duration idleTimeout = Duration(minutes: 1);
+  Timer? _idleTimer;
+  bool _idleHidden = false;
+
+  /// True once nothing has been playing for [idleTimeout]. Cleared the instant
+  /// playback resumes, so the panel comes straight back.
+  bool get idleHidden => _idleHidden;
+
   NowPlaying _now = const NowPlaying();
   NowPlaying get now => _now;
 
@@ -230,6 +239,9 @@ class NowPlayingService extends ChangeNotifier {
     _now = const NowPlaying();
     _artUrl = null;
     _artForKey = '';
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    _idleHidden = false;
     notifyListeners();
   }
 
@@ -309,11 +321,37 @@ class NowPlayingService extends ChangeNotifier {
       deviceName: deviceName ?? _now.deviceName,
     );
 
+    _updateIdleTimer();
+
     if (_now.hasTrack && _now.trackKey != _artForKey) {
       _artForKey = _now.trackKey;
       unawaited(_lookupArtwork(_now.artist, _now.title));
     }
     if (notify) notifyListeners();
+  }
+
+  /// Playing -> show immediately and cancel any pending hide.
+  /// Not playing -> start a one-shot timer that hides the panel afterwards.
+  void _updateIdleTimer() {
+    if (_now.isPlaying) {
+      _idleTimer?.cancel();
+      _idleTimer = null;
+      if (_idleHidden) {
+        _idleHidden = false;
+        notifyListeners();
+      }
+      return;
+    }
+    // Already counting down: let the existing timer run rather than restarting
+    // it on every unrelated property change.
+    if (_idleHidden || _idleTimer != null) return;
+    _idleTimer = Timer(idleTimeout, () {
+      _idleTimer = null;
+      if (!_now.isPlaying) {
+        _idleHidden = true;
+        notifyListeners();
+      }
+    });
   }
 
   Future<void> _refreshPosition() async {
@@ -477,6 +515,7 @@ class NowPlayingService extends ChangeNotifier {
   @override
   void dispose() {
     _positionTimer?.cancel();
+    _idleTimer?.cancel();
     _signalSub?.cancel();
     _client?.close();
     super.dispose();

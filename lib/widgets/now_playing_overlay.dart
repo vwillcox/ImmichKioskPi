@@ -56,7 +56,10 @@ class _NowPlayingOverlayState extends State<NowPlayingOverlay>
   Widget build(BuildContext context) {
     final settings = context.watch<ConfigService>().config.nowPlaying;
     final service = context.watch<NowPlayingService>();
-    if (!settings.enabled || !service.available || !service.now.hasTrack) {
+    if (!settings.enabled ||
+        !service.available ||
+        !service.now.hasTrack ||
+        service.idleHidden) {
       // Collapse if the music stopped while expanded.
       if (_controller.value != 0) _controller.reverse();
       return const SizedBox.shrink();
