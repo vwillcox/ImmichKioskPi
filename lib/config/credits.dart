@@ -75,6 +75,12 @@ const List<Credit> kDartPackages = [
     url: 'https://pub.dev/packages/media_kit_libs_video',
   ),
   Credit(
+    name: 'dbus',
+    purpose: 'Talks to BlueZ for what the paired phone is playing',
+    licence: 'MPL-2.0',
+    url: 'https://github.com/canonical/dbus.dart',
+  ),
+  Credit(
     name: 'path',
     purpose: 'Path joining for cache locations',
     licence: 'BSD-3-Clause',
@@ -97,6 +103,12 @@ const List<Credit> kSystemLibraries = [
     url: 'https://mpv.io',
   ),
   Credit(
+    name: 'BlueZ',
+    purpose: 'Bluetooth stack — AVRCP metadata and transport control',
+    licence: 'GPL-2.0+ / LGPL-2.1+',
+    url: 'http://www.bluez.org',
+  ),
+  Credit(
     name: 'GTK 3',
     purpose: "Flutter's Linux embedder window",
     licence: 'LGPL-2.1+',
@@ -117,6 +129,12 @@ const List<Credit> kServices = [
     purpose: 'Weather forecast — no API key required',
     licence: 'CC BY 4.0 · free for non-commercial use',
     url: 'https://open-meteo.com',
+  ),
+  Credit(
+    name: 'iTunes Search API',
+    purpose: 'Album artwork lookup (AVRCP carries no cover art)',
+    licence: 'Free, no key · Apple terms apply',
+    url: 'https://performance-partners.apple.com/search-api',
   ),
   Credit(
     name: 'postcodes.io',
@@ -169,6 +187,15 @@ const List<SourceCredit> kSourceCredits = [
         'POST /api/search/metadata, and that the Locked Folder requires a '
         'session token rather than an API key.',
     url: 'https://immich.app/docs/api',
+  ),
+  SourceCredit(
+    what: 'Bluetooth now-playing',
+    detail:
+        'Track metadata and transport control come from BlueZ\'s AVRCP support '
+        'over D-Bus (org.bluez.MediaPlayer1), per the BlueZ D-Bus API docs. '
+        'Album art is not part of AVRCP, so it is resolved separately by '
+        'searching the iTunes Search API for artist + track title.',
+    url: 'https://github.com/bluez/bluez/blob/master/doc/org.bluez.MediaPlayer.rst',
   ),
   SourceCredit(
     what: 'Material Design icons',

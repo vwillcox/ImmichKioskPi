@@ -10,6 +10,7 @@ import '../models/immich_models.dart';
 import '../services/media_cache.dart';
 import '../services/media_source.dart';
 import '../widgets/big_back_button.dart';
+import '../widgets/now_playing_overlay.dart';
 import '../widgets/weather_overlay.dart';
 
 class SlideshowScreen extends StatefulWidget {
@@ -215,6 +216,9 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
 
             // Weather overlay (photo-frame style). Slideshow only.
             const WeatherOverlay(),
+
+            // What the paired phone is playing. Slideshow only.
+            const NowPlayingOverlay(),
 
             // Controls
             AnimatedOpacity(

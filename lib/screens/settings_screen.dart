@@ -7,6 +7,7 @@ import '../config/app_config.dart';
 import '../services/config_service.dart';
 import '../services/locked_folder_service.dart';
 import '../services/media_cache.dart';
+import '../services/now_playing_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/weather_overlay.dart';
 import 'about_screen.dart';
@@ -116,6 +117,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 32),
           _section('Weather'),
           const _WeatherSettingsTile(),
+
+          const Divider(height: 32),
+          _section('Now playing'),
+          const _NowPlayingSettingsTile(),
 
           const Divider(height: 32),
           _section('Slideshow'),
@@ -500,6 +505,67 @@ class _CacheTileState extends State<_CacheTile> {
           ? const SizedBox(
               width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
           : TextButton(onPressed: _clear, child: const Text('Clear')),
+    );
+  }
+}
+
+/// Toggle the now-playing overlay and choose which corner it sits in.
+class _NowPlayingSettingsTile extends StatelessWidget {
+  const _NowPlayingSettingsTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final config = context.watch<ConfigService>();
+    final service = context.watch<NowPlayingService>();
+    final s = config.config.nowPlaying;
+    final n = service.now;
+
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: Icon(
+            s.enabled ? Icons.music_note : Icons.music_off,
+            color: s.enabled ? null : Colors.white38,
+          ),
+          title: const Text('Show what my phone is playing'),
+          subtitle: Text(
+            service.available
+                ? (n.hasTrack
+                    ? 'Connected to ${n.deviceName.isEmpty ? "phone" : n.deviceName} — ${n.title}'
+                    : 'Connected to ${n.deviceName.isEmpty ? "phone" : n.deviceName} — nothing playing')
+                : 'No phone connected. Pair one over Bluetooth and play '
+                    'something with media audio routed to this device.',
+          ),
+          isThreeLine: !service.available,
+          value: s.enabled,
+          onChanged: (v) {
+            s.enabled = v;
+            config.save();
+          },
+        ),
+        if (s.enabled)
+          ListTile(
+            leading: const Icon(Icons.picture_in_picture_alt),
+            title: const Text('Position'),
+            subtitle: const Text('Which corner the player sits in'),
+            trailing: DropdownButton<OverlayCorner>(
+              value: s.corner,
+              underline: const SizedBox.shrink(),
+              items: OverlayCorner.values
+                  .map((c) => DropdownMenuItem(
+                        value: c,
+                        child: Text(cornerLabel(c)),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  s.corner = v;
+                  config.save();
+                }
+              },
+            ),
+          ),
+      ],
     );
   }
 }

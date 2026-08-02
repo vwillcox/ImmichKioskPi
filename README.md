@@ -36,6 +36,14 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 - Uses [Open-Meteo](https://open-meteo.com) — **no API key needed**
 - Choose the location (UK postcode or place name), the screen corner, and °C/°F
 
+**Now playing from your phone**
+- Shows the track your paired phone is playing, with album artwork, in a corner
+  of the slideshow
+- Tap it to expand into a full player with **play/pause, next, previous, repeat,
+  shuffle, and a volume slider with mute** — the controls drive the phone
+- Works with any app on the phone (Spotify, YouTube Music, podcasts) because it
+  reads Bluetooth AVRCP rather than any one service's API
+
 **Built for a kiosk**
 - Starts on boot, restarts automatically if it crashes
 - Restart / power-off buttons in Settings
@@ -184,6 +192,38 @@ prompt, run once on the Pi:
 sudo bash deploy/enable-poweroff.sh
 ```
 
+### Now playing from your phone
+
+The now-playing panel reads Bluetooth **AVRCP**, so it works with whatever app
+your phone is using — no accounts or API keys.
+
+Pair the phone with the Pi once:
+
+```bash
+bluetoothctl
+# then, at the prompt:
+#   power on
+#   agent NoInputNoOutput
+#   default-agent
+#   pairable on
+#   discoverable on
+# accept the passkey on both the phone and here, then:
+#   trust <PHONE_MAC>
+```
+
+Play something on the phone with **media audio** routed to the Pi. The panel
+appears in the slideshow; tap it to expand, tap again to shrink.
+
+> **Trade-off worth knowing:** AVRCP metadata rides along with the Bluetooth
+> audio stream, so the phone's audio plays through the **Pi**, not the phone.
+> That's inherent to this approach, not a choice of implementation.
+
+Album artwork isn't part of AVRCP, so it's looked up from the free
+[iTunes Search API](https://performance-partners.apple.com/search-api) using the
+artist and track name. Searching by track is markedly more reliable than by
+album, because AVRCP album strings often carry suffixes like
+`(Deluxe Version) [Explicit]`.
+
 ### TV Remote button
 
 If you run a companion remote-control app on the same Pi, a **TV Remote** icon
@@ -242,6 +282,7 @@ home screen; tap it and enter your PIN.
 | Video | drag vertically | volume |
 | Video | swipe down | close |
 | Weather panel | tap | expand / collapse the forecast |
+| Now playing panel | tap | expand / collapse the player |
 
 On-screen +/− zoom buttons are also provided as a fallback.
 
@@ -254,6 +295,8 @@ Tap the gear icon on the home screen:
 - **Connection** — Immich server URL and API key
 - **Locked Folder** — whether the account login is configured
 - **Weather** — on/off, location, screen corner, °C/°F
+- **Now playing** — show what the paired phone is playing, and which corner
+  (the expanded player also carries volume and mute)
 - **Slideshow** — seconds per photo, transition style, shuffle
 - **Storage** — how much the photo cache is using, with a Clear button
 - **Device** — Restart and Power off
@@ -301,6 +344,7 @@ screenshots or testing a screen in isolation. They're inert unless set.
 | `IMMICH_KIOSK_TEST_LOCKED=<pin>` | the Locked Folder, unlocked |
 | `IMMICH_KIOSK_TEST_LOCKED_VIDEO=<pin>` | the first locked video |
 | `IMMICH_KIOSK_TEST_ABOUT=1` | the About screen |
+| `IMMICH_KIOSK_TEST_NOWPLAYING=1` | the now-playing panel on a blank background |
 
 ### Project layout
 
@@ -318,6 +362,7 @@ lib/
     media_cache.dart           # on-disk image cache + memory tuning
     api_cache.dart             # cached API responses
     weather_service.dart       # Open-Meteo forecast and geocoding
+    now_playing_service.dart   # BlueZ AVRCP over D-Bus + artwork lookup
   config/credits.dart          # attribution data shown on the About screen
   screens/                     # home, album, gallery, video, slideshow,
                                # locked folder, settings, setup, PIN pad,
@@ -407,6 +452,7 @@ Built with [Flutter](https://flutter.dev) (BSD-3-Clause,
 | [media_kit](https://pub.dev/packages/media_kit) · [src](https://github.com/media-kit/media-kit) | Video playback and speed control | MIT |
 | [media_kit_video](https://pub.dev/packages/media_kit_video) | Video render surface | MIT |
 | [media_kit_libs_video](https://pub.dev/packages/media_kit_libs_video) | Native video dependencies | MIT |
+| [dbus](https://pub.dev/packages/dbus) · [src](https://github.com/canonical/dbus.dart) | Talks to BlueZ for phone media metadata | MPL-2.0 |
 | [path](https://pub.dev/packages/path) · [src](https://github.com/dart-lang/path) | Path joining for cache locations | BSD-3-Clause |
 | [flutter_lints](https://pub.dev/packages/flutter_lints) (dev) | Lint rules | BSD-3-Clause |
 
@@ -415,6 +461,7 @@ Built with [Flutter](https://flutter.dev) (BSD-3-Clause,
 | Library | Used for | Licence |
 |---|---|---|
 | [mpv / libmpv](https://mpv.io) · [source](https://github.com/mpv-player/mpv) | Video decoding behind media_kit | LGPL-2.1+ ([details](https://github.com/mpv-player/mpv/blob/master/Copyright)) |
+| [BlueZ](http://www.bluez.org) · [source](https://github.com/bluez/bluez) | Bluetooth stack — AVRCP metadata and control | GPL-2.0+ / LGPL-2.1+ |
 | [GTK 3](https://www.gtk.org) | Flutter's Linux embedder window | LGPL-2.1+ |
 
 ### Services
@@ -423,6 +470,7 @@ Built with [Flutter](https://flutter.dev) (BSD-3-Clause,
 |---|---|---|
 | [Immich](https://immich.app) · [src](https://github.com/immich-app/immich) | Your own photo server (the whole point) | AGPL-3.0 |
 | [Open-Meteo](https://open-meteo.com) | Weather forecast — no API key required | Free for non-commercial use, [CC BY 4.0](https://open-meteo.com/en/license) |
+| [iTunes Search API](https://performance-partners.apple.com/search-api) | Album artwork lookup | Free, no key · Apple terms |
 | [postcodes.io](https://postcodes.io) · [src](https://github.com/ideal-postcodes/postcodes.io) | UK postcode → coordinates | MIT, data under [OGL](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) |
 
 ---
@@ -449,6 +497,10 @@ from, or are adapted from, elsewhere:
   a live v3 server — in particular that album contents come from
   `POST /api/search/metadata`, and that the Locked Folder needs a session token
   rather than an API key.
+- **Bluetooth now-playing** uses BlueZ's AVRCP support over D-Bus
+  ([`org.bluez.MediaPlayer1`](https://github.com/bluez/bluez/blob/master/doc/org.bluez.MediaPlayer.rst))
+  for metadata and transport control. Album art is not part of AVRCP, so it is
+  resolved separately from the iTunes Search API by artist + track title.
 - **Material Design icons** ship with Flutter (Apache-2.0).
 
 No code was copied from Stack Overflow, blog posts or other projects.

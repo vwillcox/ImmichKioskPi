@@ -132,6 +132,30 @@ class WeatherSettings {
       };
 }
 
+
+/// Now-playing overlay (what the paired phone is playing, via Bluetooth AVRCP).
+class NowPlayingSettings {
+  bool enabled;
+  OverlayCorner corner;
+
+  NowPlayingSettings({
+    this.enabled = true,
+    this.corner = OverlayCorner.bottomLeft,
+  });
+
+  factory NowPlayingSettings.fromJson(Map<String, dynamic> j) {
+    return NowPlayingSettings(
+      enabled: j['enabled'] as bool? ?? true,
+      corner: _cornerFromString(j['corner'] as String?),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        'corner': cornerToString(corner),
+      };
+}
+
 class AppConfig {
   String immichUrl;
   String apiKey;
@@ -140,6 +164,7 @@ class AppConfig {
   String immichPassword;
   SlideshowSettings slideshow;
   WeatherSettings weather;
+  NowPlayingSettings nowPlaying;
 
   AppConfig({
     this.immichUrl = '',
@@ -148,8 +173,10 @@ class AppConfig {
     this.immichPassword = '',
     SlideshowSettings? slideshow,
     WeatherSettings? weather,
+    NowPlayingSettings? nowPlaying,
   })  : slideshow = slideshow ?? SlideshowSettings(),
-        weather = weather ?? WeatherSettings();
+        weather = weather ?? WeatherSettings(),
+        nowPlaying = nowPlaying ?? NowPlayingSettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -165,6 +192,9 @@ class AppConfig {
       weather: j['weather'] is Map<String, dynamic>
           ? WeatherSettings.fromJson(j['weather'] as Map<String, dynamic>)
           : WeatherSettings(),
+      nowPlaying: j['nowPlaying'] is Map<String, dynamic>
+          ? NowPlayingSettings.fromJson(j['nowPlaying'] as Map<String, dynamic>)
+          : NowPlayingSettings(),
     );
   }
 
@@ -175,5 +205,6 @@ class AppConfig {
         'immichPassword': immichPassword,
         'slideshow': slideshow.toJson(),
         'weather': weather.toJson(),
+        'nowPlaying': nowPlaying.toJson(),
       };
 }

@@ -11,6 +11,7 @@ import 'services/config_service.dart';
 import 'services/immich_service.dart';
 import 'services/locked_folder_service.dart';
 import 'services/media_cache.dart';
+import 'services/now_playing_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
 import 'screens/album_screen.dart';
@@ -20,6 +21,7 @@ import 'screens/locked_folder_screen.dart';
 import 'screens/setup_screen.dart';
 import 'screens/slideshow_screen.dart';
 import 'screens/video_player_screen.dart';
+import 'widgets/now_playing_overlay.dart';
 import 'theme.dart';
 
 void main() async {
@@ -35,6 +37,10 @@ void main() async {
   final weather = WeatherService(config);
   unawaited(weather.refresh());
 
+  // Reads what the paired phone is playing over Bluetooth AVRCP.
+  final nowPlaying = NowPlayingService();
+  unawaited(nowPlaying.start());
+
   runApp(
     MultiProvider(
       providers: [
@@ -42,6 +48,7 @@ void main() async {
         Provider<ImmichService>(create: (_) => ImmichService(config)),
         ChangeNotifierProvider(create: (_) => LockedFolderService(config)),
         ChangeNotifierProvider.value(value: weather),
+        ChangeNotifierProvider.value(value: nowPlaying),
       ],
       child: const ImmichKioskPiApp(),
     ),
@@ -136,6 +143,12 @@ class _RootGate extends StatelessWidget {
     }
     if ((Platform.environment['IMMICH_KIOSK_TEST_ABOUT'] ?? '').isNotEmpty) {
       return const AboutScreen();
+    }
+    if ((Platform.environment['IMMICH_KIOSK_TEST_NOWPLAYING'] ?? '').isNotEmpty) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF101828),
+        body: Stack(children: [NowPlayingOverlay()]),
+      );
     }
     final testLocked = Platform.environment['IMMICH_KIOSK_TEST_LOCKED'];
     if (testLocked != null && testLocked.isNotEmpty) {
