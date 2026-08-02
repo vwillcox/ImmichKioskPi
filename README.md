@@ -41,6 +41,8 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 - Restart / power-off buttons in Settings
 - Aggressive on-disk caching so it's fast and works well on a slow network
 - An **About** screen listing every library, licence and credit
+- Optional **TV Remote** button that switches to a companion remote-control app
+  when one is running (see below)
 
 ---
 
@@ -181,6 +183,25 @@ prompt, run once on the Pi:
 ```bash
 sudo bash deploy/enable-poweroff.sh
 ```
+
+### TV Remote button
+
+If you run a companion remote-control app on the same Pi, a **TV Remote** icon
+appears in the home screen's toolbar and switches to it with one tap. The
+button only appears while that app is actually running, so it stays out of the
+way otherwise.
+
+It shells out to [`wlrctl`](https://git.sr.ht/~brocellous/wlrctl) to spot the
+window and focus it:
+
+```bash
+sudo apt-get install -y wlrctl
+```
+
+The app is matched by Wayland `app_id`, set by `_remoteAppId` in
+`lib/screens/home_screen.dart` (currently `com.vwillcox.vidaa_remote`) — change
+it there to point at your own app. Without `wlrctl`, or without that app
+running, the button simply never appears and nothing else is affected.
 
 ### Locked Folder
 

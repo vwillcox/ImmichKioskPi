@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -30,10 +31,43 @@ class _HomeScreenState extends State<HomeScreen> {
   final Set<String> _selected = {};
   bool get _selectionMode => _selected.isNotEmpty;
 
+  /// Whether the VIDAA TV remote app is currently running, so the "TV Remote"
+  /// button is only shown when it can actually flip to it.
+  bool _remoteRunning = false;
+  Timer? _remotePoll;
+  static const String _remoteAppId = 'com.vwillcox.vidaa_remote';
+
   @override
   void initState() {
     super.initState();
     _loadFast();
+    _checkRemote();
+    _remotePoll =
+        Timer.periodic(const Duration(seconds: 4), (_) => _checkRemote());
+  }
+
+  @override
+  void dispose() {
+    _remotePoll?.cancel();
+    super.dispose();
+  }
+
+  /// Detect the remote's window via wlrctl; hide the button if wlrctl is
+  /// missing or the remote isn't running.
+  Future<void> _checkRemote() async {
+    var running = false;
+    try {
+      final r = await Process.run('wlrctl', ['toplevel', 'list']);
+      running = r.exitCode == 0 &&
+          (r.stdout as String)
+              .split('\n')
+              .any((line) => line.startsWith('$_remoteAppId:'));
+    } catch (_) {
+      running = false;
+    }
+    if (mounted && running != _remoteRunning) {
+      setState(() => _remoteRunning = running);
+    }
   }
 
   /// Paint from the disk cache immediately (instant cold start), then refresh
@@ -185,6 +219,13 @@ class _HomeScreenState extends State<HomeScreen> {
   PreferredSizeWidget _normalAppBar() => AppBar(
         title: const Text('Immich Kiosk - Pi'),
         actions: [
+          if (_remoteRunning)
+            IconButton(
+              icon: const Icon(Icons.settings_remote),
+              tooltip: 'TV Remote',
+              onPressed: () => Process.run('wlrctl',
+                  ['toplevel', 'focus', 'app_id:$_remoteAppId']),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
