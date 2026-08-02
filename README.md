@@ -218,6 +218,20 @@ appears in the slideshow; tap it to expand, tap again to shrink.
 > audio stream, so the phone's audio plays through the **Pi**, not the phone.
 > That's inherent to this approach, not a choice of implementation.
 
+PipeWire routes the incoming stream to whatever output is active — a USB
+speaker, for example. Check the link with:
+
+```bash
+pw-link -l | grep bluez
+```
+
+(Note `pactl` may not be installed on Raspberry Pi OS; `pw-link` and `wpctl`
+are the PipeWire tools that are.)
+
+The volume slider sets **AVRCP absolute volume**, i.e. the level the phone is
+sending — the same control as the phone's own volume buttons. It is not a
+local mixer level for the Pi's output.
+
 Album artwork isn't part of AVRCP, so it's looked up from the free
 [iTunes Search API](https://performance-partners.apple.com/search-api) using the
 artist and track name. Searching by track is markedly more reliable than by
