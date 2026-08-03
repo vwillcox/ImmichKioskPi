@@ -54,6 +54,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   String? _hud;
   Timer? _hudTimer;
   double _volume = 100;
+  double _volumeBeforeMute = 100;
+  bool get _muted => _volume <= 0;
+
+  /// Mute drops the volume to zero and remembers where it was, so unmuting
+  /// returns to the same level.
+  void _toggleMute() {
+    setState(() {
+      if (_muted) {
+        _volume = _volumeBeforeMute > 0 ? _volumeBeforeMute : 100;
+      } else {
+        _volumeBeforeMute = _volume;
+        _volume = 0;
+      }
+    });
+    _player.setVolume(_volume);
+    _showHud(_muted ? 'Muted' : 'Volume ${_volume.round()}%');
+  }
   Duration _dragStartPosition = Duration.zero;
   bool _zoomed = false;
 
@@ -179,9 +196,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           final h = MediaQuery.of(context).size.height;
           final next = (_volume - (d.delta.dy / h) * 200).clamp(0.0, 100.0);
           if ((next - _volume).abs() < 0.5) return;
-          _volume = next;
+          setState(() => _volume = next);
+          if (_volume > 0) _volumeBeforeMute = _volume;
           _player.setVolume(_volume);
-          _showHud('Volume ${_volume.round()}%');
+          _showHud(_volume <= 0 ? 'Muted' : 'Volume ${_volume.round()}%');
         },
         onVerticalDragEnd: _zoomed ? null : (d) {
           if ((d.primaryVelocity ?? 0) > 700) Navigator.of(context).maybePop();
@@ -259,6 +277,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     rate: _rate,
                     fmt: _fmt,
                     onPlayPause: _player.playOrPause,
+                    volume: _volume,
+                    muted: _muted,
+                    onToggleMute: _toggleMute,
                     onSeekStart: () => setState(() => _seeking = true),
                     onSeekChanged: (v) => setState(
                         () => _position = Duration(milliseconds: v.toInt())),
@@ -314,6 +335,9 @@ class _BottomControls extends StatelessWidget {
   final double rate;
   final String Function(Duration) fmt;
   final VoidCallback onPlayPause;
+  final double volume;
+  final bool muted;
+  final VoidCallback onToggleMute;
   final VoidCallback onSeekStart;
   final ValueChanged<double> onSeekChanged;
   final ValueChanged<double> onSeekEnd;
@@ -328,6 +352,9 @@ class _BottomControls extends StatelessWidget {
     required this.rate,
     required this.fmt,
     required this.onPlayPause,
+    required this.volume,
+    required this.muted,
+    required this.onToggleMute,
     required this.onSeekStart,
     required this.onSeekChanged,
     required this.onSeekEnd,
@@ -392,6 +419,18 @@ class _BottomControls extends StatelessWidget {
                 ),
               ),
               Text(fmt(duration), style: const TextStyle(color: Colors.white)),
+              const SizedBox(width: 8),
+              IconButton(
+                iconSize: 38,
+                tooltip: muted ? 'Unmute' : 'Mute',
+                icon: Icon(
+                  muted
+                      ? Icons.volume_off
+                      : (volume < 50 ? Icons.volume_down : Icons.volume_up),
+                  color: muted ? const Color(0xFFFF8A8A) : Colors.white,
+                ),
+                onPressed: onToggleMute,
+              ),
             ],
           ),
         ],
