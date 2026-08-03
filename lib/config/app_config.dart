@@ -174,6 +174,10 @@ class AppConfig {
   WeatherSettings weather;
   NowPlayingSettings nowPlaying;
 
+  /// Video player volume (0-100) and mute, remembered between videos.
+  double videoVolume;
+  bool videoMuted;
+
   AppConfig({
     this.immichUrl = '',
     this.apiKey = '',
@@ -182,6 +186,8 @@ class AppConfig {
     SlideshowSettings? slideshow,
     WeatherSettings? weather,
     NowPlayingSettings? nowPlaying,
+    this.videoVolume = 100,
+    this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
         weather = weather ?? WeatherSettings(),
         nowPlaying = nowPlaying ?? NowPlayingSettings();
@@ -203,6 +209,8 @@ class AppConfig {
       nowPlaying: j['nowPlaying'] is Map<String, dynamic>
           ? NowPlayingSettings.fromJson(j['nowPlaying'] as Map<String, dynamic>)
           : NowPlayingSettings(),
+      videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
+      videoMuted: j['videoMuted'] as bool? ?? false,
     );
   }
 
@@ -214,5 +222,7 @@ class AppConfig {
         'slideshow': slideshow.toJson(),
         'weather': weather.toJson(),
         'nowPlaying': nowPlaying.toJson(),
+        'videoVolume': videoVolume,
+        'videoMuted': videoMuted,
       };
 }

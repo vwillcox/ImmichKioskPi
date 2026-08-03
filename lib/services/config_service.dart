@@ -79,6 +79,13 @@ class ConfigService extends ChangeNotifier {
     await save();
   }
 
+  /// Remember the video player's level between videos (and restarts).
+  Future<void> setVideoAudio(double volume, bool muted) async {
+    _config.videoVolume = volume;
+    _config.videoMuted = muted;
+    await save();
+  }
+
   Future<void> updateSlideshow(SlideshowSettings s) async {
     _config.slideshow = s;
     await save();

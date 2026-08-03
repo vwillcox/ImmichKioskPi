@@ -17,7 +17,8 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 - Browse all your Immich albums with cover thumbnails
 - Full-screen viewer with pinch-zoom, double-tap zoom and swipe
 - Video playback via libmpv with a **playback-speed selector** (0.25×–2×),
-  scrub, zoom, and volume with a **mute button**
+  scrub, zoom, and a vertical **volume slider with mute** — the level and mute
+  state carry over to the next video
 - Handles portrait and landscape media without cropping
 
 **Slideshow**
@@ -318,6 +319,7 @@ home screen; tap it and enter your PIN.
 | Video | drag horizontally | scrub |
 | Video | drag vertically | volume |
 | Video | tap the speaker icon | mute / unmute |
+| Video | drag the right-edge slider | volume |
 | Video | swipe down | close |
 | Weather panel | tap | expand / collapse the forecast |
 | Now playing panel | tap | expand / collapse the player |

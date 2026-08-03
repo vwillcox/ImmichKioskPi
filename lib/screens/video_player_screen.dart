@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:provider/provider.dart';
+
 import '../models/immich_models.dart';
+import '../services/config_service.dart';
 import '../services/media_source.dart';
 import '../widgets/big_back_button.dart';
 
@@ -55,21 +58,33 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   Timer? _hudTimer;
   double _volume = 100;
   double _volumeBeforeMute = 100;
-  bool get _muted => _volume <= 0;
+  bool _muted = false;
 
   /// Mute drops the volume to zero and remembers where it was, so unmuting
   /// returns to the same level.
   Future<void> _toggleMute() async {
     setState(() {
-      if (_muted) {
+      _muted = !_muted;
+      if (!_muted && _volume <= 0) {
         _volume = _volumeBeforeMute > 0 ? _volumeBeforeMute : 100;
-      } else {
-        _volumeBeforeMute = _volume;
-        _volume = 0;
       }
     });
     await _applyVolume();
     _showHud(_muted ? 'Muted' : 'Volume ${_volume.round()}%');
+  }
+
+  /// Change the level from the slider. Moving it off zero also unmutes.
+  Future<void> _setVolume(double v) async {
+    setState(() {
+      _volume = v.clamp(0, 100);
+      if (_volume > 0) {
+        _volumeBeforeMute = _volume;
+        _muted = false;
+      } else {
+        _muted = true;
+      }
+    });
+    await _applyVolume();
   }
 
   /// Apply the level to the player. As well as mpv's `volume`, this sets mpv's
@@ -77,7 +92,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   /// this hardware, and `mute` silences the output regardless of how the
   /// volume scale is being applied.
   Future<void> _applyVolume() async {
-    await _player.setVolume(_volume);
+    await _player.setVolume(_muted ? 0 : _volume);
     final platform = _player.platform;
     if (platform is NativePlayer) {
       try {
@@ -86,6 +101,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         debugPrint('mute property error: $e');
       }
     }
+    // Remember the level for the next video.
+    unawaited(context.read<ConfigService>().setVideoAudio(_volume, _muted));
   }
   Duration _dragStartPosition = Duration.zero;
   bool _zoomed = false;
@@ -124,6 +141,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   Future<void> _open() async {
+    final cfg = context.read<ConfigService>().config;
+    _volume = cfg.videoVolume;
+    _muted = cfg.videoMuted;
+    if (_volume > 0) _volumeBeforeMute = _volume;
     if (widget.onBeforePlay != null) {
       await widget.onBeforePlay!();
     }
@@ -131,6 +152,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       widget.source.videoUrl(widget.asset.id),
       httpHeaders: widget.source.authHeaders,
     ));
+    await _applyVolume();
   }
 
   void _onZoomChanged() {
@@ -212,10 +234,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           final h = MediaQuery.of(context).size.height;
           final next = (_volume - (d.delta.dy / h) * 200).clamp(0.0, 100.0);
           if ((next - _volume).abs() < 0.5) return;
-          setState(() => _volume = next);
-          if (_volume > 0) _volumeBeforeMute = _volume;
-          unawaited(_applyVolume());
-          _showHud(_volume <= 0 ? 'Muted' : 'Volume ${_volume.round()}%');
+          unawaited(_setVolume(next));
+          _showHud(next <= 0 ? 'Muted' : 'Volume ${next.round()}%');
         },
         onVerticalDragEnd: _zoomed ? null : (d) {
           if ((d.primaryVelocity ?? 0) > 700) Navigator.of(context).maybePop();
@@ -304,6 +324,30 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                       setState(() => _seeking = false);
                     },
                     onRate: _setRate,
+                  ),
+                ),
+              ),
+            ),
+
+            // Vertical volume slider pinned to the right edge, with mute
+            // beneath it. Positioned with right/top/bottom and no width, so it
+            // hugs its content instead of being stretched across the Stack.
+            Positioned(
+              right: 20,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: AnimatedOpacity(
+                  opacity: _controlsVisible ? 1 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: IgnorePointer(
+                    ignoring: !_controlsVisible,
+                    child: _VolumeColumn(
+                      volume: _volume,
+                      muted: _muted,
+                      onChanged: (v) => _setVolume(v),
+                      onToggleMute: _toggleMute,
+                    ),
                   ),
                 ),
               ),
@@ -448,6 +492,82 @@ class _BottomControls extends StatelessWidget {
                 onPressed: onToggleMute,
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Vertical volume slider with a mute button underneath, sized for fingers.
+class _VolumeColumn extends StatelessWidget {
+  final double volume;
+  final bool muted;
+  final ValueChanged<double> onChanged;
+  final VoidCallback onToggleMute;
+
+  const _VolumeColumn({
+    required this.volume,
+    required this.muted,
+    required this.onChanged,
+    required this.onToggleMute,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.66),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            muted ? '—' : '${volume.round()}',
+            style: const TextStyle(color: Colors.white, fontSize: 18),
+          ),
+          const SizedBox(height: 6),
+          // A vertical Slider: rotate a horizontal one a quarter turn so the
+          // value increases upwards.
+          RotatedBox(
+            quarterTurns: 3,
+            child: SizedBox(
+              width: 300,
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 8,
+                  activeTrackColor: muted ? Colors.white24 : accent,
+                  inactiveTrackColor: Colors.white24,
+                  thumbColor: muted ? Colors.white54 : accent,
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 15),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 28),
+                ),
+                child: Slider(
+                  min: 0,
+                  max: 100,
+                  value: muted ? 0 : volume.clamp(0, 100),
+                  onChanged: onChanged,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          IconButton(
+            iconSize: 34,
+            tooltip: muted ? 'Unmute' : 'Mute',
+            icon: Icon(
+              muted
+                  ? Icons.volume_off
+                  : (volume < 50 ? Icons.volume_down : Icons.volume_up),
+              color: muted ? const Color(0xFFFF8A8A) : Colors.white,
+            ),
+            onPressed: onToggleMute,
           ),
         ],
       ),
