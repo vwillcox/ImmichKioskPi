@@ -341,10 +341,14 @@ Two constraints worth knowing, both from Alexa rather than this project:
   lease change silently breaks it. A reservation on the router is the tidiest
   way; `emulated_hue`'s `host_ip` must match.
 
-**Nothing wakes the panel on touch.** Once the output is powered down, the
-compositor isn't drawing and a tap won't bring it back — turning it on again
-means asking Alexa, or hitting `/screen/on`. Waking on touch would need a small
-daemon watching the touchscreen's evdev device.
+**Touch wakes it again.** Powering the output down stops the compositor
+drawing, and nothing brings it back on its own, so `screen_control.py` also
+watches the touchscreen and turns the panel on when it sees input. It picks its
+devices from `/proc/bus/input/devices` — anything with a `mouse` handler, which
+is the touch panel and any real mouse. Keyboard-style devices are deliberately
+excluded: the paired phone's AVRCP media keys appear as one, and a track change
+shouldn't wake the screen. Reading the touchscreen needs membership of the
+`input` group.
 
 ### TV Remote button
 
