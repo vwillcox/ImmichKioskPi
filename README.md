@@ -307,6 +307,51 @@ it doesn't.
 If you add a dongle, note that BlueZ only powers extra controllers at boot when
 `AutoEnable=true` is set in `/etc/bluetooth/main.conf`.
 
+### Turning the screen off with Alexa
+
+The panel can be switched off by voice, with no cloud account, no Amazon
+developer account and nothing exposed to the internet. Three pieces:
+
+1. **`deploy/screen_control.py`** — a small HTTP service on the host. Home
+   Assistant runs in a container and can't reach the host's Wayland session, so
+   it can't call `wlopm` itself. This runs as the user who owns that session and
+   binds to localhost only:
+
+   ```
+   /screen                 state as JSON
+   /screen/on              /screen/off      /screen/toggle
+   /screen/brightness?value=0-100
+   ```
+
+   Install it alongside the kiosk unit:
+
+   ```bash
+   cp deploy/screen-control.service ~/.config/systemd/user/
+   systemctl --user enable --now screen-control.service
+   ```
+
+2. **A `command_line` switch in Home Assistant** that curls it. Home Assistant
+   uses host networking, so `127.0.0.1:8765` reaches the host service.
+
+3. **`emulated_hue`**, which presents that one switch to Alexa as a Philips Hue
+   V1 bridge. Alexa has native Hue support, so nothing else is needed. Say
+   *"Alexa, discover devices"*, then *"Alexa, turn off the kiosk screen"*.
+
+Both YAML blocks are in `configuration.yaml`; see the comments there.
+
+Two constraints worth knowing, both from Alexa rather than this project:
+
+- **It must listen on port 80.** Amazon stopped talking to other ports in the
+  August 2019 Echo firmware.
+- **The Pi needs a fixed address.** Alexa caches the bridge by IP, so a DHCP
+  lease change silently breaks it. A reservation on the router is the tidiest
+  way; `emulated_hue`'s `host_ip` must match.
+
+**Nothing wakes the panel on touch.** Once the output is powered down, the
+compositor isn't drawing and a tap won't bring it back — turning it on again
+means asking Alexa, or hitting `/screen/on`. Waking on touch would need a small
+daemon watching the touchscreen's evdev device.
+
 ### TV Remote button
 
 If you run a companion remote-control app on the same Pi, a **TV Remote** icon

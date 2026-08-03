@@ -1,0 +1,17 @@
+[Unit]
+Description=ImmichKioskPi display control (HTTP, for Home Assistant)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+# Same session plumbing as the kiosk unit: %h = this user's home directory,
+# %U = this user's UID, so the unit works for any username.
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=WAYLAND_DISPLAY=wayland-0
+ExecStart=/usr/bin/python3 %h/immich_kiosk_pi/deploy/screen_control.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
