@@ -351,14 +351,24 @@ Two constraints worth knowing, both from Alexa rather than this project:
   lease change silently breaks it. A reservation on the router is the tidiest
   way; `emulated_hue`'s `host_ip` must match.
 
-**Touch wakes it again.** Powering the output down stops the compositor
-drawing, and nothing brings it back on its own, so `screen_control.py` also
-watches the touchscreen and turns the panel on when it sees input. It picks its
-devices from `/proc/bus/input/devices` — anything with a `mouse` handler, which
-is the touch panel and any real mouse. Keyboard-style devices are deliberately
-excluded: the paired phone's AVRCP media keys appear as one, and a track change
-shouldn't wake the screen. Reading the touchscreen needs membership of the
-`input` group.
+**Touch wakes it again — which is why "off" dims rather than powers down.**
+Cutting the DSI output also cuts power to the touch controller, so the panel
+stops reporting touches altogether and nothing in software can wake it. Measured
+on this display: 13 touch events with the output on, none at all with it off.
+
+So `/screen/off` sets the backlight to zero and leaves the output powered, and
+`screen_control.py` watches the touchscreen to turn it back up. `/screen/off?deep=1`
+still powers the output right down, for when the extra saving matters more than
+being able to wake it by hand.
+
+Devices to watch come from `/proc/bus/input/devices` — anything with a `mouse`
+handler, which is the touch panel and any real mouse. Keyboard-style devices are
+deliberately excluded: the paired phone's AVRCP media keys appear as one, and a
+track change shouldn't wake the screen. Reading the touchscreen needs membership
+of the `input` group.
+
+Power changes and wakes are recorded in `~/.cache/immich_kiosk_pi/screen_control.log`,
+which is the quickest way to tell whether a touch was seen at all.
 
 ### TV Remote button
 

@@ -32,6 +32,29 @@ from urllib.parse import urlparse, parse_qs
 
 LISTEN = ("127.0.0.1", 8765)
 
+# Power changes and wakes are rare and worth a record — without one, working out
+# why the screen did or didn't come back means catching it live. Routine state
+# polling is not logged; Home Assistant does that every 30 seconds.
+LOG = os.path.expanduser("~/.cache/immich_kiosk_pi/screen_control.log")
+_log_lock = threading.Lock()
+
+
+def log(message):
+    line = time.strftime("%Y-%m-%d %H:%M:%S ") + message + "\n"
+    try:
+        with _log_lock:
+            os.makedirs(os.path.dirname(LOG), exist_ok=True)
+            # Keep it small; this runs for months on a kiosk.
+            if os.path.exists(LOG) and os.path.getsize(LOG) > 64_000:
+                with open(LOG) as f:
+                    tail = f.readlines()[-200:]
+                with open(LOG, "w") as f:
+                    f.writelines(tail)
+            with open(LOG, "a") as f:
+                f.write(line)
+    except OSError:
+        pass
+
 # wlopm needs to talk to the compositor the kiosk user is logged into.
 os.environ.setdefault("WAYLAND_DISPLAY", "wayland-0")
 os.environ.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
@@ -53,12 +76,45 @@ def outputs():
     return found
 
 
-def set_power(on):
-    """Switch every output. Returns the state actually observed afterwards."""
+def set_output(on):
+    """Power every output up or down."""
     flag = "--on" if on else "--off"
     for name in outputs():
         _wlopm([flag, name])
     return outputs()
+
+
+# Brightness to come back to. Seeded from whatever the panel is showing now.
+_restore_to = 100
+
+
+def set_power(on, deep=False):
+    """Turn the display off or on.
+
+    "Off" means backlight to zero, leaving the output powered. That matters:
+    cutting the DSI output also cuts power to the touch controller, so the panel
+    stops reporting touches entirely and nothing short of another command can
+    bring it back. Measured on this display — 13 touch events with the output
+    on, none at all with it off.
+
+    `deep` restores the old behaviour and genuinely powers the output down. It
+    saves a little more, but the screen can then only be woken by Alexa or by
+    /screen/on.
+    """
+    global _restore_to
+    if on:
+        set_output(True)
+        set_brightness(_restore_to)
+        log(f"on (brightness {_restore_to})")
+    else:
+        current = brightness()
+        if current:
+            _restore_to = current
+        set_brightness(0)
+        if deep:
+            set_output(False)
+        log("off deep - touch cannot wake this" if deep else "off (backlight 0)")
+    return state()
 
 
 def _backlight():
@@ -97,10 +153,13 @@ def set_brightness(percent):
 
 def state():
     powered = outputs()
+    level = brightness()
     return {
-        "on": any(powered.values()),
+        # Visibly on: a powered output showing a lit backlight.
+        "on": any(powered.values()) and (level is None or level > 0),
         "outputs": powered,
-        "brightness": brightness(),
+        "brightness": level,
+        "restoreTo": _restore_to,
     }
 
 
@@ -129,7 +188,8 @@ class Handler(BaseHTTPRequestHandler):
                 waker.note_power(True)
                 return self._reply(state())
             if path == "/screen/off":
-                set_power(False)
+                deep = parse_qs(url.query).get("deep", ["0"])[0] not in ("0", "")
+                set_power(False, deep=deep)
                 waker.note_power(False)
                 return self._reply(state())
             if path == "/screen/toggle":
@@ -141,7 +201,11 @@ class Handler(BaseHTTPRequestHandler):
                 raw = parse_qs(url.query).get("value", [None])[0]
                 if raw is None or not re.fullmatch(r"\d{1,3}", raw):
                     return self._reply({"error": "value must be 0-100"}, 400)
-                set_brightness(int(raw))
+                global _restore_to
+                value = int(raw)
+                set_brightness(value)
+                if value:
+                    _restore_to = value
                 return self._reply(state())
             self._reply({"error": "not found"}, 404)
         except Exception as exc:  # noqa: BLE001 - report, don't take the server down
@@ -216,7 +280,7 @@ class Waker:
             fresh = time.monotonic() - self._checked < self.RECHECK
             if fresh:
                 return self._on
-        powered = any(outputs().values())
+        powered = state()["on"]
         self.note_power(powered)
         return powered
 
@@ -246,6 +310,7 @@ class Waker:
                 if self._settling():
                     continue
                 if not self._is_on():
+                    log("touch detected while off - waking")
                     set_power(True)
                     self.note_power(True)
 
@@ -254,5 +319,9 @@ waker = Waker()
 
 
 if __name__ == "__main__":
+    # Come back to whatever the panel is set to now, not an arbitrary default.
+    _restore_to = brightness() or 100
+    devices = pointer_devices()
+    log(f"started; watching {devices or 'NO POINTER DEVICES'} for touch")
     threading.Thread(target=waker.run, daemon=True).start()
     ThreadingHTTPServer(LISTEN, Handler).serve_forever()
