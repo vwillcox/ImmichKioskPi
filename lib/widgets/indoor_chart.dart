@@ -95,12 +95,17 @@ class _ChartPainter extends CustomPainter {
       ..strokeWidth = 1;
     final labelStyle = const TextStyle(color: Colors.white54, fontSize: 13);
 
+    // Indoors the whole range can be under a degree, where whole numbers would
+    // print the same label more than once.
+    final decimals = (maxT - minT) < 4 ? 1 : 0;
+
     // Horizontal gridlines + temperature axis labels.
     for (var i = 0; i <= 3; i++) {
       final v = minT + (maxT - minT) * i / 3;
       final y = yForTemp(v);
       canvas.drawLine(Offset(plot.left, y), Offset(plot.right, y), grid);
-      _text(canvas, '${v.round()}°', Offset(4, y - 9), labelStyle);
+      _text(canvas, '${v.toStringAsFixed(decimals)}°', Offset(4, y - 9),
+          labelStyle);
       if (showHumidity) {
         final hv = (i / 3 * 100).round();
         _text(canvas, '$hv%', Offset(plot.right + 6, y - 9),
