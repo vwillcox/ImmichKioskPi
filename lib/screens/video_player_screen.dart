@@ -59,7 +59,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   /// Mute drops the volume to zero and remembers where it was, so unmuting
   /// returns to the same level.
-  void _toggleMute() {
+  Future<void> _toggleMute() async {
     setState(() {
       if (_muted) {
         _volume = _volumeBeforeMute > 0 ? _volumeBeforeMute : 100;
@@ -68,8 +68,24 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         _volume = 0;
       }
     });
-    _player.setVolume(_volume);
+    await _applyVolume();
     _showHud(_muted ? 'Muted' : 'Volume ${_volume.round()}%');
+  }
+
+  /// Apply the level to the player. As well as mpv's `volume`, this sets mpv's
+  /// dedicated `mute` property: volume alone was reported as still audible on
+  /// this hardware, and `mute` silences the output regardless of how the
+  /// volume scale is being applied.
+  Future<void> _applyVolume() async {
+    await _player.setVolume(_volume);
+    final platform = _player.platform;
+    if (platform is NativePlayer) {
+      try {
+        await platform.setProperty('mute', _muted ? 'yes' : 'no');
+      } catch (e) {
+        debugPrint('mute property error: $e');
+      }
+    }
   }
   Duration _dragStartPosition = Duration.zero;
   bool _zoomed = false;
@@ -198,7 +214,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           if ((next - _volume).abs() < 0.5) return;
           setState(() => _volume = next);
           if (_volume > 0) _volumeBeforeMute = _volume;
-          _player.setVolume(_volume);
+          unawaited(_applyVolume());
           _showHud(_volume <= 0 ? 'Muted' : 'Volume ${_volume.round()}%');
         },
         onVerticalDragEnd: _zoomed ? null : (d) {
