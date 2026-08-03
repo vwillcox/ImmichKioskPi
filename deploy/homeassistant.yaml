@@ -1,0 +1,40 @@
+# Home Assistant configuration for kiosk screen control.
+#
+# Append these blocks to Home Assistant's configuration.yaml. They are kept
+# here so the setup can be rebuilt from the repo rather than living only on the
+# Pi's disk. Restart Home Assistant after editing, then say
+# "Alexa, discover devices".
+
+# Turns the display on and off. Home Assistant runs in a container and cannot
+# reach the host's Wayland session, so it can't call wlopm itself; the host runs
+# deploy/screen_control.py and this drives that over localhost. Home Assistant
+# uses host networking, so 127.0.0.1 is the Pi itself.
+command_line:
+  - switch:
+      name: Kiosk screen
+      unique_id: immich_kiosk_screen
+      command_on: "curl -s -o /dev/null --max-time 5 http://127.0.0.1:8765/screen/on"
+      command_off: "curl -s -o /dev/null --max-time 5 http://127.0.0.1:8765/screen/off"
+      command_state: "curl -s --max-time 5 http://127.0.0.1:8765/screen"
+      value_template: '{{ "true" if value_json.on else "false" }}'
+      scan_interval: 30
+
+# Presents that one switch to Alexa as a Philips Hue V1 bridge, which Alexa
+# supports natively — no skill, no account linking, nothing internet-facing.
+#
+# host_ip must match the Pi's address, and that address must not change: Alexa
+# caches the bridge by IP. Set a DHCP reservation on the router.
+# listen_port must be 80 — Alexa stopped talking to other ports in 2019.
+emulated_hue:
+  host_ip: 192.168.1.176
+  listen_port: 80
+  expose_by_default: false
+  entities:
+    switch.kiosk_screen:
+      name: "Kiosk screen"
+      hidden: false
+
+# Home Assistant writes no home-assistant.log at all unless `logger:` is
+# configured, which makes any of the above very hard to diagnose.
+logger:
+  default: info

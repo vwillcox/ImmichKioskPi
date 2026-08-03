@@ -337,7 +337,13 @@ developer account and nothing exposed to the internet. Three pieces:
    V1 bridge. Alexa has native Hue support, so nothing else is needed. Say
    *"Alexa, discover devices"*, then *"Alexa, turn off the kiosk screen"*.
 
-Both YAML blocks are in `configuration.yaml`; see the comments there.
+Both YAML blocks are in `deploy/homeassistant.yaml`, ready to append to Home
+Assistant's `configuration.yaml`.
+
+Name the device in the Alexa app carefully: if the name collides with an Echo,
+a speaker or a group, Alexa matches that instead and the light is never
+reached — the app button keeps working, so it looks like a voice problem when
+it isn't. "Kiosk" alone collided here; "Kiosk screen" was fine.
 
 Two constraints worth knowing, both from Alexa rather than this project:
 
