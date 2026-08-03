@@ -57,16 +57,23 @@ class IndoorReading {
 /// of its own, so the chart fills out from the moment the kiosk starts.
 class IndoorSensorService extends ChangeNotifier {
   static const String _bluez = 'org.bluez';
-  static const String _adapterPath = '/org/bluez/hci0';
   static const String _deviceIface = 'org.bluez.Device1';
   static const String _adapterIface = 'org.bluez.Adapter1';
+  static const String _transportIface = 'org.bluez.MediaTransport1';
+  static const String _playerIface = 'org.bluez.MediaPlayer1';
+
+  /// Chosen at start-up by [_pickAdapter]; null until then.
+  String? _adapterPath;
+  String? get adapterPath => _adapterPath;
 
   /// Govee thermometer/hygrometer models advertise as GVH5xxx.
   static final RegExp _namePattern = RegExp(r'^GVH5\d{3}');
 
-  /// How often to wake the radio and take a reading. BLE scanning and A2DP
-  /// share one antenna, so a permanent scan makes music from the paired phone
-  /// stutter. Indoor temperature moves slowly — hourly is plenty.
+  /// How often to wake the radio and take a reading. On the Pi's built-in
+  /// controller, BLE scanning and A2DP share one antenna, so a permanent scan
+  /// makes music from the paired phone stutter. [_pickAdapter] avoids that
+  /// where it can, but indoor temperature moves slowly enough that scanning
+  /// hourly costs nothing either way.
   static const Duration _scanPeriod = Duration(hours: 1);
 
   /// Give up on a scan if the sensor isn't heard; it normally answers within a
@@ -116,6 +123,8 @@ class IndoorSensorService extends ChangeNotifier {
     try {
       _client = DBusClient.system();
       _watch();
+      _adapterPath = await _pickAdapter();
+      debugPrint('indoor sensor scanning on $_adapterPath');
       // Devices BlueZ already knows about cost no radio time to read.
       await _seedFromKnownDevices();
       await _scanOnce();
@@ -126,7 +135,42 @@ class IndoorSensorService extends ChangeNotifier {
   }
 
   DBusRemoteObject get _adapter => DBusRemoteObject(_client!,
-      name: _bluez, path: DBusObjectPath(_adapterPath));
+      name: _bluez, path: DBusObjectPath(_adapterPath!));
+
+  /// Pick which controller to scan on.
+  ///
+  /// Scanning on the same radio that is carrying Bluetooth audio makes it
+  /// stutter, so a controller with an active audio connection is never chosen.
+  /// Beyond that the highest-numbered one wins: the Pi's built-in radio is
+  /// always hci0, so a plugged-in USB dongle sorts after it and gets the BLE
+  /// work — which is the point of having one.
+  Future<String> _pickAdapter() async {
+    final root = DBusRemoteObjectManager(_client!,
+        name: _bluez, path: DBusObjectPath('/'));
+    final objects = await root.getManagedObjects();
+
+    final adapters = <String>[];
+    final carryingAudio = <String>{};
+    for (final entry in objects.entries) {
+      final path = entry.key.value;
+      if (entry.value.containsKey(_adapterIface)) adapters.add(path);
+      if (entry.value.containsKey(_transportIface) ||
+          entry.value.containsKey(_playerIface)) {
+        final owner = RegExp(r'^(/org/bluez/hci\d+)/').firstMatch(path);
+        if (owner != null) carryingAudio.add(owner.group(1)!);
+      }
+    }
+    return chooseAdapter(adapters, carryingAudio);
+  }
+
+  /// The choice itself, split out from the D-Bus plumbing so it can be tested.
+  @visibleForTesting
+  static String chooseAdapter(List<String> adapters, Set<String> carryingAudio) {
+    if (adapters.isEmpty) return '/org/bluez/hci0';
+    final sorted = [...adapters]..sort();
+    final free = sorted.where((a) => !carryingAudio.contains(a)).toList();
+    return free.isNotEmpty ? free.last : sorted.last;
+  }
 
   /// Open the radio just long enough to hear one advertisement.
   ///
@@ -134,7 +178,7 @@ class IndoorSensorService extends ChangeNotifier {
   /// that discovery to the D-Bus connection that started it — so this client
   /// stays alive between scans even though discovery does not.
   Future<void> _scanOnce() async {
-    if (_scanning || _client == null) return;
+    if (_scanning || _client == null || _adapterPath == null) return;
     _scanning = true;
     try {
       await _adapter.callMethod(
@@ -162,7 +206,7 @@ class IndoorSensorService extends ChangeNotifier {
   Future<void> _stopScan() async {
     _scanDeadline?.cancel();
     _scanDeadline = null;
-    if (!_scanning) return;
+    if (!_scanning || _adapterPath == null) return;
     _scanning = false;
     try {
       await _adapter.callMethod(_adapterIface, 'StopDiscovery', [],

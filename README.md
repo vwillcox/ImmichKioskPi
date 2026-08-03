@@ -291,12 +291,21 @@ GATT protocol. Instead the kiosk records what it sees and charts the last 24
 hours, so the graph fills out from first run. Samples are kept across restarts,
 about a month of them.
 
-**Scanning is deliberately infrequent.** BLE scanning and Bluetooth audio share
-one antenna on the Pi, so leaving a discovery running permanently makes music
-from the paired phone break up. The kiosk instead wakes the radio once an hour,
-stops as soon as it hears the sensor (usually a few seconds), and gives up after
-45 seconds if it doesn't. Indoor temperature moves slowly enough that this costs
-nothing in practice.
+**Which radio it scans on.** BLE scanning and Bluetooth audio share one antenna
+on the Pi's built-in controller, so scanning there makes music from the paired
+phone break up. The kiosk picks its controller automatically: it never uses one
+that currently carries an audio connection, and otherwise takes the
+highest-numbered one — the built-in radio is always `hci0`, so a plugged-in USB
+BLE dongle wins. With a dongle fitted, audio and sensor scanning stop competing
+entirely.
+
+**Scanning is also deliberately infrequent**, which keeps things well-behaved
+even on a single radio. The kiosk wakes the radio once an hour, stops as soon as
+it hears the sensor (usually under a second), and gives up after 45 seconds if
+it doesn't.
+
+If you add a dongle, note that BlueZ only powers extra controllers at boot when
+`AutoEnable=true` is set in `/etc/bluetooth/main.conf`.
 
 ### TV Remote button
 
