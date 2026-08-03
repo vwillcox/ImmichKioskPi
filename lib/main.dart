@@ -38,9 +38,9 @@ void main() async {
   final weather = WeatherService(config);
   unawaited(weather.refresh());
 
-  // Govee BLE thermometer, read passively from its advertisements.
+  // Indoor temperature, read from Home Assistant rather than scanned for.
   final indoor = IndoorSensorService();
-  unawaited(indoor.start());
+  unawaited(indoor.start(config.config.homeAssistant));
 
   // Reads what the paired phone is playing over Bluetooth AVRCP.
   final nowPlaying = NowPlayingService()

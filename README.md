@@ -270,42 +270,30 @@ album, because AVRCP album strings often carry suffixes like
 
 ### Indoor temperature sensor
 
-A Govee H510x (H5101/H5102/H5104/H5177) thermometer is picked up automatically:
-it broadcasts its reading in its BLE advertisements, so nothing needs pairing.
-Just have one in range with batteries in.
+The indoor reading comes from a Govee H510x (H5101/H5102/H5104/H5177), which
+broadcasts temperature and humidity in its Bluetooth LE advertisements.
 
-Govee packs both readings into a 3-byte big-endian value:
+**The kiosk doesn't scan for it.** Home Assistant already watches the same
+sensor full-time via its `govee_ble` integration, so the kiosk reads the value
+from Home Assistant's REST API instead. Two things scanning the same air gained
+nothing, and BLE scanning on the Pi's built-in radio makes Bluetooth audio
+stutter, because that radio shares one antenna with A2DP.
 
-```
-temperature °C = (value >> 0 & 0x7FFFFF) ~/ 1000 / 10    # bit 0x800000 = negative
-humidity %     = (value % 1000) / 10
-```
+Configure it under **Settings → Home Assistant**: server URL, a long-lived
+access token (Home Assistant profile → Security → Long-lived access tokens) and
+the entity IDs. Without a token the indoor reading is simply hidden.
 
-Note the **integer** division for temperature: dividing by 10000 instead drags
-the humidity digits in as false precision (29.0446 °C instead of 29.0 °C). This
-matches [ble_monitor](https://github.com/custom-components/ble_monitor), and was
-checked against a real H5104's own display.
+The 24-hour chart in the expanded weather panel comes from Home Assistant's
+history API, thinned to roughly one point per ten minutes so the chart doesn't
+try to draw thousands of segments.
 
-The sensor keeps history internally, but exporting it needs Govee's proprietary
-GATT protocol. Instead the kiosk records what it sees and charts the last 24
-hours, so the graph fills out from first run. Samples are kept across restarts,
-about a month of them.
-
-**Which radio it scans on.** BLE scanning and Bluetooth audio share one antenna
-on the Pi's built-in controller, so scanning there makes music from the paired
-phone break up. The kiosk picks its controller automatically: it never uses one
-that currently carries an audio connection, and otherwise takes the
-highest-numbered one — the built-in radio is always `hci0`, so a plugged-in USB
-BLE dongle wins. With a dongle fitted, audio and sensor scanning stop competing
-entirely.
-
-**Scanning is also deliberately infrequent**, which keeps things well-behaved
-even on a single radio. The kiosk wakes the radio once an hour, stops as soon as
-it hears the sensor (usually under a second), and gives up after 45 seconds if
-it doesn't.
-
-If you add a dongle, note that BlueZ only powers extra controllers at boot when
-`AutoEnable=true` is set in `/etc/bluetooth/main.conf`.
+**If you want Bluetooth audio and BLE sensing at once, use two radios.** A USB
+BLE dongle costs very little and removes the contention entirely: leave the
+built-in `hci0` for audio and give Home Assistant the dongle. In Home
+Assistant, disable the Bluetooth config entry for the built-in adapter —
+it auto-discovers every adapter it finds, so otherwise it will scan on both.
+BlueZ only powers extra controllers at boot when `AutoEnable=true` is set in
+`/etc/bluetooth/main.conf`.
 
 ### Turning the screen off with Alexa
 

@@ -120,6 +120,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const _WeatherSettingsTile(),
 
           const Divider(height: 32),
+          _section('Home Assistant'),
+          const _HomeAssistantSettingsTile(),
+
+          const Divider(height: 32),
           _section('Now playing'),
           const _NowPlayingSettingsTile(),
 
@@ -290,9 +294,10 @@ class _WeatherSettingsTile extends StatelessWidget {
                 color: sensor.available ? const Color(0xFFFF8A65) : null),
             title: const Text('Show indoor temperature'),
             subtitle: Text(sensor.available
-                ? '${sensor.deviceName}: ${sensor.temperatureC!.toStringAsFixed(1)}°C · '
-                    '${sensor.humidity!.round()}% · battery ${sensor.battery}%'
-                : 'No Govee BLE sensor detected nearby'),
+                ? '${sensor.temperatureC!.toStringAsFixed(1)}°C · '
+                    '${sensor.humidity?.round() ?? '—'}% · '
+                    'battery ${sensor.battery ?? '—'}%'
+                : 'Not reading — check the Home Assistant section below'),
             value: s.showIndoor,
             onChanged: (v) {
               s.showIndoor = v;
@@ -605,6 +610,108 @@ class _NowPlayingSettingsTile extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Home Assistant connection, used for the indoor temperature reading.
+class _HomeAssistantSettingsTile extends StatelessWidget {
+  const _HomeAssistantSettingsTile();
+
+  Future<void> _edit(BuildContext context) async {
+    final service = context.read<ConfigService>();
+    final sensor = context.read<IndoorSensorService>();
+    final s = service.config.homeAssistant;
+    final url = TextEditingController(text: s.baseUrl);
+    final token = TextEditingController(text: s.token);
+    final temp = TextEditingController(text: s.temperatureEntity);
+    final hum = TextEditingController(text: s.humidityEntity);
+    final batt = TextEditingController(text: s.batteryEntity);
+
+    Widget field(String label, TextEditingController c, {String? hint}) =>
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: TextField(
+            controller: c,
+            style: const TextStyle(fontSize: 18),
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: hint,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        );
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Home Assistant'),
+        content: SizedBox(
+          width: 640,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'The indoor reading comes from Home Assistant. Create a token '
+                  'under your Home Assistant profile → Security → Long-lived '
+                  'access tokens.',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 14),
+                field('Server', url, hint: 'http://localhost:8123'),
+                field('Long-lived access token', token),
+                field('Temperature entity', temp,
+                    hint: 'sensor.h5104_145e_temperature'),
+                field('Humidity entity', hum),
+                field('Battery entity', batt),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true) return;
+    s.baseUrl = url.text.trim().replaceAll(RegExp(r'/+$'), '');
+    s.token = token.text.trim();
+    s.temperatureEntity = temp.text.trim();
+    s.humidityEntity = hum.text.trim();
+    s.batteryEntity = batt.text.trim();
+    await service.save();
+    // Apply straight away rather than waiting for a restart.
+    sensor.updateSettings(s);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<ConfigService>().config.homeAssistant;
+    final sensor = context.watch<IndoorSensorService>();
+    return ListTile(
+      leading: Icon(Icons.home_outlined,
+          color: sensor.available ? const Color(0xFFFF8A65) : null),
+      title: const Text('Home Assistant'),
+      subtitle: Text(
+        !s.isConfigured
+            ? 'Not configured — no indoor temperature'
+            : sensor.available
+                ? '${s.baseUrl} — reading ${sensor.temperatureC!.toStringAsFixed(1)}°C'
+                : '${s.baseUrl} — configured, but no reading yet',
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _edit(context),
+      isThreeLine: false,
     );
   }
 }

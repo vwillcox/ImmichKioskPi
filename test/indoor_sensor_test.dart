@@ -1,61 +1,34 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_kiosk_pi/services/indoor_sensor_service.dart';
 
-const hci0 = '/org/bluez/hci0'; // Pi's built-in radio — also carries A2DP
-const hci1 = '/org/bluez/hci1'; // USB dongle
-
+/// Home Assistant returns a state change every few seconds for this sensor, so
+/// a 24-hour window is thousands of points. Thinning them keeps the chart's
+/// painter sane without changing what it shows.
 void main() {
-  group('adapter choice', () {
-    test('uses the only controller when there is just one', () {
-      expect(IndoorSensorService.chooseAdapter([hci0], {}), hci0);
-    });
+  final t0 = DateTime(2026, 8, 3, 12);
+  MapEntry<DateTime, double> at(int minutes, double v) =>
+      MapEntry(t0.add(Duration(minutes: minutes)), v);
 
-    test('prefers the USB dongle over the built-in radio', () {
-      expect(IndoorSensorService.chooseAdapter([hci0, hci1], {}), hci1);
-    });
-
-    test('never scans on the controller carrying audio', () {
-      expect(IndoorSensorService.chooseAdapter([hci0, hci1], {hci1}), hci0);
-    });
-
-    test('order of discovery does not matter', () {
-      expect(IndoorSensorService.chooseAdapter([hci1, hci0], {}), hci1);
-    });
-
-    test('falls back to a busy controller rather than giving up', () {
-      expect(
-          IndoorSensorService.chooseAdapter([hci0, hci1], {hci0, hci1}), hci1);
-    });
-
-    test('falls back to hci0 when BlueZ reports no controllers', () {
-      expect(IndoorSensorService.chooseAdapter([], {}), hci0);
-    });
+  test('thins dense points to roughly one per ten minutes', () {
+    final dense = [for (var i = 0; i < 120; i++) at(i, 20 + i * 0.1)];
+    final out = IndoorSensorService.downsample(dense);
+    expect(out.length, 12);
+    expect(out.first.key, t0);
   });
 
-  group('Govee decode', () {
-    test('matches the reading on the device screen', () {
-      // Captured from the real H5104 while its display read 29.3 / 45%.
-      final r = IndoorSensorService.decode([0x01, 0x01, 0x04, 0x7a, 0x4b, 0x08]);
-      expect(r, isNotNull);
-      expect(r!['temp'], closeTo(29.3, 0.001));
-      expect(r['hum'], closeTo(45.1, 0.001));
-      expect(r['batt'], 8);
-    });
+  test('keeps sparse points untouched', () {
+    final sparse = [at(0, 20), at(30, 21), at(75, 22)];
+    expect(IndoorSensorService.downsample(sparse), sparse);
+  });
 
-    test('temperature uses integer division, not 1/10000', () {
-      // Dividing by 10000 would give 29.0446 — humidity digits as false
-      // precision. The temperature is only ever a tenth of a degree.
-      final r = IndoorSensorService.decode([0x01, 0x01, 0x04, 0x6d, 0xce, 0x50]);
-      expect(r!['temp'], closeTo(29.0, 0.001));
-    });
+  test('always keeps the first point', () {
+    // MapEntry has no value equality, so compare the parts.
+    final only = IndoorSensorService.downsample([at(0, 20)]).single;
+    expect(only.key, t0);
+    expect(only.value, 20);
+  });
 
-    test('rejects a payload that is too short to be a reading', () {
-      expect(IndoorSensorService.decode([0x01, 0x01, 0x04]), isNull);
-    });
-
-    test('rejects out-of-range values from a garbled advert', () {
-      expect(IndoorSensorService.decode([0x00, 0x00, 0x7f, 0xff, 0xff, 0x50]),
-          isNull);
-    });
+  test('handles an empty series', () {
+    expect(IndoorSensorService.downsample([]), isEmpty);
   });
 }

@@ -170,6 +170,54 @@ class NowPlayingSettings {
       };
 }
 
+/// Where the indoor temperature comes from.
+///
+/// Home Assistant already watches the Govee sensor over Bluetooth full-time, so
+/// the kiosk reads the value from there rather than scanning for itself. That
+/// keeps one radio owner instead of two, and Home Assistant's history is better
+/// than anything this app kept on its own.
+class HomeAssistantSettings {
+  /// Base URL, no trailing slash. Home Assistant runs on the same Pi.
+  String baseUrl;
+
+  /// Long-lived access token: Home Assistant profile -> Security -> Long-lived
+  /// access tokens. Without one the indoor reading is simply not shown.
+  String token;
+
+  String temperatureEntity;
+  String humidityEntity;
+  String batteryEntity;
+
+  HomeAssistantSettings({
+    this.baseUrl = 'http://localhost:8123',
+    this.token = '',
+    this.temperatureEntity = '',
+    this.humidityEntity = '',
+    this.batteryEntity = '',
+  });
+
+  bool get isConfigured =>
+      baseUrl.isNotEmpty && token.isNotEmpty && temperatureEntity.isNotEmpty;
+
+  factory HomeAssistantSettings.fromJson(Map<String, dynamic> j) =>
+      HomeAssistantSettings(
+        baseUrl: (j['baseUrl'] as String? ?? 'http://localhost:8123')
+            .replaceAll(RegExp(r'/+$'), ''),
+        token: j['token'] as String? ?? '',
+        temperatureEntity: j['temperatureEntity'] as String? ?? '',
+        humidityEntity: j['humidityEntity'] as String? ?? '',
+        batteryEntity: j['batteryEntity'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'baseUrl': baseUrl,
+        'token': token,
+        'temperatureEntity': temperatureEntity,
+        'humidityEntity': humidityEntity,
+        'batteryEntity': batteryEntity,
+      };
+}
+
 class AppConfig {
   String immichUrl;
   String apiKey;
@@ -179,6 +227,7 @@ class AppConfig {
   SlideshowSettings slideshow;
   WeatherSettings weather;
   NowPlayingSettings nowPlaying;
+  HomeAssistantSettings homeAssistant;
 
   /// Video player volume (0-100) and mute, remembered between videos.
   double videoVolume;
@@ -192,11 +241,13 @@ class AppConfig {
     SlideshowSettings? slideshow,
     WeatherSettings? weather,
     NowPlayingSettings? nowPlaying,
+    HomeAssistantSettings? homeAssistant,
     this.videoVolume = 100,
     this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
         weather = weather ?? WeatherSettings(),
-        nowPlaying = nowPlaying ?? NowPlayingSettings();
+        nowPlaying = nowPlaying ?? NowPlayingSettings(),
+        homeAssistant = homeAssistant ?? HomeAssistantSettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -215,6 +266,10 @@ class AppConfig {
       nowPlaying: j['nowPlaying'] is Map<String, dynamic>
           ? NowPlayingSettings.fromJson(j['nowPlaying'] as Map<String, dynamic>)
           : NowPlayingSettings(),
+      homeAssistant: j['homeAssistant'] is Map<String, dynamic>
+          ? HomeAssistantSettings.fromJson(
+              j['homeAssistant'] as Map<String, dynamic>)
+          : HomeAssistantSettings(),
       videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
       videoMuted: j['videoMuted'] as bool? ?? false,
     );
@@ -228,6 +283,7 @@ class AppConfig {
         'slideshow': slideshow.toJson(),
         'weather': weather.toJson(),
         'nowPlaying': nowPlaying.toJson(),
+        'homeAssistant': homeAssistant.toJson(),
         'videoVolume': videoVolume,
         'videoMuted': videoMuted,
       };

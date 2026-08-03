@@ -1,12 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
-import 'package:dbus/dbus.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
 
-import 'media_cache.dart';
+import '../config/app_config.dart';
 
 /// One recorded sample from the indoor sensor.
 class IndoorReading {
@@ -19,366 +16,215 @@ class IndoorReading {
     required this.temperatureC,
     required this.humidity,
   });
-
-  Map<String, dynamic> toJson() => {
-        't': time.millisecondsSinceEpoch,
-        'c': temperatureC,
-        'h': humidity,
-      };
-
-  static IndoorReading? fromJson(dynamic j) {
-    if (j is! Map) return null;
-    final t = j['t'], c = j['c'], h = j['h'];
-    if (t is! num || c is! num || h is! num) return null;
-    return IndoorReading(
-      time: DateTime.fromMillisecondsSinceEpoch(t.toInt()),
-      temperatureC: c.toDouble(),
-      humidity: h.toDouble(),
-    );
-  }
 }
 
-/// Reads a Govee H510x thermometer/hygrometer over Bluetooth LE.
+/// Indoor temperature and humidity, read from Home Assistant.
 ///
-/// The sensor broadcasts its reading in the manufacturer data of its BLE
-/// advertisements, so nothing needs pairing or connecting — the Pi just has to
-/// be scanning. Govee packs temperature and humidity into one 3-byte
-/// big-endian value:
+/// The sensor is a Govee H510x that broadcasts over Bluetooth LE. The kiosk
+/// used to scan for those advertisements itself, but Home Assistant watches the
+/// same sensor full-time on a dedicated BLE dongle, so reading its state is both
+/// simpler and kinder to the radio: two things scanning the same air gained
+/// nothing, and scanning on the Pi's built-in controller makes Bluetooth audio
+/// stutter.
 ///
-///     temperature °C = (value ~/ 1000) / 10
-///     humidity %     = (value % 1000) / 10
-///
-/// with bit 0x800000 marking a negative temperature, followed by a battery
-/// percentage byte. Verified against a real H5104 and its own display:
-/// `01 01 04 7a 4b 08` decodes to 29.3 °C / 45.1 %RH, matching the screen.
-///
-/// The sensor stores its own history internally, but exporting that needs
-/// Govee's proprietary GATT protocol. Instead this records one reading an hour
-/// of its own, so the chart fills out from the moment the kiosk starts.
+/// Home Assistant also keeps the history, so the chart comes from there rather
+/// than from anything recorded on disk here.
 class IndoorSensorService extends ChangeNotifier {
-  static const String _bluez = 'org.bluez';
-  static const String _deviceIface = 'org.bluez.Device1';
-  static const String _adapterIface = 'org.bluez.Adapter1';
-  static const String _transportIface = 'org.bluez.MediaTransport1';
-  static const String _playerIface = 'org.bluez.MediaPlayer1';
+  /// How often to read the current value. Home Assistant updates continuously;
+  /// the widget doesn't need to.
+  static const Duration _pollInterval = Duration(minutes: 2);
 
-  /// Chosen at start-up by [_pickAdapter]; null until then.
-  String? _adapterPath;
-  String? get adapterPath => _adapterPath;
+  /// How much history the expanded panel charts.
+  static const Duration _historyWindow = Duration(hours: 24);
 
-  /// Govee thermometer/hygrometer models advertise as GVH5xxx.
-  static final RegExp _namePattern = RegExp(r'^GVH5\d{3}');
+  /// Refetch history less often than the current value — it's a bigger request
+  /// and a 24-hour chart doesn't visibly change minute to minute.
+  static const Duration _historyInterval = Duration(minutes: 15);
 
-  /// How often to wake the radio and take a reading. On the Pi's built-in
-  /// controller, BLE scanning and A2DP share one antenna, so a permanent scan
-  /// makes music from the paired phone stutter. [_pickAdapter] avoids that
-  /// where it can, but indoor temperature moves slowly enough that scanning
-  /// hourly costs nothing either way.
-  static const Duration _scanPeriod = Duration(hours: 1);
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 5),
+    receiveTimeout: const Duration(seconds: 15),
+  ));
 
-  /// Give up on a scan if the sensor isn't heard; it normally answers within a
-  /// few seconds, and the scan is stopped the moment a reading lands.
-  static const Duration _scanTimeout = Duration(seconds: 45);
-
-  /// A month of hourly samples.
-  static const int _maxSamples = 744;
-
-  /// Ignores repeat advertisements inside a single scan window.
-  static const Duration _sampleInterval = Duration(minutes: 1);
-
-  DBusClient? _client;
-  StreamSubscription<DBusSignal>? _signalSub;
-  Timer? _saveTimer;
-  Timer? _scanTimer;
-  Timer? _scanDeadline;
-  bool _scanning = false;
+  HomeAssistantSettings _settings = HomeAssistantSettings();
+  Timer? _pollTimer;
+  Timer? _historyTimer;
 
   double? _temperatureC;
   double? _humidity;
   int? _battery;
   DateTime? _lastSeen;
-  String _deviceName = '';
 
   double? get temperatureC => _temperatureC;
   double? get humidity => _humidity;
   int? get battery => _battery;
   DateTime? get lastSeen => _lastSeen;
-  String get deviceName => _deviceName;
 
-  /// True when a reading has arrived recently enough to trust — a little over
-  /// two scan periods, so one missed scan doesn't blank the display.
+  /// Shown in settings so it's obvious where the reading comes from.
+  String get deviceName => _settings.temperatureEntity;
+
+  /// True when a reading arrived recently enough to trust.
   bool get available =>
       _temperatureC != null &&
       _lastSeen != null &&
-      DateTime.now().difference(_lastSeen!) < _scanPeriod * 2.5;
+      DateTime.now().difference(_lastSeen!) < _pollInterval * 3;
 
-  final List<IndoorReading> _history = [];
-  List<IndoorReading> get history => List.unmodifiable(_history);
+  List<IndoorReading> _history = [];
 
-  File get _historyFile =>
-      File(p.join(ImmichKioskPiCache.root, 'indoor_history.json'));
-
-  Future<void> start() async {
-    await _loadHistory();
-    try {
-      _client = DBusClient.system();
-      _watch();
-      _adapterPath = await _pickAdapter();
-      debugPrint('indoor sensor scanning on $_adapterPath');
-      // Devices BlueZ already knows about cost no radio time to read.
-      await _seedFromKnownDevices();
-      await _scanOnce();
-      _scanTimer = Timer.periodic(_scanPeriod, (_) => _scanOnce());
-    } catch (e) {
-      debugPrint('IndoorSensorService.start error: $e');
-    }
-  }
-
-  DBusRemoteObject get _adapter => DBusRemoteObject(_client!,
-      name: _bluez, path: DBusObjectPath(_adapterPath!));
-
-  /// Pick which controller to scan on.
-  ///
-  /// Scanning on the same radio that is carrying Bluetooth audio makes it
-  /// stutter, so a controller with an active audio connection is never chosen.
-  /// Beyond that the highest-numbered one wins: the Pi's built-in radio is
-  /// always hci0, so a plugged-in USB dongle sorts after it and gets the BLE
-  /// work — which is the point of having one.
-  Future<String> _pickAdapter() async {
-    final root = DBusRemoteObjectManager(_client!,
-        name: _bluez, path: DBusObjectPath('/'));
-    final objects = await root.getManagedObjects();
-
-    final adapters = <String>[];
-    final carryingAudio = <String>{};
-    for (final entry in objects.entries) {
-      final path = entry.key.value;
-      if (entry.value.containsKey(_adapterIface)) adapters.add(path);
-      if (entry.value.containsKey(_transportIface) ||
-          entry.value.containsKey(_playerIface)) {
-        final owner = RegExp(r'^(/org/bluez/hci\d+)/').firstMatch(path);
-        if (owner != null) carryingAudio.add(owner.group(1)!);
-      }
-    }
-    return chooseAdapter(adapters, carryingAudio);
-  }
-
-  /// The choice itself, split out from the D-Bus plumbing so it can be tested.
-  @visibleForTesting
-  static String chooseAdapter(List<String> adapters, Set<String> carryingAudio) {
-    if (adapters.isEmpty) return '/org/bluez/hci0';
-    final sorted = [...adapters]..sort();
-    final free = sorted.where((a) => !carryingAudio.contains(a)).toList();
-    return free.isNotEmpty ? free.last : sorted.last;
-  }
-
-  /// Open the radio just long enough to hear one advertisement.
-  ///
-  /// BlueZ only delivers advertisements while a discovery is running, and ties
-  /// that discovery to the D-Bus connection that started it — so this client
-  /// stays alive between scans even though discovery does not.
-  Future<void> _scanOnce() async {
-    if (_scanning || _client == null || _adapterPath == null) return;
-    _scanning = true;
-    try {
-      await _adapter.callMethod(
-        _adapterIface,
-        'SetDiscoveryFilter',
-        [
-          DBusDict.stringVariant({
-            'Transport': const DBusString('le'),
-            // Without this BlueZ reports each device once and we'd never see
-            // updated readings.
-            'DuplicateData': const DBusBoolean(true),
-          })
-        ],
-        replySignature: DBusSignature(''),
-      );
-      await _adapter.callMethod(_adapterIface, 'StartDiscovery', [],
-          replySignature: DBusSignature(''));
-      _scanDeadline = Timer(_scanTimeout, _stopScan);
-    } catch (e) {
-      debugPrint('StartDiscovery error: $e');
-      _scanning = false;
-    }
-  }
-
-  Future<void> _stopScan() async {
-    _scanDeadline?.cancel();
-    _scanDeadline = null;
-    if (!_scanning || _adapterPath == null) return;
-    _scanning = false;
-    try {
-      await _adapter.callMethod(_adapterIface, 'StopDiscovery', [],
-          replySignature: DBusSignature(''));
-    } catch (e) {
-      debugPrint('StopDiscovery error: $e');
-    }
-  }
-
-  Future<void> _seedFromKnownDevices() async {
-    final root = DBusRemoteObjectManager(_client!,
-        name: _bluez, path: DBusObjectPath('/'));
-    final objects = await root.getManagedObjects();
-    for (final entry in objects.entries) {
-      final props = entry.value[_deviceIface];
-      if (props == null) continue;
-      _consider(props, entry.key.value);
-    }
-  }
-
-  void _watch() {
-    final root = DBusRemoteObjectManager(_client!,
-        name: _bluez, path: DBusObjectPath('/'));
-    _signalSub = root.signals.listen((signal) {
-      if (signal is DBusPropertiesChangedSignal &&
-          signal.propertiesInterface == _deviceIface) {
-        _consider(signal.changedProperties, signal.path.value);
-      } else if (signal is DBusObjectManagerInterfacesAddedSignal) {
-        final props = signal.interfacesAndProperties[_deviceIface];
-        if (props != null) _consider(props, signal.changedPath.value);
-      }
-    });
-  }
-
-  /// Names arrive in a different signal from manufacturer data, so remember
-  /// which device paths belong to the sensor.
-  final Set<String> _sensorPaths = {};
-
-  void _consider(Map<String, DBusValue> props, String path) {
-    final nameValue = props['Name'] ?? props['Alias'];
-    if (nameValue is DBusString && _namePattern.hasMatch(nameValue.value)) {
-      _deviceName = nameValue.value;
-      _sensorPaths.add(path);
-    }
-    // Only ever decode data from a device identified by name as the sensor.
-    // Plenty of other BLE devices broadcast manufacturer data that would
-    // otherwise decode into a plausible-looking temperature.
-    if (!_sensorPaths.contains(path)) return;
-
-    final md = props['ManufacturerData'];
-    if (md == null) return;
-    try {
-      final dict = md.asDict();
-      for (final entry in dict.entries) {
-        final bytes = (entry.value as DBusVariant).value.asByteArray().toList();
-        final reading = decode(bytes);
-        if (reading != null) {
-          _apply(reading);
-          return;
-        }
-      }
-    } catch (e) {
-      debugPrint('manufacturer data parse error: $e');
-    }
-  }
-
-  /// Decode a Govee H510x advertisement payload. Returns null if it doesn't
-  /// look like one.
-  ///
-  /// The 3-byte value packs both readings as
-  /// `temperature_in_tenths * 1000 + humidity_in_tenths`, so the temperature
-  /// needs integer division — dividing by 10000 instead would drag the
-  /// humidity digits in as false precision (29.0446 °C rather than 29.0 °C).
-  /// Matches the reference implementation in Home Assistant's ble_monitor.
-  static Map<String, num>? decode(List<int> data) {
-    if (data.length < 6) return null;
-    var packed = (data[2] << 16) | (data[3] << 8) | data[4];
-    final negative = (packed & 0x800000) != 0;
-    packed &= 0x7FFFFF;
-    var temp = (packed ~/ 1000) / 10.0;
-    final hum = (packed % 1000) / 10.0;
-    if (negative) temp = -temp;
-    // Guard against decoding an unrelated advert as a plausible reading.
-    if (temp < -40 || temp > 80 || hum > 100) return null;
-    return {'temp': temp, 'hum': hum, 'batt': data[5]};
-  }
-
-  void _apply(Map<String, num> r) {
-    // Heard it — close the radio straight away rather than sitting out the
-    // rest of the window competing with A2DP.
-    if (_scanning) unawaited(_stopScan());
-
-    // The advertisement carries no checksum, so a garbled one can still decode
-    // to an in-range value. A room can't swing 10°C between scans, and with
-    // hourly samples one bad point would visibly wreck the chart's scale.
-    final incoming = r['temp']!.toDouble();
-    if (_temperatureC != null &&
-        _lastSeen != null &&
-        DateTime.now().difference(_lastSeen!) < _scanPeriod * 3 &&
-        (incoming - _temperatureC!).abs() > 10) {
-      debugPrint('discarding implausible indoor reading: $incoming');
-      return;
-    }
-
-    _temperatureC = incoming;
-    _humidity = r['hum']!.toDouble();
-    _battery = r['batt']!.toInt();
-    _lastSeen = DateTime.now();
-
-    final last = _history.isEmpty ? null : _history.last;
-    if (last == null ||
-        _lastSeen!.difference(last.time) >= _sampleInterval) {
-      _history.add(IndoorReading(
-        time: _lastSeen!,
-        temperatureC: _temperatureC!,
-        humidity: _humidity!,
-      ));
-      if (_history.length > _maxSamples) {
-        _history.removeRange(0, _history.length - _maxSamples);
-      }
-      _scheduleSave();
-    }
-    notifyListeners();
-  }
-
-  /// Readings arrive every few seconds; batch writes rather than hitting the
-  /// disk each time.
-  void _scheduleSave() {
-    _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(seconds: 30), _saveHistory);
-  }
-
-  Future<void> _loadHistory() async {
-    try {
-      final f = _historyFile;
-      if (!await f.exists()) return;
-      final raw = jsonDecode(await f.readAsString());
-      if (raw is! List) return;
-      _history
-        ..clear()
-        ..addAll(raw.map(IndoorReading.fromJson).whereType<IndoorReading>());
-      notifyListeners();
-    } catch (e) {
-      debugPrint('indoor history load error: $e');
-    }
-  }
-
-  Future<void> _saveHistory() async {
-    try {
-      final f = _historyFile;
-      await f.parent.create(recursive: true);
-      await f.writeAsString(
-          jsonEncode(_history.map((r) => r.toJson()).toList()));
-    } catch (e) {
-      debugPrint('indoor history save error: $e');
-    }
-  }
-
-  /// Samples from the last [window], for the chart.
+  /// Samples for the chart. The window is fixed by [_historyWindow]; the
+  /// argument is accepted so callers read naturally.
   List<IndoorReading> recent(Duration window) {
     final cutoff = DateTime.now().subtract(window);
     return _history.where((r) => r.time.isAfter(cutoff)).toList();
   }
 
+  Future<void> start(HomeAssistantSettings settings) async {
+    updateSettings(settings);
+  }
+
+  /// Called at start-up and whenever the settings change, so entering a token
+  /// takes effect without restarting the kiosk.
+  void updateSettings(HomeAssistantSettings settings) {
+    _settings = settings;
+    _pollTimer?.cancel();
+    _historyTimer?.cancel();
+    if (!settings.isConfigured) {
+      _temperatureC = null;
+      _humidity = null;
+      _battery = null;
+      _lastSeen = null;
+      _history = [];
+      notifyListeners();
+      return;
+    }
+    unawaited(_refresh());
+    unawaited(_refreshHistory());
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _refresh());
+    _historyTimer = Timer.periodic(_historyInterval, (_) => _refreshHistory());
+  }
+
+  Options get _auth => Options(
+        headers: {'Authorization': 'Bearer ${_settings.token}'},
+        responseType: ResponseType.json,
+      );
+
+  /// Current value of one entity, or null if it's missing or non-numeric.
+  /// Home Assistant reports 'unknown' and 'unavailable' as states too.
+  Future<double?> _readEntity(String entityId) async {
+    if (entityId.isEmpty) return null;
+    try {
+      final r = await _dio.get(
+        '${_settings.baseUrl}/api/states/$entityId',
+        options: _auth,
+      );
+      final state = (r.data as Map)['state'];
+      return state is String ? double.tryParse(state) : null;
+    } catch (e) {
+      debugPrint('HA read $entityId failed: $e');
+      return null;
+    }
+  }
+
+  Future<void> _refresh() async {
+    final temp = await _readEntity(_settings.temperatureEntity);
+    if (temp == null) return; // Leave the last good reading in place.
+    _temperatureC = temp;
+    _humidity = await _readEntity(_settings.humidityEntity) ?? _humidity;
+    _battery = (await _readEntity(_settings.batteryEntity))?.round() ?? _battery;
+    _lastSeen = DateTime.now();
+    notifyListeners();
+  }
+
+  /// Pull the last [_historyWindow] of temperature and humidity and pair them
+  /// up for the chart.
+  Future<void> _refreshHistory() async {
+    final temps = await _readHistory(_settings.temperatureEntity);
+    if (temps.isEmpty) return;
+    final hums = await _readHistory(_settings.humidityEntity);
+
+    _history = [
+      for (final t in temps)
+        IndoorReading(
+          time: t.key,
+          temperatureC: t.value,
+          humidity: _nearest(hums, t.key) ?? _humidity ?? 0,
+        )
+    ];
+    notifyListeners();
+  }
+
+  Future<List<MapEntry<DateTime, double>>> _readHistory(String entityId) async {
+    if (entityId.isEmpty) return const [];
+    final start = DateTime.now().subtract(_historyWindow).toUtc();
+    try {
+      final r = await _dio.get(
+        '${_settings.baseUrl}/api/history/period/${start.toIso8601String()}',
+        queryParameters: {
+          'filter_entity_id': entityId,
+          // Without these Home Assistant returns every attribute of every
+          // state change, which for a sensor updating every few seconds is a
+          // lot of JSON to move and parse on a Pi.
+          'minimal_response': '',
+          'significant_changes_only': '',
+        },
+        options: _auth,
+      );
+      final data = r.data;
+      if (data is! List || data.isEmpty) return const [];
+      final series = data.first;
+      if (series is! List) return const [];
+
+      final points = <MapEntry<DateTime, double>>[];
+      for (final entry in series) {
+        if (entry is! Map) continue;
+        final value = double.tryParse('${entry['state']}');
+        final when = DateTime.tryParse('${entry['last_changed']}');
+        if (value != null && when != null) {
+          points.add(MapEntry(when.toLocal(), value));
+        }
+      }
+      return downsample(points);
+    } catch (e) {
+      debugPrint('HA history $entityId failed: $e');
+      return const [];
+    }
+  }
+
+  /// One point every few minutes is plenty for a 24-hour chart, and keeps the
+  /// painter from drawing thousands of segments.
+  @visibleForTesting
+  static List<MapEntry<DateTime, double>> downsample(
+      List<MapEntry<DateTime, double>> points) {
+    const bucket = Duration(minutes: 10);
+    final out = <MapEntry<DateTime, double>>[];
+    for (final p in points) {
+      if (out.isEmpty || p.key.difference(out.last.key) >= bucket) {
+        out.add(p);
+      }
+    }
+    return out;
+  }
+
+  static double? _nearest(
+      List<MapEntry<DateTime, double>> points, DateTime when) {
+    if (points.isEmpty) return null;
+    var best = points.first;
+    var bestGap = (best.key.difference(when)).abs();
+    for (final p in points.skip(1)) {
+      final gap = (p.key.difference(when)).abs();
+      if (gap < bestGap) {
+        best = p;
+        bestGap = gap;
+      }
+    }
+    return best.value;
+  }
+
   @override
   void dispose() {
-    _saveTimer?.cancel();
-    _scanTimer?.cancel();
-    _scanDeadline?.cancel();
-    unawaited(_saveHistory());
-    _signalSub?.cancel();
-    _client?.close();
+    _pollTimer?.cancel();
+    _historyTimer?.cancel();
+    _dio.close();
     super.dispose();
   }
 }

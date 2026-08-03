@@ -23,7 +23,10 @@ import glob
 import json
 import os
 import re
+import selectors
 import subprocess
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -123,12 +126,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(state())
             if path == "/screen/on":
                 set_power(True)
+                waker.note_power(True)
                 return self._reply(state())
             if path == "/screen/off":
                 set_power(False)
+                waker.note_power(False)
                 return self._reply(state())
             if path == "/screen/toggle":
-                set_power(not state()["on"])
+                target = not state()["on"]
+                set_power(target)
+                waker.note_power(target)
                 return self._reply(state())
             if path == "/screen/brightness":
                 raw = parse_qs(url.query).get("value", [None])[0]
@@ -141,5 +148,111 @@ class Handler(BaseHTTPRequestHandler):
             self._reply({"error": str(exc)}, 500)
 
 
+def pointer_devices():
+    """Event devices for the touchscreen (and any mouse).
+
+    /proc/bus/input/devices lists a `Handlers=` line per device; pointer devices
+    get a `mouse` handler, which on this Pi picks out the touch panel and
+    nothing else. Deliberately excludes keyboard-style devices — the paired
+    phone's AVRCP media keys appear as one, and a track change shouldn't wake
+    the screen.
+    """
+    found = []
+    try:
+        with open("/proc/bus/input/devices") as f:
+            blocks = f.read().split("\n\n")
+    except OSError:
+        return found
+    for block in blocks:
+        handlers = ""
+        for line in block.splitlines():
+            if line.startswith("H: Handlers="):
+                handlers = line.split("=", 1)[1]
+        if "mouse" not in handlers:
+            continue
+        for token in handlers.split():
+            if token.startswith("event"):
+                found.append("/dev/input/" + token)
+    return found
+
+
+class Waker:
+    """Turns the screen back on when the panel is touched.
+
+    Powering the output down stops the compositor drawing, and nothing brings it
+    back on its own — without this the only way back is the HTTP endpoint or
+    asking Alexa.
+    """
+
+    # Trust our own view of the power state between checks: while the screen is
+    # on, touches stream in constantly and shelling out to wlopm per event would
+    # be absurd. Re-read occasionally in case something else changed it.
+    RECHECK = 30.0
+
+    # Ignore input for a moment after powering down: a finger still resting on
+    # the panel would otherwise wake it straight back up.
+    SETTLE = 1.5
+
+    def __init__(self):
+        self._on = True
+        self._checked = 0.0
+        self._off_at = 0.0
+        self._lock = threading.Lock()
+
+    def note_power(self, on):
+        """Record a state we set ourselves, so the watcher stays in step."""
+        with self._lock:
+            self._on = on
+            self._checked = time.monotonic()
+            if not on:
+                self._off_at = time.monotonic()
+
+    def _settling(self):
+        with self._lock:
+            return time.monotonic() - self._off_at < self.SETTLE
+
+    def _is_on(self):
+        with self._lock:
+            fresh = time.monotonic() - self._checked < self.RECHECK
+            if fresh:
+                return self._on
+        powered = any(outputs().values())
+        self.note_power(powered)
+        return powered
+
+    def run(self):
+        devices = pointer_devices()
+        if not devices:
+            return
+        sel = selectors.DefaultSelector()
+        opened = []
+        for path in devices:
+            try:
+                fd = open(path, "rb", buffering=0)
+            except OSError:
+                continue  # Needs membership of the `input` group.
+            opened.append(fd)
+            sel.register(fd, selectors.EVENT_READ)
+        if not opened:
+            return
+        while True:
+            for key, _ in sel.select():
+                # The content doesn't matter, only that input happened. Reading
+                # also drains the buffer, which has to happen regardless.
+                try:
+                    key.fileobj.read(1024)
+                except OSError:
+                    continue
+                if self._settling():
+                    continue
+                if not self._is_on():
+                    set_power(True)
+                    self.note_power(True)
+
+
+waker = Waker()
+
+
 if __name__ == "__main__":
+    threading.Thread(target=waker.run, daemon=True).start()
     ThreadingHTTPServer(LISTEN, Handler).serve_forever()
