@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../config/app_config.dart';
 import '../services/config_service.dart';
+import '../services/indoor_sensor_service.dart';
 import '../services/locked_folder_service.dart';
 import '../services/media_cache.dart';
 import '../services/now_playing_service.dart';
@@ -282,6 +283,23 @@ class _WeatherSettingsTile extends StatelessWidget {
             },
           ),
         ),
+        Builder(builder: (context) {
+          final sensor = context.watch<IndoorSensorService>();
+          return SwitchListTile(
+            secondary: Icon(Icons.home_outlined,
+                color: sensor.available ? const Color(0xFFFF8A65) : null),
+            title: const Text('Show indoor temperature'),
+            subtitle: Text(sensor.available
+                ? '${sensor.deviceName}: ${sensor.temperatureC!.toStringAsFixed(1)}°C · '
+                    '${sensor.humidity!.round()}% · battery ${sensor.battery}%'
+                : 'No Govee BLE sensor detected nearby'),
+            value: s.showIndoor,
+            onChanged: (v) {
+              s.showIndoor = v;
+              service.updateSettings(s);
+            },
+          );
+        }),
         SwitchListTile(
           secondary: const Icon(Icons.thermostat),
           title: const Text('Use Celsius'),

@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'models/immich_models.dart';
 import 'services/config_service.dart';
 import 'services/immich_service.dart';
+import 'services/indoor_sensor_service.dart';
 import 'services/locked_folder_service.dart';
 import 'services/media_cache.dart';
 import 'services/now_playing_service.dart';
@@ -37,6 +38,10 @@ void main() async {
   final weather = WeatherService(config);
   unawaited(weather.refresh());
 
+  // Govee BLE thermometer, read passively from its advertisements.
+  final indoor = IndoorSensorService();
+  unawaited(indoor.start());
+
   // Reads what the paired phone is playing over Bluetooth AVRCP.
   final nowPlaying = NowPlayingService()
     ..preferAudioRouted = config.config.nowPlaying.playAudioHere;
@@ -50,6 +55,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => LockedFolderService(config)),
         ChangeNotifierProvider.value(value: weather),
         ChangeNotifierProvider.value(value: nowPlaying),
+        ChangeNotifierProvider.value(value: indoor),
       ],
       child: const ImmichKioskPiApp(),
     ),
@@ -97,6 +103,7 @@ class _RootGate extends StatelessWidget {
     //   IMMICH_KIOSK_TEST_VIDEO=<assetId>       boot into the video player
     //   IMMICH_KIOSK_TEST_SLIDESHOW=<albumId>   boot into the slideshow
     //   IMMICH_KIOSK_TEST_GALLERY=<albumId>     boot into the photo gallery
+    //   IMMICH_KIOSK_TEST_WEATHER=expanded      open the weather detail card
     final immich = context.read<ImmichService>();
     final testVideo = Platform.environment['IMMICH_KIOSK_TEST_VIDEO'];
     if (testVideo != null && testVideo.isNotEmpty) {

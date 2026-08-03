@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,7 +7,9 @@ import 'burn_in_drift.dart';
 
 import '../config/app_config.dart';
 import '../services/config_service.dart';
+import '../services/indoor_sensor_service.dart';
 import '../services/weather_service.dart';
+import 'indoor_chart.dart';
 
 /// Maps a WMO weather code to a colour, so conditions read at a glance:
 /// sun = amber, cloud = slate, rain = blue, snow = pale cyan, storm = violet.
@@ -133,6 +137,11 @@ class _WeatherOverlayState extends State<WeatherOverlay>
   void initState() {
     super.initState();
     startDrift();
+    // Dev aid: IMMICH_KIOSK_TEST_WEATHER=expanded opens the detail card on
+    // launch, so it can be checked without a touch.
+    if (Platform.environment['IMMICH_KIOSK_TEST_WEATHER'] == 'expanded') {
+      _controller.value = 1;
+    }
   }
 
   @override
@@ -199,6 +208,9 @@ class _WeatherOverlayState extends State<WeatherOverlay>
                       onTap: _toggle,
                       child: _Panel(
                         weather: w,
+                        indoor: settings.showIndoor
+                            ? context.watch<IndoorSensorService>()
+                            : null,
                         compact: widget.compact,
                         expansion: v,
                       ),
@@ -229,7 +241,7 @@ class _WeatherOverlayState extends State<WeatherOverlay>
     // Full-screen with a comfortable inset, capped so it stays card-like.
     const inset = 28.0;
     final width = (screen.width - inset * 2).clamp(0.0, 1700.0);
-    final height = (screen.height - inset * 2).clamp(0.0, 1000.0);
+    final height = (screen.height - inset * 2).clamp(0.0, 1140.0);
     return Rect.fromLTWH(
       (screen.width - width) / 2,
       (screen.height - height) / 2,
@@ -241,11 +253,13 @@ class _WeatherOverlayState extends State<WeatherOverlay>
 
 class _Panel extends StatelessWidget {
   final Weather weather;
+  final IndoorSensorService? indoor;
   final bool compact;
   final double expansion; // 0 = collapsed, 1 = expanded
 
   const _Panel({
     required this.weather,
+    required this.indoor,
     required this.compact,
     required this.expansion,
   });
@@ -278,12 +292,13 @@ class _Panel extends StatelessWidget {
             if (collapsedOpacity > 0)
               Opacity(
                 opacity: collapsedOpacity,
-                child: _CollapsedContent(weather: weather, compact: compact),
+                child: _CollapsedContent(
+                    weather: weather, indoor: indoor, compact: compact),
               ),
             if (detailOpacity > 0)
               Opacity(
                 opacity: detailOpacity,
-                child: _DetailContent(weather: weather),
+                child: _DetailContent(weather: weather, indoor: indoor),
               ),
           ],
         ),
@@ -294,8 +309,10 @@ class _Panel extends StatelessWidget {
 
 class _CollapsedContent extends StatelessWidget {
   final Weather weather;
+  final IndoorSensorService? indoor;
   final bool compact;
-  const _CollapsedContent({required this.weather, required this.compact});
+  const _CollapsedContent(
+      {required this.weather, required this.indoor, required this.compact});
 
   @override
   Widget build(BuildContext context) {
@@ -344,6 +361,20 @@ class _CollapsedContent extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.white60, fontSize: 21),
                   ),
+                if (!compact && (indoor?.available ?? false))
+                  Row(
+                    children: [
+                      const Icon(Icons.home_outlined,
+                          size: 19, color: Color(0xFFFF8A65)),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_indoorTemp(indoor!, weather.unit)}  ·  '
+                        '${indoor!.humidity!.round()}%',
+                        style: const TextStyle(
+                            color: Color(0xFFFFB59B), fontSize: 20),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -356,7 +387,8 @@ class _CollapsedContent extends StatelessWidget {
 /// Full-screen detail: current conditions + 7-day forecast.
 class _DetailContent extends StatelessWidget {
   final Weather weather;
-  const _DetailContent({required this.weather});
+  final IndoorSensorService? indoor;
+  const _DetailContent({required this.weather, required this.indoor});
 
   @override
   Widget build(BuildContext context) {
@@ -461,7 +493,65 @@ class _DetailContent extends StatelessWidget {
 
           const SizedBox(height: 22),
           const Divider(color: Colors.white24, height: 1),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
+
+          if (indoor?.available ?? false) ...[
+            Row(
+              children: [
+                const Icon(Icons.home_outlined,
+                    size: 22, color: Color(0xFFFF8A65)),
+                const SizedBox(width: 8),
+                const Text(
+                  'INDOORS',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.4,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  _indoorTemp(indoor!, weather.unit),
+                  style: const TextStyle(
+                      color: Color(0xFFFF8A65),
+                      fontSize: 26,
+                      fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 14),
+                Text(
+                  '${indoor!.humidity!.round()}% humidity',
+                  style: const TextStyle(
+                      color: Color(0xFF4FC3F7), fontSize: 22),
+                ),
+                const Spacer(),
+                if ((indoor!.battery ?? 100) <= 20)
+                  Row(
+                    children: [
+                      const Icon(Icons.battery_alert,
+                          size: 20, color: Color(0xFFFFC46B)),
+                      const SizedBox(width: 6),
+                      Text(
+                        'sensor battery ${indoor!.battery}%',
+                        style: const TextStyle(
+                            color: Color(0xFFFFC46B), fontSize: 17),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 150,
+              child: IndoorChart(
+                readings: indoor!.recent(const Duration(hours: 24)),
+                metric: !weather.unit.contains('F'),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Divider(color: Colors.white24, height: 1),
+            const SizedBox(height: 14),
+          ],
 
           const Text(
             '7-DAY FORECAST',
@@ -615,4 +705,12 @@ class _DayColumn extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Indoor temperature formatted in the same unit as the forecast.
+String _indoorTemp(IndoorSensorService s, String unit) {
+  final c = s.temperatureC;
+  if (c == null) return '—';
+  final v = unit.contains('F') ? c * 9 / 5 + 32 : c;
+  return '${v.toStringAsFixed(1)}$unit';
 }

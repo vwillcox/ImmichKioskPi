@@ -31,6 +31,12 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 - Opens Immich's server-side **Locked Folder** with your PIN, and re-locks when
   you leave
 
+**Indoor sensor**
+- Reads a **Govee H510x** Bluetooth thermometer/hygrometer passively from its
+  BLE broadcasts — no pairing, no account, no cloud
+- Indoor temperature and humidity appear on the weather panel, with a **line
+  chart of recent readings** in the expanded view, and a low-battery warning
+
 **Weather overlay**
 - Corner panel showing current conditions, tap to expand into a full-screen
   **7-day forecast** with colour-coded icons
@@ -261,6 +267,36 @@ Album artwork isn't part of AVRCP, so it's looked up from the free
 artist and track name. Searching by track is markedly more reliable than by
 album, because AVRCP album strings often carry suffixes like
 `(Deluxe Version) [Explicit]`.
+
+### Indoor temperature sensor
+
+A Govee H510x (H5101/H5102/H5104/H5177) thermometer is picked up automatically:
+it broadcasts its reading in its BLE advertisements, so nothing needs pairing.
+Just have one in range with batteries in.
+
+Govee packs both readings into a 3-byte big-endian value:
+
+```
+temperature °C = (value >> 0 & 0x7FFFFF) ~/ 1000 / 10    # bit 0x800000 = negative
+humidity %     = (value % 1000) / 10
+```
+
+Note the **integer** division for temperature: dividing by 10000 instead drags
+the humidity digits in as false precision (29.0446 °C instead of 29.0 °C). This
+matches [ble_monitor](https://github.com/custom-components/ble_monitor), and was
+checked against a real H5104's own display.
+
+The sensor keeps history internally, but exporting it needs Govee's proprietary
+GATT protocol. Instead the kiosk records what it sees and charts the last 24
+hours, so the graph fills out from first run. Samples are kept across restarts,
+about a month of them.
+
+**Scanning is deliberately infrequent.** BLE scanning and Bluetooth audio share
+one antenna on the Pi, so leaving a discovery running permanently makes music
+from the paired phone break up. The kiosk instead wakes the radio once an hour,
+stops as soon as it hears the sensor (usually a few seconds), and gives up after
+45 seconds if it doesn't. Indoor temperature moves slowly enough that this costs
+nothing in practice.
 
 ### TV Remote button
 

@@ -96,6 +96,9 @@ class WeatherSettings {
   /// true = °C, false = °F
   bool metric;
 
+  /// Show the indoor reading from a Govee BLE sensor alongside the forecast.
+  bool showIndoor;
+
   // Cached resolution of [location] so we don't geocode on every launch.
   double? latitude;
   double? longitude;
@@ -106,6 +109,7 @@ class WeatherSettings {
     this.location = 'CO1 1ZY',
     this.corner = OverlayCorner.topRight,
     this.metric = true,
+    this.showIndoor = true,
     this.latitude,
     this.longitude,
     this.resolvedLabel,
@@ -116,6 +120,7 @@ class WeatherSettings {
         location: j['location'] as String? ?? 'CO1 1ZY',
         corner: _cornerFromString(j['corner'] as String?),
         metric: j['metric'] as bool? ?? true,
+        showIndoor: j['showIndoor'] as bool? ?? true,
         latitude: (j['latitude'] as num?)?.toDouble(),
         longitude: (j['longitude'] as num?)?.toDouble(),
         resolvedLabel: j['resolvedLabel'] as String?,
@@ -126,6 +131,7 @@ class WeatherSettings {
         'location': location,
         'corner': cornerToString(corner),
         'metric': metric,
+        'showIndoor': showIndoor,
         'latitude': latitude,
         'longitude': longitude,
         'resolvedLabel': resolvedLabel,
