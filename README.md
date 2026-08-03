@@ -280,8 +280,18 @@ nothing, and BLE scanning on the Pi's built-in radio makes Bluetooth audio
 stutter, because that radio shares one antenna with A2DP.
 
 Configure it under **Settings → Home Assistant**: server URL, a long-lived
-access token (Home Assistant profile → Security → Long-lived access tokens) and
-the entity IDs. Without a token the indoor reading is simply hidden.
+access token and the entity IDs. Without a token the indoor reading is simply
+hidden.
+
+Tokens are long and awkward to type on a touchscreen, so there's a helper that
+takes one on the Pi and checks it works before saving:
+
+```bash
+bash ~/immich_kiosk_pi/scripts/set-ha-token.sh
+```
+
+Create the token in Home Assistant under your user name → Security → Long-lived
+access tokens.
 
 The 24-hour chart in the expanded weather panel comes from Home Assistant's
 history API, thinned to roughly one point per ten minutes so the chart doesn't
