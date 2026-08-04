@@ -1,0 +1,64 @@
+---
+# Replaces wyoming-satellite + wyoming-openwakeword. Maintained upstream (see
+# https://github.com/OHF-Voice/linux-voice-assistant), unlike wyoming-satellite,
+# and speaks Home Assistant's own ESPHome voice protocol with wake word built
+# in — one process and one connection instead of two, which matters here
+# because the thing that kept failing was the connection between them going
+# stale in a way neither side noticed.
+#
+# Copied from the project's own docker-compose.yml rather than written from
+# scratch, since the audio wiring (PipeWire's Pulse-compatible socket, XDG
+# runtime dir, the `audio` group) is exactly what our own satellite unit
+# needed and is easy to get subtly wrong.
+services:
+  fix-permissions:
+    image: "${LVA_IMAGE:-ghcr.io/ohf-voice/linux-voice-assistant}:${LVA_IMAGE_TAG:-latest}"
+    entrypoint: []
+    command: "chown -R ${LVA_USER_ID:-1000}:${LVA_USER_GROUP:-1000} /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
+    environment:
+      - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
+      - PULSE_SERVER=${LVA_PULSE_SERVER:-/run/user/1000/pulse/native}
+    env_file: ${ENV_FILE:-.env}
+    group_add:
+      - audio
+    volumes:
+      - wakeword_data:/app/local
+      - wakeword_custom:/app/wakewords/custom
+      - configuration:/app/configuration
+      - sounds_custom:/app/sounds/custom
+    restart: "no"
+
+  linux-voice-assistant:
+    container_name: linux-voice-assistant
+    image: "${LVA_IMAGE:-ghcr.io/ohf-voice/linux-voice-assistant}:${LVA_IMAGE_TAG:-latest}"
+    restart: unless-stopped
+    network_mode: "host"
+    user: "${LVA_USER_ID:-1000}:${LVA_USER_GROUP:-1000}"
+    environment:
+      - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
+      - PULSE_SERVER=${LVA_PULSE_SERVER:-/run/user/1000/pulse/native}
+    env_file: ${ENV_FILE:-.env}
+    group_add:
+      - audio
+    cap_add:
+      - SYS_NICE
+    volumes:
+      - wakeword_data:/app/local
+      - wakeword_custom:/app/wakewords/custom
+      - configuration:/app/configuration
+      - sounds_custom:/app/sounds/custom
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ${LVA_XDG_RUNTIME_DIR:-/run/user/1000}:${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
+    depends_on:
+      - fix-permissions
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "linux_voice_assistant"]
+      interval: 30s
+      timeout: 5s
+
+volumes:
+  wakeword_data:
+  wakeword_custom:
+  configuration:
+  sounds_custom:

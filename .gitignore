@@ -53,3 +53,4 @@ config.json
 
 # Local machine-specific script settings (host/user)
 scripts/local.env
+deploy/linux-voice-assistant/.env

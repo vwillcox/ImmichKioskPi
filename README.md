@@ -416,64 +416,43 @@ No scenes, no routines, no name-collision roulette. Assist matches on the
 entity's name, so rename entities to what you would actually say out loud —
 "Indoor Temperature" rather than "H5104 145E Temperature".
 
-**Making the kiosk itself listen.** The Pi runs a Wyoming satellite so it can be
-spoken to directly, using the microphone built into the USB speaker it already
-has:
+**Making the kiosk itself listen.** The Pi runs
+[Linux Voice Assistant](https://github.com/OHF-Voice/linux-voice-assistant) so
+it can be spoken to directly, using a USB webcam's microphone and the kiosk's
+own USB speaker:
 
-- `wyoming-openwakeword` in Docker on port 10400 (an arm64 image is published).
-- `wyoming-satellite` in a venv on the host, run by
-  `deploy/wyoming-satellite.service`. There's no published Docker image for it —
-  it's meant to run natively.
-- Home Assistant's Wyoming integration pointed at `127.0.0.1:10700`.
-
-**The satellite goes deaf after a failed speech-to-text round trip.** It keeps
-the connection to the wake service open and keeps logging "Waiting for wake
-word", but stops sending audio — so it looks healthy while hearing nothing, and
-nothing in any log says so. The tell is the wake engine sitting at 0% CPU;
-it uses a few percent whenever audio is arriving.
-`deploy/satellite-watchdog.sh` watches for that and restarts the satellite.
-
-Three more requirements that are easy to miss, each of which fails silently:
-
-- **The wake word name must match exactly what the engine advertises.**
-  openWakeWord calls it `okay_nabu`; `ok_nabu` matches nothing, and the
-  satellite discards every detection without logging anything. Query the engine
-  with a Wyoming `describe` if unsure.
-- **Play through PipeWire, not ALSA.** PipeWire already holds the speaker for
-  the phone's Bluetooth audio, so `aplay` gets "Device or resource busy" and the
-  satellite's output process dies each time — no tone, no spoken reply, only a
-  `ConnectionResetError` buried in the log. Use
-  `pw-cat --playback --raw` instead.
-- **Supply the sounds.** Installed from PyPI the satellite ships no WAVs and
-  plays nothing without `--awake-wav`. With no tone there is no cue that it is
-  listening, so commands get spoken into silence and come back as
-  `stt-no-text-recognized`. `deploy/make_satellite_sounds.py` generates them.
+- One container, `deploy/linux-voice-assistant/docker-compose.yml`. Wake word
+  (openWakeWord/microWakeWord) is built in, so there is no separate wake
+  service and no connection between two processes that can go stale.
+- It speaks Home Assistant's own ESPHome protocol on port 6053 rather than
+  Wyoming, and isn't picked up by mDNS on this network, so it needs adding by
+  hand: **Settings → Devices & Services → Add Integration → ESPHome**, host
+  `<pi-ip>`, port `6053`.
+- Audio goes through PipeWire, addressed by the exact device name from
+  `wpctl status` / `pw-dump` rather than "default" — autodetect risks landing
+  on the USB speaker's own built-in mic instead of the webcam's, which matters
+  here because that mic shares an enclosure with the speaker and hears
+  everything the kiosk plays.
 
 Then: *"Hey Jarvis, pause the jukebox"*.
 
-openWakeWord ships `okay_nabu`, `hey_jarvis`, `hey_mycroft`, `hey_rhasspy` and
-`alexa` — the last being a poor choice in a house with an Echo in it. Switching
-is one line in the unit file.
+This replaced an earlier setup built on `wyoming-satellite` — actively
+unmaintained upstream — plus a separate `wyoming-openwakeword` container and a
+watchdog script to restart the satellite when the connection between the two
+silently went stale. All of that is gone; the wake word living inside the one
+process that needs it removes the failure mode outright rather than papering
+over it. Check `git log` on `deploy/` before this switch for exactly what that
+cost to run.
 
 Assist understands "pause", "resume", "unpause", "next", "previous" and "turn
 on/off", but **not "play"** for a paused player, which is the word most people
 reach for. `deploy/custom_sentences/en/jukebox.yaml` adds it, along with "start"
 and "continue".
 
-Capture and playback are deliberately on **different** devices — a webcam
-microphone and the USB speaker. Using the microphone built into the speaker
-does work, but it then hears everything the speaker plays, and there is no echo
-cancellation, so the wake word competes with the music. Noise suppression is set
-to `medium` either way.
-
-ALSA devices are addressed by card name (`plughw:CARD=C270`) rather than index,
-because index ordering changes whenever USB devices are re-enumerated — a reboot
-with something unplugged would otherwise leave the satellite listening to the
-wrong device.
-
-One trap: a speech pipeline needs speech-to-text and text-to-speech engines, and
-the default "Home Assistant" pipeline has neither. Set the preferred pipeline to
-the Cloud one if you have Nabu Casa, or voice silently does nothing.
+One trap that still applies: a speech pipeline needs speech-to-text and
+text-to-speech engines, and the default "Home Assistant" pipeline has neither.
+Set the preferred pipeline to the Cloud one if you have Nabu Casa
+(**Settings → Voice assistants**), or voice silently does nothing.
 
 #### Getting at it from Alexa (not recommended)
 
