@@ -15,7 +15,10 @@ ExecStart=%h/wyoming-satellite/.venv/bin/python -m wyoming_satellite \
   --mic-command "arecord -D plughw:CARD=C270,DEV=0 -r 16000 -c 1 -f S16_LE -t raw -q" \
   --snd-command "aplay -D plughw:CARD=Device,DEV=0 -r 22050 -c 1 -f S16_LE -t raw -q" \
   --wake-uri tcp://127.0.0.1:10400 \
-  --wake-word-name "ok_nabu"
+  # Must match the name the wake service advertises exactly: openWakeWord
+  # calls this "okay_nabu", and a near-miss like "ok_nabu" matches nothing,
+  # so detections are silently discarded and it simply never triggers.
+  --wake-word-name "okay_nabu"
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:%h/.cache/immich_kiosk_pi/satellite.log
