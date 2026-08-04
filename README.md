@@ -398,6 +398,44 @@ different set of Alexa commands: transport gives "next"/"pause", power gives
 "turn off <name>" (mapped onto pause, since that's how people ask for silence
 out loud), and volume gives "set <name> to 4".
 
+#### Getting at it from Alexa
+
+Alexa is far more limited here than it appears, and most of the obvious routes
+are dead ends. What actually works:
+
+**Expose scripts, not the media player.** A `media_player` looks like the right
+thing to expose, but Alexa never sends it transport commands — bare verbs like
+"pause" are reserved for her own media session, and third-party media players
+are simply never asked. Mapping "turn off" onto pause does work, but Alexa
+reports `powerState` as ON for anything that isn't literally `off`, so a paused
+player still reads as on, her model drifts, and she starts sending TurnOn when
+you ask for off.
+
+Stateless scripts avoid all of it. Home Assistant presents scripts to Alexa as
+scenes, which respond to "turn on <name>" and carry no state to get out of step.
+Create one per action — pause, resume, skip, previous — and expose those.
+
+**Then wrap them in Alexa Routines** to get natural phrasing. A Routine can
+trigger on any phrase you choose and run a scene, so "Alexa, skip track" maps
+onto the Skip Track script. Without this you are stuck saying "turn on Skip
+Track" out loud.
+
+**A custom skill and an Amazon developer account do not help.** The phrasing a
+custom skill gives you ("Alexa, ask Jukebox to skip") is worse than a Routine's,
+and the round-trip latency is the same either way — it is Amazon's cloud, not
+anything local. Measured here: the Pi answers in about 45 ms, so effectively all
+the delay you hear is between the Echo and Amazon.
+
+**Names must not collide.** Alexa silently routes to the wrong device rather than
+reporting ambiguity, and it will happily send a media command to a switch. A
+device called "Kiosk" and another called "Kiosk screen" is enough to break it,
+with no error anywhere. Keep voice names distinct from each other.
+
+**Deleting a device in the Alexa app leaves a tombstone.** It reappears in the
+app after a re-discovery but stays inert — never polled, never commanded. The
+only fix is to disable and re-enable the Home Assistant skill, which forces a
+full re-enumeration.
+
 Two behaviours that look like faults but aren't:
 
 - **"Play music on <name>" will never work.** Alexa treats that as a request to
