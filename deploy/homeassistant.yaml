@@ -34,6 +34,18 @@ emulated_hue:
       name: "Kiosk screen"
       hidden: false
 
+# Transport control for whatever the paired phone is playing, wrapping the same
+# host service. A media_player entity rather than a switch, because that is what
+# lets a voice assistant map play/pause/next onto it as real commands — a switch
+# only ever carries on and off.
+#
+# Needs deploy/custom_components/kiosk_media copied into Home Assistant's
+# custom_components directory.
+media_player:
+  - platform: kiosk_media
+    name: Kiosk
+    url: http://127.0.0.1:8765
+
 # Home Assistant writes no home-assistant.log at all unless `logger:` is
 # configured, which makes any of the above very hard to diagnose.
 logger:

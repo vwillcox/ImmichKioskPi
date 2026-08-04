@@ -370,6 +370,32 @@ of the `input` group.
 Power changes and wakes are recorded in `~/.cache/immich_kiosk_pi/screen_control.log`,
 which is the quickest way to tell whether a touch was seen at all.
 
+### Controlling the phone's music from Home Assistant
+
+The kiosk controls the paired phone over Bluetooth AVRCP for its now-playing
+widget, but that lives inside the Flutter app where nothing else can reach it.
+The host service exposes the same controls over localhost:
+
+```
+/media                  what's playing, as JSON
+/media/play             /media/pause     /media/playpause
+/media/next             /media/previous  /media/stop
+```
+
+`deploy/custom_components/kiosk_media` wraps those as a Home Assistant
+`media_player` entity. Copy it into Home Assistant's `custom_components`
+directory and add the `media_player:` block from `deploy/homeassistant.yaml`.
+
+It's a `media_player` rather than a switch on purpose. Voice assistants map
+play/pause/next/previous onto media players as real commands; a switch only
+carries on and off, so transport would have to be faked as one switch per
+action. Reaching it by voice needs a cloud-linked skill either way — Alexa's
+local discovery only speaks Hue, which carries nothing but on/off and
+brightness.
+
+Note that AVRCP's "previous" restarts the current track first, and only skips
+back if sent twice — that's the standard behaviour, not a bug here.
+
 ### TV Remote button
 
 If you run a companion remote-control app on the same Pi, a **TV Remote** icon
