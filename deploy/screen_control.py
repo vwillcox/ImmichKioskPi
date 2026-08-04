@@ -14,11 +14,6 @@ Endpoints (all GET, so Home Assistant's command_line can just curl them):
     /screen/off          power the panel down
     /screen/toggle
     /screen/brightness?value=0-100
-    /media                  what the paired phone is playing
-    /media/play             /media/pause     /media/playpause
-    /media/next             /media/previous  /media/stop
-    /media/volume?value=0-100
-    /lva/restart             restart the voice satellite container
 
 Binds to localhost only. Home Assistant uses host networking, so it can reach
 this, but nothing off the machine can.
@@ -29,7 +24,6 @@ import json
 import os
 import re
 import selectors
-import signal
 import subprocess
 import threading
 import time
@@ -169,32 +163,6 @@ def state():
     }
 
 
-# The Linux Voice Assistant container has a known, unresolved upstream bug
-# (OHF-Voice/linux-voice-assistant issue #355): it silently stops hearing its
-# wake word after playing a response, and the only known recovery is a
-# restart. Home Assistant runs in its own container and has no way to run
-# `docker compose` on the host, so — same pattern as the screen — an
-# automation calls this endpoint instead.
-#
-# Signals the container's own process rather than going through `docker
-# compose restart`: that needs the docker group, and a systemd --user service
-# only has the groups its manager started with, not ones granted afterwards —
-# the same trap the old wyoming-satellite watchdog hit trying to call `docker
-# stats`. The container runs as this same uid (1000), so a plain SIGTERM needs
-# no special permission at all, and its `restart: unless-stopped` policy
-# brings it straight back up. Verified: killing the pid this way produces a
-# genuinely fresh boot in the container's own log within ~7 seconds.
-def restart_lva():
-    pid = subprocess.run(
-        ["pgrep", "-f", "linux_voice_assistant"],
-        capture_output=True, text=True, timeout=10,
-    ).stdout.split()
-    if not pid:
-        raise RuntimeError("linux_voice_assistant process not found")
-    os.kill(int(pid[0]), signal.SIGTERM)
-    log("restarted linux-voice-assistant (worked around known upstream deafness bug)")
-
-
 class Handler(BaseHTTPRequestHandler):
     # The default handler logs every request to stderr, which would fill the
     # journal given Home Assistant polls this on a timer.
@@ -229,34 +197,6 @@ class Handler(BaseHTTPRequestHandler):
                 set_power(target)
                 waker.note_power(target)
                 return self._reply(state())
-            if path == "/media":
-                return self._reply(media_state())
-            if path.startswith("/media/"):
-                action = path.rsplit("/", 1)[1]
-                commands = {
-                    "play": "Play", "pause": "Pause", "stop": "Stop",
-                    "next": "Next", "previous": "Previous",
-                    "playpause": "playpause",
-                }
-                if action == "volume":
-                    raw = parse_qs(url.query).get("value", [None])[0]
-                    if raw is None or not re.fullmatch(r"\d{1,3}", raw):
-                        return self._reply({"error": "value must be 0-100"}, 400)
-                    if set_volume(int(raw)) is None:
-                        return self._reply(
-                            {"error": "no active stream to set volume on"}, 409)
-                    log(f"media volume {raw}")
-                    return self._reply(media_state())
-                if action not in commands:
-                    return self._reply({"error": "unknown media command"}, 404)
-                log(f"media {action}")
-                return self._reply(media_command(commands[action]))
-            if path == "/lva/restart":
-                try:
-                    restart_lva()
-                except Exception as exc:  # noqa: BLE001
-                    return self._reply({"error": str(exc)}, 500)
-                return self._reply({"restarted": True})
             if path == "/screen/brightness":
                 raw = parse_qs(url.query).get("value", [None])[0]
                 if raw is None or not re.fullmatch(r"\d{1,3}", raw):
@@ -270,129 +210,6 @@ class Handler(BaseHTTPRequestHandler):
             self._reply({"error": "not found"}, 404)
         except Exception as exc:  # noqa: BLE001 - report, don't take the server down
             self._reply({"error": str(exc)}, 500)
-
-
-# --- Media control -------------------------------------------------------
-#
-# The paired phone is controlled over Bluetooth AVRCP, which BlueZ exposes as
-# org.bluez.MediaPlayer1. The kiosk app already does this for its now-playing
-# widget, but that lives inside the Flutter app where Home Assistant can't reach
-# it — so the same controls are offered here too. `busctl --json` avoids taking
-# on a D-Bus library for six method calls.
-
-MEDIA_IFACE = "org.bluez.MediaPlayer1"
-TRANSPORT_IFACE = "org.bluez.MediaTransport1"
-
-# AVRCP absolute volume is 0-127.
-AVRCP_MAX_VOLUME = 127
-
-
-def _busctl(args, parse=True):
-    r = subprocess.run(
-        ["busctl", "--system", "--json=short", *args],
-        capture_output=True, text=True, timeout=10,
-    )
-    if r.returncode != 0:
-        raise RuntimeError(r.stderr.strip() or "busctl failed")
-    if not parse or not r.stdout.strip():
-        return None
-    return json.loads(r.stdout)
-
-
-def media_player():
-    """D-Bus path of the connected phone's AVRCP player, or None.
-
-    Found rather than configured: the path carries the phone's MAC, and which
-    controller it connected on can change.
-    """
-    r = subprocess.run(
-        ["busctl", "--system", "tree", "org.bluez"],
-        capture_output=True, text=True, timeout=10,
-    )
-    found = re.findall(r"/org/bluez/hci\d+/dev_[A-F0-9_]+/player\d+", r.stdout)
-    return found[0] if found else None
-
-
-def media_transport():
-    """Path of the active A2DP transport, or None.
-
-    BlueZ only creates this while audio is actually streaming, so volume is
-    unavailable when playback is paused — there is nothing to set it on.
-    """
-    r = subprocess.run(
-        ["busctl", "--system", "tree", "org.bluez"],
-        capture_output=True, text=True, timeout=10,
-    )
-    found = re.findall(r"/org/bluez/hci\d+/dev_[A-F0-9_]+/fd\d+", r.stdout)
-    return found[0] if found else None
-
-
-def get_volume():
-    """Volume as 0-100, or None when nothing is streaming."""
-    path = media_transport()
-    if not path:
-        return None
-    try:
-        raw = _busctl(["get-property", "org.bluez", path, TRANSPORT_IFACE,
-                       "Volume"])["data"]
-        return round(raw * 100 / AVRCP_MAX_VOLUME)
-    except Exception:
-        return None
-
-
-def set_volume(percent):
-    path = media_transport()
-    if not path:
-        return None
-    percent = max(0, min(100, percent))
-    raw = round(percent * AVRCP_MAX_VOLUME / 100)
-    _busctl(["set-property", "org.bluez", path, TRANSPORT_IFACE, "Volume",
-             "q", str(raw)], parse=False)
-    return percent
-
-
-def _prop(path, name):
-    try:
-        return _busctl(["get-property", "org.bluez", path, MEDIA_IFACE, name])["data"]
-    except Exception:
-        return None
-
-
-def media_state():
-    path = media_player()
-    if not path:
-        return {"connected": False}
-    track = _prop(path, "Track") or {}
-    def field(key):
-        v = track.get(key)
-        return v.get("data") if isinstance(v, dict) else None
-    status = _prop(path, "Status")
-    return {
-        "connected": True,
-        # AVRCP reports "playing", "paused", "stopped", "forward-seek"...
-        "status": status,
-        "playing": status == "playing",
-        "title": field("Title"),
-        "artist": field("Artist"),
-        "album": field("Album"),
-        "duration": field("Duration"),
-        "position": _prop(path, "Position"),
-        # None while paused: AVRCP volume lives on the streaming transport.
-        "volume": get_volume(),
-    }
-
-
-def media_command(name):
-    """Send one AVRCP command. Returns the state afterwards."""
-    path = media_player()
-    if not path:
-        return {"connected": False}
-    if name == "playpause":
-        name = "Pause" if _prop(path, "Status") == "playing" else "Play"
-    _busctl(["call", "org.bluez", path, MEDIA_IFACE, name], parse=False)
-    # AVRCP takes a moment to report the new state back.
-    time.sleep(0.4)
-    return media_state()
 
 
 def pointer_devices():

@@ -34,31 +34,6 @@ emulated_hue:
       name: "Kiosk screen"
       hidden: false
 
-# Transport control for whatever the paired phone is playing, wrapping the same
-# host service. A media_player entity rather than a switch, because that is what
-# lets a voice assistant map play/pause/next onto it as real commands — a switch
-# only ever carries on and off.
-#
-# Needs deploy/custom_components/kiosk_media copied into Home Assistant's
-# custom_components directory.
-media_player:
-  - platform: kiosk_media
-    name: Kiosk
-    url: http://127.0.0.1:8765
-
-# linux-voice-assistant (deploy/linux-voice-assistant/) has a known,
-# unresolved upstream bug — OHF-Voice/linux-voice-assistant issue #355 — where
-# it silently stops hearing its wake word after playing a response, and the
-# only known recovery is a restart. deploy/automations/restart_voice_satellite.yaml
-# restarts it shortly after every completed interaction, which is the
-# workaround the issue itself documents. It calls this rather than a
-# shell_command so a bad response body doesn't leave a shell string to escape.
-rest_command:
-  restart_voice_satellite:
-    url: "http://127.0.0.1:8765/lva/restart"
-    method: GET
-    timeout: 15
-
 # Home Assistant writes no home-assistant.log at all unless `logger:` is
 # configured, which makes any of the above very hard to diagnose.
 logger:
