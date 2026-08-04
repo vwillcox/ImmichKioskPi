@@ -28,11 +28,11 @@ Type=simple
 # ships okay_nabu, hey_jarvis, hey_mycroft, hey_rhasspy and alexa; the last is
 # a poor choice in a house with an Echo in it.
 #
-# The webcam microphone is very quiet — speech peaks at roughly 800 of a
-# possible 32767, about 2.5% of range, which cloud speech-to-text struggles
-# with. The volume multiplier is a straight boost, auto gain then normalises,
-# and noise suppression takes the edge off what the boost brings up with it.
-# All three need the webrtc extras (pip install 'wyoming-satellite[webrtc]'),
+# The webcam microphone is quiet — speech peaks at roughly 800 of a possible
+# 32767 — so a little auto gain helps. Only a little: stacking a volume
+# multiplier on top of higher auto gain clips speech into something the cloud
+# transcribes as nothing at all, which looks exactly like the microphone not
+# working. Needs the webrtc extras (pip install 'wyoming-satellite[webrtc]'),
 # which build from source and take a few minutes on a Pi.
 #
 # Note: systemd has no comments inside a line continuation — anything after a
@@ -47,9 +47,7 @@ ExecStart=%h/wyoming-satellite/.venv/bin/python -m wyoming_satellite \
   --done-wav %h/wyoming-satellite/sounds/done.wav \
   --wake-uri tcp://127.0.0.1:10400 \
   --wake-word-name "hey_jarvis" \
-  --mic-volume-multiplier 5.0 \
-  --mic-auto-gain 12 \
-  --mic-noise-suppression 2
+  --mic-auto-gain 5
 
 Restart=on-failure
 RestartSec=5

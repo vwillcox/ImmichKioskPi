@@ -426,7 +426,14 @@ has:
   it's meant to run natively.
 - Home Assistant's Wyoming integration pointed at `127.0.0.1:10700`.
 
-Three requirements that are easy to miss, each of which fails silently:
+**The satellite goes deaf after a failed speech-to-text round trip.** It keeps
+the connection to the wake service open and keeps logging "Waiting for wake
+word", but stops sending audio — so it looks healthy while hearing nothing, and
+nothing in any log says so. The tell is the wake engine sitting at 0% CPU;
+it uses a few percent whenever audio is arriving.
+`deploy/satellite-watchdog.sh` watches for that and restarts the satellite.
+
+Three more requirements that are easy to miss, each of which fails silently:
 
 - **The wake word name must match exactly what the engine advertises.**
   openWakeWord calls it `okay_nabu`; `ok_nabu` matches nothing, and the
