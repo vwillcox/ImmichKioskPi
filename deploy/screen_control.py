@@ -17,6 +17,7 @@ Endpoints (all GET, so Home Assistant's command_line can just curl them):
     /media                  what the paired phone is playing
     /media/play             /media/pause     /media/playpause
     /media/next             /media/previous  /media/stop
+    /media/volume?value=0-100
 
 Binds to localhost only. Home Assistant uses host networking, so it can reach
 this, but nothing off the machine can.
@@ -209,6 +210,15 @@ class Handler(BaseHTTPRequestHandler):
                     "next": "Next", "previous": "Previous",
                     "playpause": "playpause",
                 }
+                if action == "volume":
+                    raw = parse_qs(url.query).get("value", [None])[0]
+                    if raw is None or not re.fullmatch(r"\d{1,3}", raw):
+                        return self._reply({"error": "value must be 0-100"}, 400)
+                    if set_volume(int(raw)) is None:
+                        return self._reply(
+                            {"error": "no active stream to set volume on"}, 409)
+                    log(f"media volume {raw}")
+                    return self._reply(media_state())
                 if action not in commands:
                     return self._reply({"error": "unknown media command"}, 404)
                 log(f"media {action}")
@@ -237,6 +247,10 @@ class Handler(BaseHTTPRequestHandler):
 # on a D-Bus library for six method calls.
 
 MEDIA_IFACE = "org.bluez.MediaPlayer1"
+TRANSPORT_IFACE = "org.bluez.MediaTransport1"
+
+# AVRCP absolute volume is 0-127.
+AVRCP_MAX_VOLUME = 127
 
 
 def _busctl(args, parse=True):
@@ -265,6 +279,44 @@ def media_player():
     return found[0] if found else None
 
 
+def media_transport():
+    """Path of the active A2DP transport, or None.
+
+    BlueZ only creates this while audio is actually streaming, so volume is
+    unavailable when playback is paused — there is nothing to set it on.
+    """
+    r = subprocess.run(
+        ["busctl", "--system", "tree", "org.bluez"],
+        capture_output=True, text=True, timeout=10,
+    )
+    found = re.findall(r"/org/bluez/hci\d+/dev_[A-F0-9_]+/fd\d+", r.stdout)
+    return found[0] if found else None
+
+
+def get_volume():
+    """Volume as 0-100, or None when nothing is streaming."""
+    path = media_transport()
+    if not path:
+        return None
+    try:
+        raw = _busctl(["get-property", "org.bluez", path, TRANSPORT_IFACE,
+                       "Volume"])["data"]
+        return round(raw * 100 / AVRCP_MAX_VOLUME)
+    except Exception:
+        return None
+
+
+def set_volume(percent):
+    path = media_transport()
+    if not path:
+        return None
+    percent = max(0, min(100, percent))
+    raw = round(percent * AVRCP_MAX_VOLUME / 100)
+    _busctl(["set-property", "org.bluez", path, TRANSPORT_IFACE, "Volume",
+             "q", str(raw)], parse=False)
+    return percent
+
+
 def _prop(path, name):
     try:
         return _busctl(["get-property", "org.bluez", path, MEDIA_IFACE, name])["data"]
@@ -291,6 +343,8 @@ def media_state():
         "album": field("Album"),
         "duration": field("Duration"),
         "position": _prop(path, "Position"),
+        # None while paused: AVRCP volume lives on the streaming transport.
+        "volume": get_volume(),
     }
 
 

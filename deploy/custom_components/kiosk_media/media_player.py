@@ -55,12 +55,19 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 class KioskMediaPlayer(MediaPlayerEntity):
     _attr_device_class = MediaPlayerDeviceClass.SPEAKER
     _attr_should_poll = True
+    # Each group unlocks a different set of voice commands: transport gives
+    # "next"/"pause", turn on/off gives "turn off <name>", and volume gives
+    # "set <name> to 4" / "turn it up".
     _attr_supported_features = (
         MediaPlayerEntityFeature.PLAY
         | MediaPlayerEntityFeature.PAUSE
         | MediaPlayerEntityFeature.STOP
         | MediaPlayerEntityFeature.NEXT_TRACK
         | MediaPlayerEntityFeature.PREVIOUS_TRACK
+        | MediaPlayerEntityFeature.TURN_ON
+        | MediaPlayerEntityFeature.TURN_OFF
+        | MediaPlayerEntityFeature.VOLUME_SET
+        | MediaPlayerEntityFeature.VOLUME_STEP
     )
 
     def __init__(self, hass, name, url):
@@ -108,6 +115,13 @@ class KioskMediaPlayer(MediaPlayerEntity):
     def media_position_updated_at(self):
         return self._position_at
 
+    @property
+    def volume_level(self):
+        # None while paused — AVRCP volume lives on the streaming transport,
+        # which BlueZ only creates while audio is actually flowing.
+        v = self._data.get("volume")
+        return v / 100 if isinstance(v, (int, float)) else None
+
     async def _request(self, path):
         session = async_get_clientsession(self.hass)
         try:
@@ -148,6 +162,30 @@ class KioskMediaPlayer(MediaPlayerEntity):
 
     async def async_media_previous_track(self):
         await self._command("previous")
+
+    # "Turn off" is the natural way to ask for silence out loud, so map it onto
+    # pause rather than leaving it unsupported.
+    async def async_turn_on(self):
+        await self._command("play")
+
+    async def async_turn_off(self):
+        await self._command("pause")
+
+    async def async_set_volume_level(self, volume):
+        await self._command(f"volume?value={round(volume * 100)}")
+
+    async def async_volume_up(self):
+        await self._step_volume(+10)
+
+    async def async_volume_down(self):
+        await self._step_volume(-10)
+
+    async def _step_volume(self, delta):
+        current = self._data.get("volume")
+        if current is None:
+            _LOGGER.debug("no active stream; cannot step volume")
+            return
+        await self._command(f"volume?value={max(0, min(100, current + delta))}")
 
 
 def _ms_to_s(value):

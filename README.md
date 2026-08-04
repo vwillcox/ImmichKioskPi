@@ -393,8 +393,24 @@ action. Reaching it by voice needs a cloud-linked skill either way — Alexa's
 local discovery only speaks Hue, which carries nothing but on/off and
 brightness.
 
-Note that AVRCP's "previous" restarts the current track first, and only skips
-back if sent twice — that's the standard behaviour, not a bug here.
+The entity declares transport, power and volume, because each maps to a
+different set of Alexa commands: transport gives "next"/"pause", power gives
+"turn off <name>" (mapped onto pause, since that's how people ask for silence
+out loud), and volume gives "set <name> to 4".
+
+Two behaviours that look like faults but aren't:
+
+- **"Play music on <name>" will never work.** Alexa treats that as a request to
+  a music service and routes it to Amazon Music on one of its own speakers.
+  Smart-home media players only receive transport commands, on something that is
+  already playing. Start playback on the phone, then use "pause", "resume",
+  "next" and "previous".
+- **Volume is unavailable while paused.** AVRCP absolute volume lives on the
+  A2DP transport object, which BlueZ only creates while audio is actually
+  streaming. `/media/volume` returns 409 when nothing is playing.
+
+AVRCP's "previous" also restarts the current track and only skips back when sent
+twice — standard behaviour, not a bug here.
 
 ### TV Remote button
 
