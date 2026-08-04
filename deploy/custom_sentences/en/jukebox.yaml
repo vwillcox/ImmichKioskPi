@@ -1,0 +1,11 @@
+# Home Assistant understands "resume", "unpause" and "turn on" for a paused
+# media player, but not "play" — which is the word most people reach for.
+# Copy to Home Assistant's config as custom_sentences/en/jukebox.yaml.
+language: "en"
+intents:
+  HassMediaUnpause:
+    data:
+      - sentences:
+          - "play [the] {name}"
+          - "start [the] {name}"
+          - "continue [the] {name}"

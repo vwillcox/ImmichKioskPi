@@ -442,7 +442,16 @@ Three requirements that are easy to miss, each of which fails silently:
   listening, so commands get spoken into silence and come back as
   `stt-no-text-recognized`. `deploy/make_satellite_sounds.py` generates them.
 
-Then: *"OK Nabu, pause the jukebox"*.
+Then: *"Hey Jarvis, pause the jukebox"*.
+
+openWakeWord ships `okay_nabu`, `hey_jarvis`, `hey_mycroft`, `hey_rhasspy` and
+`alexa` — the last being a poor choice in a house with an Echo in it. Switching
+is one line in the unit file.
+
+Assist understands "pause", "resume", "unpause", "next", "previous" and "turn
+on/off", but **not "play"** for a paused player, which is the word most people
+reach for. `deploy/custom_sentences/en/jukebox.yaml` adds it, along with "start"
+and "continue".
 
 Capture and playback are deliberately on **different** devices — a webcam
 microphone and the USB speaker. Using the microphone built into the speaker
