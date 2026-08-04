@@ -428,13 +428,20 @@ has:
 
 Then: *"OK Nabu, pause the jukebox"*.
 
-Two things worth knowing. The microphone is inside the same enclosure as the
-speaker playing the music, and there is no echo cancellation, so the wake word
-gets harder to hear the louder the music is — noise suppression is set to
-`medium` to help. And a speech pipeline needs speech-to-text and text-to-speech
-engines: the default "Home Assistant" pipeline has neither, so set the preferred
-pipeline to the Cloud one if you have Nabu Casa, or voice will silently do
-nothing.
+Capture and playback are deliberately on **different** devices — a webcam
+microphone and the USB speaker. Using the microphone built into the speaker
+does work, but it then hears everything the speaker plays, and there is no echo
+cancellation, so the wake word competes with the music. Noise suppression is set
+to `medium` either way.
+
+ALSA devices are addressed by card name (`plughw:CARD=C270`) rather than index,
+because index ordering changes whenever USB devices are re-enumerated — a reboot
+with something unplugged would otherwise leave the satellite listening to the
+wrong device.
+
+One trap: a speech pipeline needs speech-to-text and text-to-speech engines, and
+the default "Home Assistant" pipeline has neither. Set the preferred pipeline to
+the Cloud one if you have Nabu Casa, or voice silently does nothing.
 
 #### Getting at it from Alexa (not recommended)
 

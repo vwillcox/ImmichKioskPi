@@ -4,14 +4,16 @@ After=network-online.target sound.target
 
 [Service]
 Type=simple
-# The mic is the one built into the USB speaker (card 2), so playback and
-# capture share a device. plughw lets ALSA convert rates rather than demanding
-# the card's native format.
+# Capture from the webcam and play through the USB speaker — two separate
+# devices, so the microphone isn't sitting inside the enclosure that's playing
+# the music. Addressed by card name rather than index, because index ordering
+# changes when USB devices are re-enumerated. plughw lets ALSA convert rates
+# rather than demanding the card's native format.
 ExecStart=%h/wyoming-satellite/.venv/bin/python -m wyoming_satellite \
   --name "Kiosk" \
   --uri tcp://0.0.0.0:10700 \
-  --mic-command "arecord -D plughw:2,0 -r 16000 -c 1 -f S16_LE -t raw -q" \
-  --snd-command "aplay -D plughw:2,0 -r 22050 -c 1 -f S16_LE -t raw -q" \
+  --mic-command "arecord -D plughw:CARD=C270,DEV=0 -r 16000 -c 1 -f S16_LE -t raw -q" \
+  --snd-command "aplay -D plughw:CARD=Device,DEV=0 -r 22050 -c 1 -f S16_LE -t raw -q" \
   --wake-uri tcp://127.0.0.1:10400 \
   --wake-word-name "ok_nabu"
 Restart=on-failure
