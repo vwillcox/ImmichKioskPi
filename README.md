@@ -426,6 +426,22 @@ has:
   it's meant to run natively.
 - Home Assistant's Wyoming integration pointed at `127.0.0.1:10700`.
 
+Three requirements that are easy to miss, each of which fails silently:
+
+- **The wake word name must match exactly what the engine advertises.**
+  openWakeWord calls it `okay_nabu`; `ok_nabu` matches nothing, and the
+  satellite discards every detection without logging anything. Query the engine
+  with a Wyoming `describe` if unsure.
+- **Play through PipeWire, not ALSA.** PipeWire already holds the speaker for
+  the phone's Bluetooth audio, so `aplay` gets "Device or resource busy" and the
+  satellite's output process dies each time — no tone, no spoken reply, only a
+  `ConnectionResetError` buried in the log. Use
+  `pw-cat --playback --raw` instead.
+- **Supply the sounds.** Installed from PyPI the satellite ships no WAVs and
+  plays nothing without `--awake-wav`. With no tone there is no cue that it is
+  listening, so commands get spoken into silence and come back as
+  `stt-no-text-recognized`. `deploy/make_satellite_sounds.py` generates them.
+
 Then: *"OK Nabu, pause the jukebox"*.
 
 Capture and playback are deliberately on **different** devices — a webcam
