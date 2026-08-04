@@ -1,0 +1,23 @@
+[Unit]
+Description=Wyoming satellite — makes the kiosk listen for Home Assistant Assist
+After=network-online.target sound.target
+
+[Service]
+Type=simple
+# The mic is the one built into the USB speaker (card 2), so playback and
+# capture share a device. plughw lets ALSA convert rates rather than demanding
+# the card's native format.
+ExecStart=%h/wyoming-satellite/.venv/bin/python -m wyoming_satellite \
+  --name "Kiosk" \
+  --uri tcp://0.0.0.0:10700 \
+  --mic-command "arecord -D plughw:2,0 -r 16000 -c 1 -f S16_LE -t raw -q" \
+  --snd-command "aplay -D plughw:2,0 -r 22050 -c 1 -f S16_LE -t raw -q" \
+  --wake-uri tcp://127.0.0.1:10400 \
+  --wake-word-name "ok_nabu"
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/.cache/immich_kiosk_pi/satellite.log
+StandardError=append:%h/.cache/immich_kiosk_pi/satellite.log
+
+[Install]
+WantedBy=default.target

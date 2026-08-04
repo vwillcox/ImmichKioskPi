@@ -398,7 +398,45 @@ different set of Alexa commands: transport gives "next"/"pause", power gives
 "turn off <name>" (mapped onto pause, since that's how people ask for silence
 out loud), and volume gives "set <name> to 4".
 
-#### Getting at it from Alexa
+#### Home Assistant Assist (recommended)
+
+Assist understands media commands natively, which is the thing Alexa would not
+do. Expose `media_player.kiosk` to Assist and these all work, verified against
+the phone:
+
+```
+"pause the jukebox"        -> Paused
+"resume jukebox"           -> Resumed
+"next track on jukebox"    -> Playing next
+"skip the jukebox"         -> Playing next
+"what is the indoor temperature" -> Indoor temperature is 28.9 °C
+```
+
+No scenes, no routines, no name-collision roulette. Assist matches on the
+entity's name, so rename entities to what you would actually say out loud —
+"Indoor Temperature" rather than "H5104 145E Temperature".
+
+**Making the kiosk itself listen.** The Pi runs a Wyoming satellite so it can be
+spoken to directly, using the microphone built into the USB speaker it already
+has:
+
+- `wyoming-openwakeword` in Docker on port 10400 (an arm64 image is published).
+- `wyoming-satellite` in a venv on the host, run by
+  `deploy/wyoming-satellite.service`. There's no published Docker image for it —
+  it's meant to run natively.
+- Home Assistant's Wyoming integration pointed at `127.0.0.1:10700`.
+
+Then: *"OK Nabu, pause the jukebox"*.
+
+Two things worth knowing. The microphone is inside the same enclosure as the
+speaker playing the music, and there is no echo cancellation, so the wake word
+gets harder to hear the louder the music is — noise suppression is set to
+`medium` to help. And a speech pipeline needs speech-to-text and text-to-speech
+engines: the default "Home Assistant" pipeline has neither, so set the preferred
+pipeline to the Cloud one if you have Nabu Casa, or voice will silently do
+nothing.
+
+#### Getting at it from Alexa (not recommended)
 
 Alexa is far more limited here than it appears, and most of the obvious routes
 are dead ends. What actually works:
