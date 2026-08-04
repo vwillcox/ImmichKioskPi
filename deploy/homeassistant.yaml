@@ -46,6 +46,19 @@ media_player:
     name: Kiosk
     url: http://127.0.0.1:8765
 
+# linux-voice-assistant (deploy/linux-voice-assistant/) has a known,
+# unresolved upstream bug — OHF-Voice/linux-voice-assistant issue #355 — where
+# it silently stops hearing its wake word after playing a response, and the
+# only known recovery is a restart. deploy/automations/restart_voice_satellite.yaml
+# restarts it shortly after every completed interaction, which is the
+# workaround the issue itself documents. It calls this rather than a
+# shell_command so a bad response body doesn't leave a shell string to escape.
+rest_command:
+  restart_voice_satellite:
+    url: "http://127.0.0.1:8765/lva/restart"
+    method: GET
+    timeout: 15
+
 # Home Assistant writes no home-assistant.log at all unless `logger:` is
 # configured, which makes any of the above very hard to diagnose.
 logger:

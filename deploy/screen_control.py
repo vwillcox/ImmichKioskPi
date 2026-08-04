@@ -18,6 +18,7 @@ Endpoints (all GET, so Home Assistant's command_line can just curl them):
     /media/play             /media/pause     /media/playpause
     /media/next             /media/previous  /media/stop
     /media/volume?value=0-100
+    /lva/restart             restart the voice satellite container
 
 Binds to localhost only. Home Assistant uses host networking, so it can reach
 this, but nothing off the machine can.
@@ -28,6 +29,7 @@ import json
 import os
 import re
 import selectors
+import signal
 import subprocess
 import threading
 import time
@@ -167,6 +169,32 @@ def state():
     }
 
 
+# The Linux Voice Assistant container has a known, unresolved upstream bug
+# (OHF-Voice/linux-voice-assistant issue #355): it silently stops hearing its
+# wake word after playing a response, and the only known recovery is a
+# restart. Home Assistant runs in its own container and has no way to run
+# `docker compose` on the host, so — same pattern as the screen — an
+# automation calls this endpoint instead.
+#
+# Signals the container's own process rather than going through `docker
+# compose restart`: that needs the docker group, and a systemd --user service
+# only has the groups its manager started with, not ones granted afterwards —
+# the same trap the old wyoming-satellite watchdog hit trying to call `docker
+# stats`. The container runs as this same uid (1000), so a plain SIGTERM needs
+# no special permission at all, and its `restart: unless-stopped` policy
+# brings it straight back up. Verified: killing the pid this way produces a
+# genuinely fresh boot in the container's own log within ~7 seconds.
+def restart_lva():
+    pid = subprocess.run(
+        ["pgrep", "-f", "linux_voice_assistant"],
+        capture_output=True, text=True, timeout=10,
+    ).stdout.split()
+    if not pid:
+        raise RuntimeError("linux_voice_assistant process not found")
+    os.kill(int(pid[0]), signal.SIGTERM)
+    log("restarted linux-voice-assistant (worked around known upstream deafness bug)")
+
+
 class Handler(BaseHTTPRequestHandler):
     # The default handler logs every request to stderr, which would fill the
     # journal given Home Assistant polls this on a timer.
@@ -223,6 +251,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._reply({"error": "unknown media command"}, 404)
                 log(f"media {action}")
                 return self._reply(media_command(commands[action]))
+            if path == "/lva/restart":
+                try:
+                    restart_lva()
+                except Exception as exc:  # noqa: BLE001
+                    return self._reply({"error": str(exc)}, 500)
+                return self._reply({"restarted": True})
             if path == "/screen/brightness":
                 raw = parse_qs(url.query).get("value", [None])[0]
                 if raw is None or not re.fullmatch(r"\d{1,3}", raw):
