@@ -13,6 +13,7 @@ import '../services/indoor_sensor_service.dart';
 import '../services/locked_folder_service.dart';
 import '../services/media_cache.dart';
 import '../services/now_playing_service.dart';
+import '../services/screen_idle_service.dart';
 import '../services/share_inbox_service.dart';
 import '../services/spotify_service.dart';
 import '../services/weather_service.dart';
@@ -136,6 +137,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 32),
           _section('Spotify'),
           const _SpotifySettingsTile(),
+
+          const Divider(height: 32),
+          _section('Screen'),
+          const _ScreenSettingsTile(),
 
           const Divider(height: 32),
           _section('Share Inbox'),
@@ -1129,6 +1134,73 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(onPressed: _save, child: const Text('Save')),
+      ],
+    );
+  }
+}
+
+/// Switching the panel off by itself when there's nothing worth showing.
+/// The switching is done by the same host-side service Alexa drives, so a
+/// touch brings it back — see [ScreenIdleService].
+class _ScreenSettingsTile extends StatelessWidget {
+  const _ScreenSettingsTile();
+
+  static const List<int> _choices = [2, 5, 10, 15, 30, 60];
+
+  @override
+  Widget build(BuildContext context) {
+    final service = context.watch<ConfigService>();
+    final s = service.config.screen;
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.brightness_4),
+          title: const Text('Turn the screen off when idle'),
+          subtitle: const Text(
+              'Once nothing is playing, no slideshow is running and nobody '
+              'has touched it. A touch brings it straight back.'),
+          isThreeLine: true,
+          value: s.autoOffEnabled,
+          onChanged: (v) {
+            s.autoOffEnabled = v;
+            service.save();
+          },
+        ),
+        if (s.autoOffEnabled) ...[
+          ListTile(
+            leading: const Icon(Icons.timer_outlined),
+            title: const Text('Wait for'),
+            trailing: DropdownButton<int>(
+              value: _choices.contains(s.idleMinutes) ? s.idleMinutes : 15,
+              underline: const SizedBox.shrink(),
+              items: [
+                for (final m in _choices)
+                  DropdownMenuItem(
+                    value: m,
+                    child: Text(m == 60 ? '1 hour' : '$m minutes'),
+                  ),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                s.idleMinutes = v;
+                service.save();
+              },
+            ),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.music_note),
+            title: const Text('Wake when music starts'),
+            subtitle: const Text(
+                'Only undoes a switch-off this setting made — it leaves the '
+                'screen alone if you turned it off by voice.'),
+            isThreeLine: true,
+            value: s.wakeOnMusic,
+            onChanged: (v) {
+              s.wakeOnMusic = v;
+              service.save();
+            },
+          ),
+        ],
       ],
     );
   }

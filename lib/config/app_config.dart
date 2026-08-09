@@ -251,6 +251,41 @@ class SpotifySettings {
       };
 }
 
+/// Turning the panel off by itself when there's nothing worth showing.
+///
+/// The screen is switched via the same host-side `screen_control.py` service
+/// Alexa already drives (see the README), so "off" dims the backlight rather
+/// than cutting the DSI output — that service watches the touchscreen and
+/// brings it back up on a touch. This just decides *when* to ask it to.
+class ScreenSettings {
+  bool autoOffEnabled;
+
+  /// How long with no slideshow, nothing playing and no touches before the
+  /// panel switches itself off.
+  int idleMinutes;
+
+  /// Bring the screen back up by itself when music starts.
+  bool wakeOnMusic;
+
+  ScreenSettings({
+    this.autoOffEnabled = false,
+    this.idleMinutes = 15,
+    this.wakeOnMusic = true,
+  });
+
+  factory ScreenSettings.fromJson(Map<String, dynamic> j) => ScreenSettings(
+        autoOffEnabled: j['autoOffEnabled'] as bool? ?? false,
+        idleMinutes: (j['idleMinutes'] as num?)?.toInt() ?? 15,
+        wakeOnMusic: j['wakeOnMusic'] as bool? ?? true,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'autoOffEnabled': autoOffEnabled,
+        'idleMinutes': idleMinutes,
+        'wakeOnMusic': wakeOnMusic,
+      };
+}
+
 /// A person allowed to share content to the kiosk from the companion app —
 /// [name] is shown as attribution on incoming shares ("From: Mum's phone"),
 /// [token] is the bearer credential their app was set up with.
@@ -327,6 +362,7 @@ class AppConfig {
   HomeAssistantSettings homeAssistant;
   SpotifySettings spotify;
   ShareInboxSettings shareInbox;
+  ScreenSettings screen;
 
   /// Video player volume (0-100) and mute, remembered between videos.
   double videoVolume;
@@ -343,6 +379,7 @@ class AppConfig {
     HomeAssistantSettings? homeAssistant,
     SpotifySettings? spotify,
     ShareInboxSettings? shareInbox,
+    ScreenSettings? screen,
     this.videoVolume = 100,
     this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
@@ -350,7 +387,8 @@ class AppConfig {
         nowPlaying = nowPlaying ?? NowPlayingSettings(),
         homeAssistant = homeAssistant ?? HomeAssistantSettings(),
         spotify = spotify ?? SpotifySettings(),
-        shareInbox = shareInbox ?? ShareInboxSettings();
+        shareInbox = shareInbox ?? ShareInboxSettings(),
+        screen = screen ?? ScreenSettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -379,6 +417,9 @@ class AppConfig {
       shareInbox: j['shareInbox'] is Map<String, dynamic>
           ? ShareInboxSettings.fromJson(j['shareInbox'] as Map<String, dynamic>)
           : ShareInboxSettings(),
+      screen: j['screen'] is Map<String, dynamic>
+          ? ScreenSettings.fromJson(j['screen'] as Map<String, dynamic>)
+          : ScreenSettings(),
       videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
       videoMuted: j['videoMuted'] as bool? ?? false,
     );
@@ -395,6 +436,7 @@ class AppConfig {
         'homeAssistant': homeAssistant.toJson(),
         'spotify': spotify.toJson(),
         'shareInbox': shareInbox.toJson(),
+        'screen': screen.toJson(),
         'videoVolume': videoVolume,
         'videoMuted': videoMuted,
       };

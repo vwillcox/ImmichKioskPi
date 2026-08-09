@@ -4,11 +4,13 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../config/app_config.dart';
 import '../models/immich_models.dart';
 import '../services/media_cache.dart';
 import '../services/media_source.dart';
+import '../services/screen_idle_service.dart';
 import '../widgets/big_back_button.dart';
 import '../widgets/now_playing_overlay.dart';
 import '../widgets/weather_overlay.dart';
@@ -42,6 +44,10 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
   bool _advancing = false;
   Timer? _timer;
 
+  /// Held rather than looked up in dispose(), where the context is no longer
+  /// safe to read from.
+  ScreenIdleService? _screenIdle;
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +57,14 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
     }
     // Decode the first image before showing anything, so the slideshow starts
     // on a fully-laid-out photo rather than animating an empty frame.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startWhenReady());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // A running slideshow is the whole point of the display, so it never
+      // counts as idle for the auto screen-off.
+      if (!mounted) return;
+      _screenIdle = context.read<ScreenIdleService>()
+        ..slideshowRunning = true;
+      _startWhenReady();
+    });
   }
 
   ImageProvider _providerFor(int i) => CachedNetworkImageProvider(
@@ -135,6 +148,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _screenIdle?.slideshowRunning = false;
     super.dispose();
   }
 

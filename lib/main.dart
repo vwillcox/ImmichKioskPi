@@ -13,6 +13,7 @@ import 'services/indoor_sensor_service.dart';
 import 'services/locked_folder_service.dart';
 import 'services/media_cache.dart';
 import 'services/now_playing_service.dart';
+import 'services/screen_idle_service.dart';
 import 'services/share_inbox_service.dart';
 import 'services/spotify_service.dart';
 import 'services/weather_service.dart';
@@ -61,6 +62,11 @@ void main() async {
   final shareInbox = ShareInboxService(config);
   unawaited(shareInbox.start());
 
+  // Switches the panel off by itself when nothing's playing and no
+  // slideshow is running — see ScreenIdleService for why the switching
+  // itself is left to the host-side screen_control.py service.
+  final screenIdle = ScreenIdleService(config, [spotify, nowPlaying])..start();
+
   runApp(
     MultiProvider(
       providers: [
@@ -72,6 +78,7 @@ void main() async {
         ChangeNotifierProvider.value(value: spotify),
         ChangeNotifierProvider.value(value: indoor),
         ChangeNotifierProvider.value(value: shareInbox),
+        Provider<ScreenIdleService>.value(value: screenIdle),
       ],
       child: const ImmichKioskPiApp(),
     ),
@@ -102,11 +109,19 @@ class ImmichKioskPiApp extends StatelessWidget {
       // screen individually) so a shared-content notification can pop up
       // over *any* screen — settings, a slideshow, a video — not just the
       // couple of screens the now-playing overlay lives in.
-      builder: (context, child) => Stack(
-        children: [
-          ?child,
-          IncomingShareOverlay(navigatorKey: rootNavigatorKey),
-        ],
+      builder: (context, child) => Listener(
+        // Any touch counts as "someone's here", which is what stops the
+        // idle timer switching the panel off mid-use. Listener sees the
+        // event on the way down without consuming it, so nothing below
+        // behaves any differently.
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => context.read<ScreenIdleService>().noteInteraction(),
+        child: Stack(
+          children: [
+            ?child,
+            IncomingShareOverlay(navigatorKey: rootNavigatorKey),
+          ],
+        ),
       ),
       home: const _RootGate(),
     );

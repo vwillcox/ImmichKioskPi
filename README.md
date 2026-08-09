@@ -86,6 +86,9 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 **Built for a kiosk**
 - On-screen panels **drift slowly** by a few pixels so nothing sits on the same
   pixels for long — guards an always-on display against image retention
+- Optionally **turns its own screen off** once nothing is playing, no
+  slideshow is running and nobody has touched it — a touch (or music
+  starting) brings it back
 - Starts on boot, restarts automatically if it crashes
 - Restart / power-off buttons in Settings
 - Aggressive on-disk caching so it's fast and works well on a slow network
@@ -487,6 +490,19 @@ Two constraints worth knowing, both from Alexa rather than this project:
 - **The Pi needs a fixed address.** Alexa caches the bridge by IP, so a DHCP
   lease change silently breaks it. A reservation on the router is the tidiest
   way; `emulated_hue`'s `host_ip` must match.
+
+### Turning the screen off by itself
+
+**Settings → Screen → "Turn the screen off when idle"** does the same thing
+on a timer: once nothing is playing, no slideshow is running and nobody has
+touched the panel for the chosen interval, the kiosk asks the same
+`screen_control.py` service to dim it. A touch brings it straight back,
+exactly as it does after an Alexa command — the wake is handled entirely by
+that service watching the touchscreen, not by the app.
+
+Optionally it also wakes when music starts. That only ever undoes a
+switch-off this setting made: if you turned the screen off by voice, it
+stays off, rather than the two fighting each other.
 
 **Touch wakes it again — which is why "off" dims rather than powers down.**
 Cutting the DSI output also cuts power to the touch controller, so the panel
