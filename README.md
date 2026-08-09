@@ -54,6 +54,10 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
   purely as a remote control
 - Tidies itself away: the panel hides after a minute of nothing playing and
   reappears the moment playback resumes
+- **With Spotify Premium**, the same panel controls it directly over the
+  Spotify Web API instead — real seek, shown in preference to the generic
+  AVRCP source whenever Spotify has something active, falling back to it the
+  rest of the time
 
 **Built for a kiosk**
 - On-screen panels **drift slowly** by a few pixels so nothing sits on the same
@@ -267,6 +271,34 @@ Album artwork isn't part of AVRCP, so it's looked up from the free
 artist and track name. Searching by track is markedly more reliable than by
 album, because AVRCP album strings often carry suffixes like
 `(Deluxe Version) [Explicit]`.
+
+### Spotify
+
+If you have Spotify Premium, the same now-playing panel can control it
+directly over the **Spotify Web API** instead of the generic AVRCP path —
+proper seek, shuffle, repeat, and volume on whichever Spotify Connect device
+is actually active, not just what BlueZ happens to expose. It's shown in
+preference to the AVRCP source whenever Spotify has something active, and
+falls back to AVRCP the rest of the time — for a podcast app, YouTube Music,
+anything Spotify's API doesn't know about.
+
+This is a control layer only. Audio still comes from wherever Spotify is
+already playing — typically the phone, over the same Bluetooth link the AVRCP
+source uses — the Pi is not made into a Spotify Connect speaker by this.
+
+**Setup**, in Settings → Spotify:
+
+1. Create a free app at the
+   [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+2. On that app, add `http://127.0.0.1:8909/callback` as a Redirect URI.
+3. In the kiosk, paste the app's **Client ID** and tap **Connect**. A browser
+   window opens on the Pi's own screen (Chromium and Firefox are both present)
+   for the one-time Spotify login; a small local server catches the redirect
+   and finishes the connection automatically.
+
+No client secret is needed or stored — the login uses OAuth Authorization
+Code with PKCE, so only the Client ID (not confidential) and a refresh token
+are kept, in the same config file as everything else.
 
 ### Indoor temperature sensor
 
