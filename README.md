@@ -73,6 +73,16 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
   in preference to the generic AVRCP source whenever Spotify has something
   active, falling back to AVRCP the rest of the time
 
+**Share Inbox**
+- A companion Android app (in this repo) lets anyone share a photo, GIF,
+  video, web link or note to the kiosk from any other app's share sheet —
+  from anywhere, not just the home network
+- Pops up with a chime and shows in the most appropriate viewer: the photo
+  zoomer, the video player, or Chromium full-screen for links
+- Each person gets their own named token from Settings, so shares show up
+  attributed; a **Do Not Disturb** switch in the top bar mutes the chime
+  without touching Settings
+
 **Built for a kiosk**
 - On-screen panels **drift slowly** by a few pixels so nothing sits on the same
   pixels for long — guards an always-on display against image retention
@@ -525,6 +535,46 @@ home screen's toolbar; tap it and enter your PIN.
 > Your password is stored in plain text in that file, readable only by your
 > user. If you'd rather not do that, simply skip this step — everything else
 > works without it.
+
+### Share Inbox
+
+Anyone with the companion Android app (`companion_app/` in this repo) can
+share a photo, GIF, video, web link or note to the kiosk from any other
+app's share sheet — Photos, Chrome, whatever — and it pops up on the kiosk
+to view.
+
+There's no relay: the kiosk runs its own small HTTP listener directly (the
+same technique the Spotify login already uses for its OAuth loopback, just
+long-lived and reachable rather than one-shot on loopback). Getting that
+listener reachable from wherever the companion app is — the same Wi-Fi, or
+the whole internet — is entirely your own networking concern: a port
+forward, a reverse proxy, whatever you already run. The kiosk only needs to
+know which local port to bind, set in Settings.
+
+**Setup**, in Settings → Share Inbox:
+
+1. Set the listen port (defaults to 8081) and point your router/reverse
+   proxy at it.
+2. Add a name for each person you want to be able to share to the kiosk —
+   this generates a token. Hand that token to them (however you'd share a
+   Wi-Fi password) to enter in their copy of the companion app, alongside
+   the kiosk's address.
+3. That's it — shares from anyone with a valid token show up attributed
+   ("From: Mum's phone"), with a chime and a corner notification. Tap it to
+   view: photos and GIFs open in the same pinch-zoom viewer as the photo
+   gallery, videos in the same player, and web links open full-screen in
+   Chromium (there's no Linux build of Flutter's WebView), returning focus
+   to the kiosk on their own after a minute since there's no keyboard here
+   to close a browser window with otherwise.
+
+The chime plays through its own player, so its volume (also in Settings) is
+independent of whatever music or video is currently playing. A **Do Not
+Disturb** switch lives in the home screen's top bar, next to the other
+quick-access icons, for muting it without a trip to Settings.
+
+Whoever's allowed to share is entirely this kiosk's own concern too — the
+list of names and tokens lives in its own `config.json`, exactly like every
+other credential in this app.
 
 ---
 
