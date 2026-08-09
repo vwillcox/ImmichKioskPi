@@ -90,7 +90,7 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 | Albums | Album contents |
 |---|---|
 | ![Albums grid](docs/screenshots/01-home-albums.jpg) | ![Album contents](docs/screenshots/02-album-view.jpg) |
-| The home grid, with the Locked Folder tile first. Long-press albums to pick several for one slideshow. | An album's photos, with the Slideshow button in the bar. |
+| The home grid. Long-press albums to pick several for one slideshow. | An album's photos, with the Slideshow button in the bar. |
 
 | Photo viewer | Slideshow with weather |
 |---|---|
@@ -503,8 +503,8 @@ bash deploy/set-immich-login.sh
 ```
 
 It prompts for your email and password (hidden) and stores them in
-`~/.config/immich_kiosk_pi/config.json`. A **Locked Folder** tile then appears on the
-home screen; tap it and enter your PIN.
+`~/.config/immich_kiosk_pi/config.json`. A padlock icon then appears in the
+home screen's toolbar; tap it and enter your PIN.
 
 > Your password is stored in plain text in that file, readable only by your
 > user. If you'd rather not do that, simply skip this step — everything else

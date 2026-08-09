@@ -226,6 +226,12 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () => Process.run('wlrctl',
                   ['toplevel', 'focus', 'app_id:$_remoteAppId']),
             ),
+          if (context.watch<LockedFolderService>().canUse)
+            IconButton(
+              icon: const Icon(Icons.lock),
+              tooltip: 'Locked Folder',
+              onPressed: _openLockedFolder,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
@@ -294,10 +300,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final showLocked = context.watch<LockedFolderService>().canUse;
-    final tileCount = albums.length + (showLocked ? 1 : 0);
-
-    if (albums.isEmpty && !showLocked) {
+    if (albums.isEmpty) {
       return const Center(child: Text('No albums found'));
     }
 
@@ -311,12 +314,9 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSpacing: 14,
           childAspectRatio: 0.85,
         ),
-        itemCount: tileCount,
+        itemCount: albums.length,
         itemBuilder: (context, i) {
-          if (showLocked && i == 0) {
-            return _LockedFolderTile(onTap: _openLockedFolder);
-          }
-          final album = albums[i - (showLocked ? 1 : 0)];
+          final album = albums[i];
           return _AlbumTile(
             album: album,
             immich: _immich,
@@ -328,56 +328,6 @@ class _HomeScreenState extends State<HomeScreen> {
             onLongPress: () => _toggleSelect(album),
           );
         },
-      ),
-    );
-  }
-}
-
-class _LockedFolderTile extends StatelessWidget {
-  final VoidCallback onTap;
-  const _LockedFolderTile({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      const Color(0xFF2A2F3E),
-                      Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
-                    ],
-                  ),
-                ),
-                child: const Center(
-                  child: Icon(Icons.lock, size: 56, color: Colors.white),
-                ),
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Locked Folder',
-                      style: TextStyle(
-                          fontSize: 17, fontWeight: FontWeight.w600)),
-                  SizedBox(height: 2),
-                  Text('PIN protected',
-                      style: TextStyle(color: Colors.white54, fontSize: 14)),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
