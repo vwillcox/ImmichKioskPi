@@ -516,7 +516,132 @@ class _Controls extends StatelessWidget {
           activeColor: accent,
           onTap: service.toggleShuffle,
         ),
+        if (service.canLike) ...[
+          const SizedBox(width: 12),
+          _RoundButton(
+            icon: service.isLiked ? Icons.favorite : Icons.favorite_border,
+            size: 58,
+            active: service.isLiked,
+            activeColor: const Color(0xFFFF6B81),
+            onTap: service.toggleLike,
+          ),
+        ],
+        if (service.canAddToPlaylist) ...[
+          const SizedBox(width: 12),
+          _RoundButton(
+            icon: Icons.playlist_add,
+            size: 58,
+            onTap: () => showDialog(
+              context: context,
+              builder: (_) => _PlaylistPickerDialog(service: service),
+            ),
+          ),
+        ],
       ],
+    );
+  }
+}
+
+/// Lets the user add the current track to one of their Spotify playlists.
+/// Loads the list lazily when opened; tapping a playlist adds the track and
+/// closes the dialog immediately, matching the fire-and-forget feedback the
+/// rest of the transport controls already use.
+class _PlaylistPickerDialog extends StatefulWidget {
+  final PlaybackSource service;
+  const _PlaylistPickerDialog({required this.service});
+
+  @override
+  State<_PlaylistPickerDialog> createState() => _PlaylistPickerDialogState();
+}
+
+class _PlaylistPickerDialogState extends State<_PlaylistPickerDialog> {
+  late final Future<List<PlaylistInfo>> _future = widget.service.loadPlaylists();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF1B1E27),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 12, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Add to playlist',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white54),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              Flexible(
+                child: FutureBuilder<List<PlaylistInfo>>(
+                  future: _future,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 48),
+                        child: Center(
+                          child: SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: CircularProgressIndicator(strokeWidth: 3),
+                          ),
+                        ),
+                      );
+                    }
+                    final playlists = snapshot.data ?? const [];
+                    if (playlists.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 48),
+                        child: Center(
+                          child: Text('No playlists found',
+                              style: TextStyle(
+                                  color: Colors.white54, fontSize: 16)),
+                        ),
+                      );
+                    }
+                    return ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: playlists.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(color: Colors.white12, height: 1),
+                      itemBuilder: (context, i) {
+                        final p = playlists[i];
+                        return ListTile(
+                          title: Text(
+                            p.name,
+                            style:
+                                const TextStyle(color: Colors.white, fontSize: 18),
+                          ),
+                          onTap: () {
+                            widget.service.addToPlaylist(p.id);
+                            Navigator.of(context).pop();
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

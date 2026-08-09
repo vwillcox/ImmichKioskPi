@@ -1,0 +1,14 @@
+[Unit]
+Description=Librespot Spotify Connect device (Kiosk)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+ExecStart=/usr/bin/librespot --name Kiosk --backend pulseaudio --device-type speaker --cache %h/.cache/librespot --system-cache %h/.cache/librespot --initial-volume 60 --enable-volume-normalisation
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

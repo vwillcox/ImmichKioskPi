@@ -2,6 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'now_playing_service.dart';
 
+/// A playlist the current account can add tracks to, for the "add to
+/// playlist" picker. Spotify-only — AVRCP has no such concept.
+class PlaylistInfo {
+  final String id;
+  final String name;
+  const PlaylistInfo({required this.id, required this.name});
+}
+
 /// Common shape for anything the now-playing overlay can display: the phone
 /// over Bluetooth AVRCP, or a Spotify Connect session over the Web API.
 ///
@@ -31,6 +39,14 @@ abstract class PlaybackSource extends ChangeNotifier {
   /// Shown next to the device name in the expanded view.
   IconData get sourceIcon;
 
+  /// Whether this source supports saving the current track to the library
+  /// (Spotify's "liked songs"). AVRCP has no such API.
+  bool get canLike;
+  bool get isLiked;
+
+  /// Whether this source supports adding the current track to a playlist.
+  bool get canAddToPlaylist;
+
   Future<void> playPause();
   Future<void> next();
   Future<void> previous();
@@ -39,4 +55,9 @@ abstract class PlaybackSource extends ChangeNotifier {
   Future<void> setVolume(double fraction);
   Future<void> toggleMute();
   Future<void> seek(Duration position);
+  Future<void> toggleLike();
+
+  /// The account's playlists, for the "add to playlist" picker.
+  Future<List<PlaylistInfo>> loadPlaylists();
+  Future<void> addToPlaylist(String playlistId);
 }

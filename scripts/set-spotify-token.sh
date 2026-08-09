@@ -46,7 +46,8 @@ CLIENT_ID, CONFIG_PATH = sys.argv[1], pathlib.Path(sys.argv[2])
 REDIRECT_PORT = 8909
 REDIRECT_URI = f"http://127.0.0.1:{REDIRECT_PORT}/callback"
 SCOPES = ("user-read-playback-state user-modify-playback-state "
-          "user-read-currently-playing")
+          "user-read-currently-playing user-library-read user-library-modify "
+          "playlist-read-private playlist-modify-public playlist-modify-private")
 
 alphabet = string.ascii_letters + string.digits
 

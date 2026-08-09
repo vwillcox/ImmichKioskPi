@@ -36,7 +36,8 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   static const String redirectUri = 'http://127.0.0.1:$redirectPort/callback';
 
   static const _scopes = 'user-read-playback-state user-modify-playback-state '
-      'user-read-currently-playing';
+      'user-read-currently-playing user-library-read user-library-modify '
+      'playlist-read-private playlist-modify-public playlist-modify-private';
 
   static const Duration idleTimeout = Duration(minutes: 1);
   static const Duration _activePoll = Duration(seconds: 3);
@@ -88,6 +89,15 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   bool get canSeek => true;
   @override
   IconData get sourceIcon => Icons.podcasts;
+
+  String? _likedCheckedForTrackId;
+  bool _isLiked = false;
+  @override
+  bool get canLike => true;
+  @override
+  bool get isLiked => _isLiked;
+  @override
+  bool get canAddToPlaylist => true;
 
   Future<void> start() async {
     if (_settings.isConfigured) _beginPolling();
@@ -328,6 +338,8 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       _available = false;
       _now = const NowPlaying();
       _artUrl = null;
+      _isLiked = false;
+      _likedCheckedForTrackId = null;
       notifyListeners();
     }
     _slowDownPolling();
@@ -352,6 +364,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     final device = data['device'] as Map<String, dynamic>?;
     final repeatState = data['repeat_state'] as String? ?? 'off';
 
+    final trackId = item['id'] as String? ?? '';
     _now = NowPlaying(
       title: item['name'] as String? ?? '',
       artist: artists,
@@ -362,8 +375,12 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       repeat: repeatStateFrom(repeatState),
       shuffle: data['shuffle_state'] as bool? ?? false,
       deviceName: device?['name'] as String? ?? 'Spotify',
+      trackId: trackId,
     );
     _artUrl = art;
+    if (trackId.isNotEmpty && trackId != _likedCheckedForTrackId) {
+      unawaited(_refreshLikedStatus(trackId));
+    }
     _deviceHasVolume = device?['supports_volume'] as bool? ?? false;
     final vol = device?['volume_percent'];
     if (vol is int) {
@@ -504,6 +521,102 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     } else {
       _volumeBeforeMute = _volumePercent;
       await setVolume(0);
+    }
+  }
+
+  // ---- Library & playlists -----------------------------------------------
+
+  /// Spotify's February 2026 API change replaced the old per-type library
+  /// endpoints (`/me/tracks`, `/me/tracks/contains`) with unified ones that
+  /// take full URIs — the old ones now silently 403 instead of erroring
+  /// usefully, which is how this was caught.
+  static String _trackUri(String trackId) => 'spotify:track:$trackId';
+
+  Future<void> _refreshLikedStatus(String trackId) async {
+    _likedCheckedForTrackId = trackId;
+    final token = await _validAccessToken();
+    if (token == null) return;
+    try {
+      final r = await _dio.get(
+        '$_apiBase/me/library/contains',
+        queryParameters: {'uris': _trackUri(trackId)},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      if (_likedCheckedForTrackId != trackId) return; // track changed meanwhile
+      final list = r.data as List? ?? const [];
+      _isLiked = list.isNotEmpty && list.first == true;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Spotify liked-status error: $e');
+    }
+  }
+
+  @override
+  Future<void> toggleLike() async {
+    final trackId = _now.trackId;
+    if (trackId.isEmpty) return;
+    final wasLiked = _isLiked;
+    _isLiked = !wasLiked;
+    notifyListeners();
+    final token = await _validAccessToken();
+    if (token == null) {
+      _isLiked = wasLiked;
+      notifyListeners();
+      return;
+    }
+    try {
+      await _dio.request(
+        '$_apiBase/me/library',
+        queryParameters: {'uris': _trackUri(trackId)},
+        options: Options(
+          method: wasLiked ? 'DELETE' : 'PUT',
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+    } catch (e) {
+      debugPrint('Spotify toggleLike error: $e');
+      _isLiked = wasLiked;
+      notifyListeners();
+    }
+  }
+
+  @override
+  Future<List<PlaylistInfo>> loadPlaylists() async {
+    final token = await _validAccessToken();
+    if (token == null) return const [];
+    try {
+      final r = await _dio.get(
+        '$_apiBase/me/playlists',
+        queryParameters: {'limit': 50},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final items = (r.data as Map)['items'] as List? ?? const [];
+      return items
+          .map((p) => PlaylistInfo(
+                id: (p as Map)['id'] as String,
+                name: p['name'] as String? ?? '',
+              ))
+          .toList();
+    } catch (e) {
+      debugPrint('Spotify loadPlaylists error: $e');
+      return const [];
+    }
+  }
+
+  @override
+  Future<void> addToPlaylist(String playlistId) async {
+    final trackId = _now.trackId;
+    if (trackId.isEmpty) return;
+    final token = await _validAccessToken();
+    if (token == null) return;
+    try {
+      await _dio.post(
+        '$_apiBase/playlists/$playlistId/items',
+        data: {'uris': [_trackUri(trackId)]},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } catch (e) {
+      debugPrint('Spotify addToPlaylist error: $e');
     }
   }
 

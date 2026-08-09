@@ -7,6 +7,12 @@ It boots straight into a fullscreen kiosk — no desktop, no mouse, no keyboard.
 Browse your albums, pinch to zoom photos, play videos with speed control, run a
 slideshow with transitions, and see the local weather forecast.
 
+It also doubles as a speaker: pair a phone over Bluetooth and the Pi becomes
+its audio output with a now-playing panel over the slideshow, or connect
+Spotify directly — either by controlling whatever's already playing on the
+account, or by picking the Pi itself as a **Spotify Connect** device named
+"Kiosk".
+
 Built with Flutter (native Linux), so it stays smooth on a Pi.
 
 ---
@@ -43,9 +49,11 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 - Uses [Open-Meteo](https://open-meteo.com) — **no API key needed**
 - Choose the location (UK postcode or place name), the screen corner, and °C/°F
 
-**Now playing from your phone**
-- Shows the track your paired phone is playing, with album artwork, in a corner
-  of the slideshow
+**Bluetooth speaker + now playing from your phone**
+- Pair a phone once and the Pi becomes its **A2DP audio sink** — music plays
+  through the Pi's own output, not the phone's
+- Shows the track that's playing, with album artwork, in a corner of the
+  slideshow
 - Tap it to expand into a full player with **play/pause, next, previous, repeat,
   shuffle, and a volume slider with mute** — the controls drive the phone
 - Works with any app on the phone (Spotify, YouTube Music, podcasts) because it
@@ -54,10 +62,16 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
   purely as a remote control
 - Tidies itself away: the panel hides after a minute of nothing playing and
   reappears the moment playback resumes
-- **With Spotify Premium**, the same panel controls it directly over the
-  Spotify Web API instead — real seek, shown in preference to the generic
-  AVRCP source whenever Spotify has something active, falling back to it the
-  rest of the time
+
+**Built-in Spotify support**
+- **Spotify Connect device**: the Pi shows up as **"Kiosk"** in Spotify's own
+  device picker on any phone, desktop or other Spotify app — pick it and audio
+  streams straight to the Pi's speaker, no Bluetooth pairing involved
+- **With Spotify Premium**, the same now-playing panel can also control
+  whatever's active on the account directly over the Spotify Web API — real
+  seek, **like/save the current track**, and **add it to a playlist** — shown
+  in preference to the generic AVRCP source whenever Spotify has something
+  active, falling back to AVRCP the rest of the time
 
 **Built for a kiosk**
 - On-screen panels **drift slowly** by a few pixels so nothing sits on the same
@@ -274,17 +288,23 @@ album, because AVRCP album strings often carry suffixes like
 
 ### Spotify
 
-If you have Spotify Premium, the same now-playing panel can control it
+There are two independent Spotify features — set up either or both.
+
+#### Web API control (like, playlists, and controlling whatever's already playing)
+
+If you have Spotify Premium, the now-playing panel can control Spotify
 directly over the **Spotify Web API** instead of the generic AVRCP path —
-proper seek, shuffle, repeat, and volume on whichever Spotify Connect device
-is actually active, not just what BlueZ happens to expose. It's shown in
+proper seek, shuffle, repeat, volume, **like/unlike the current track**, and
+**add it to a playlist**, on whichever Spotify Connect device is actually
+active (the phone, a speaker, the Pi itself if you've also set up the Connect
+device below) — not just what BlueZ happens to expose. It's shown in
 preference to the AVRCP source whenever Spotify has something active, and
 falls back to AVRCP the rest of the time — for a podcast app, YouTube Music,
 anything Spotify's API doesn't know about.
 
-This is a control layer only. Audio still comes from wherever Spotify is
-already playing — typically the phone, over the same Bluetooth link the AVRCP
-source uses — the Pi is not made into a Spotify Connect speaker by this.
+This part is a control layer only — it doesn't make the Pi an audio output by
+itself. Audio comes from wherever Spotify is already playing, unless that's
+also the Pi (see the Connect device below).
 
 **Setup**, in Settings → Spotify:
 
@@ -298,7 +318,51 @@ source uses — the Pi is not made into a Spotify Connect speaker by this.
 
 No client secret is needed or stored — the login uses OAuth Authorization
 Code with PKCE, so only the Client ID (not confidential) and a refresh token
-are kept, in the same config file as everything else.
+are kept, in the same config file as everything else. If you connected before
+liking/playlists existed, tap **Reconnect** once to re-authorise with the
+extra permissions (`user-library-read`, `user-library-modify`,
+`playlist-read-private`, `playlist-modify-public`, `playlist-modify-private`)
+— an existing refresh token doesn't gain scopes it wasn't originally granted.
+
+> Spotify replaced several library/playlist endpoints in February 2026 (the
+> old per-type `/me/tracks` and `/playlists/{id}/tracks` now 403 silently);
+> this integration uses the current `/me/library` and `/playlists/{id}/items`
+> endpoints.
+
+#### Spotify Connect device (play audio directly on the Pi)
+
+Separately from the Web API control layer, the Pi can show up as its own
+selectable device — named **"Kiosk"** — in Spotify's Connect picker on any
+phone, desktop app, or other Spotify client. Picking it streams audio
+straight to the Pi over the network; no Bluetooth pairing, no OAuth login for
+this part.
+
+This is powered by [librespot](https://github.com/librespot-org/librespot), an
+open-source Spotify Connect client, run as a background service. The easiest
+way to get the binary is the [raspotify](https://github.com/dtcooper/raspotify)
+package, but its own systemd service runs as root against ALSA directly —
+which fights with PipeWire and doesn't share your audio output. Use it only
+for the binary, then run librespot yourself as a **user** service so it talks
+to the same PipeWire sink as everything else:
+
+```bash
+# Install librespot's binary via the raspotify package...
+sudo apt-get -y install curl
+curl -sL https://dtcooper.github.io/raspotify/install.sh | sudo sh
+
+# ...then disable raspotify's own root-level service — we run librespot
+# ourselves, below.
+sudo systemctl disable --now raspotify
+
+# Install and start the user-level unit instead.
+mkdir -p ~/.config/systemd/user ~/.cache/librespot
+cp ~/immich_kiosk_pi/deploy/librespot.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now librespot.service
+```
+
+"Kiosk" should now appear in Spotify's Connect device list within a few
+seconds. Requires Spotify Premium, same as librespot itself does.
 
 ### Indoor temperature sensor
 
@@ -644,6 +708,7 @@ Built with [Flutter](https://flutter.dev) (BSD-3-Clause,
 | [media_kit_video](https://pub.dev/packages/media_kit_video) | Video render surface | MIT |
 | [media_kit_libs_video](https://pub.dev/packages/media_kit_libs_video) | Native video dependencies | MIT |
 | [dbus](https://pub.dev/packages/dbus) · [src](https://github.com/canonical/dbus.dart) | Talks to BlueZ for phone media metadata | MPL-2.0 |
+| [crypto](https://pub.dev/packages/crypto) · [src](https://github.com/dart-lang/tools) | SHA-256 for the Spotify OAuth PKCE code challenge | BSD-3-Clause |
 | [path](https://pub.dev/packages/path) · [src](https://github.com/dart-lang/path) | Path joining for cache locations | BSD-3-Clause |
 | [flutter_lints](https://pub.dev/packages/flutter_lints) (dev) | Lint rules | BSD-3-Clause |
 
@@ -653,6 +718,7 @@ Built with [Flutter](https://flutter.dev) (BSD-3-Clause,
 |---|---|---|
 | [mpv / libmpv](https://mpv.io) · [source](https://github.com/mpv-player/mpv) | Video decoding behind media_kit | LGPL-2.1+ ([details](https://github.com/mpv-player/mpv/blob/master/Copyright)) |
 | [BlueZ](http://www.bluez.org) · [source](https://github.com/bluez/bluez) | Bluetooth stack — AVRCP metadata and control | GPL-2.0+ / LGPL-2.1+ |
+| [librespot](https://github.com/librespot-org/librespot) | Spotify Connect device ("Kiosk") — plays audio directly, run as its own systemd service | MIT |
 | [GTK 3](https://www.gtk.org) | Flutter's Linux embedder window | LGPL-2.1+ |
 
 ### Services
@@ -662,6 +728,7 @@ Built with [Flutter](https://flutter.dev) (BSD-3-Clause,
 | [Immich](https://immich.app) · [src](https://github.com/immich-app/immich) | Your own photo server (the whole point) | AGPL-3.0 |
 | [Open-Meteo](https://open-meteo.com) | Weather forecast — no API key required | Free for non-commercial use, [CC BY 4.0](https://open-meteo.com/en/license) |
 | [iTunes Search API](https://performance-partners.apple.com/search-api) | Album artwork lookup | Free, no key · Apple terms |
+| [Spotify Web API](https://developer.spotify.com/documentation/web-api) | Playback control, liked songs and playlists when Spotify is connected | Requires your own free Spotify Developer app + Premium account |
 | [postcodes.io](https://postcodes.io) · [src](https://github.com/ideal-postcodes/postcodes.io) | UK postcode → coordinates | MIT, data under [OGL](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) |
 
 ---

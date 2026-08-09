@@ -21,6 +21,10 @@ class NowPlaying {
   final bool shuffle;
   final String deviceName;
 
+  /// Spotify's own track ID, for the library ("like") and playlist APIs.
+  /// Empty for AVRCP, which has no such concept.
+  final String trackId;
+
   const NowPlaying({
     this.title = '',
     this.artist = '',
@@ -31,6 +35,7 @@ class NowPlaying {
     this.repeat = 'off',
     this.shuffle = false,
     this.deviceName = '',
+    this.trackId = '',
   });
 
   bool get isPlaying => status == 'playing';
@@ -456,6 +461,21 @@ class NowPlayingService extends ChangeNotifier implements PlaybackSource {
 
   @override
   IconData get sourceIcon => Icons.bluetooth_audio;
+
+  /// BlueZ's AVRCP surface has no library or playlist API — those are
+  /// Spotify Web API concepts only.
+  @override
+  bool get canLike => false;
+  @override
+  bool get isLiked => false;
+  @override
+  Future<void> toggleLike() async {}
+  @override
+  bool get canAddToPlaylist => false;
+  @override
+  Future<List<PlaylistInfo>> loadPlaylists() async => const [];
+  @override
+  Future<void> addToPlaylist(String playlistId) async {}
 
   Future<void> _setProperty(String name, String value) async {
     try {
