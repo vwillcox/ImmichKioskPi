@@ -1,6 +1,6 @@
 /// Persistent app configuration (connection, slideshow, weather overlay).
 
-enum SlideshowTransition { fade, slide, kenBurns }
+enum SlideshowTransition { fade, slide, kenBurns, pageTurn }
 
 SlideshowTransition _transitionFromString(String? s) {
   switch (s) {
@@ -8,6 +8,8 @@ SlideshowTransition _transitionFromString(String? s) {
       return SlideshowTransition.slide;
     case 'kenBurns':
       return SlideshowTransition.kenBurns;
+    case 'pageTurn':
+      return SlideshowTransition.pageTurn;
     case 'fade':
     default:
       return SlideshowTransition.fade;
@@ -20,6 +22,8 @@ String transitionToString(SlideshowTransition t) {
       return 'slide';
     case SlideshowTransition.kenBurns:
       return 'kenBurns';
+    case SlideshowTransition.pageTurn:
+      return 'pageTurn';
     case SlideshowTransition.fade:
       return 'fade';
   }

@@ -452,6 +452,8 @@ class _SlideshowSettingsTile extends StatelessWidget {
                   value: SlideshowTransition.slide, child: Text('Slide')),
               DropdownMenuItem(
                   value: SlideshowTransition.kenBurns, child: Text('Ken Burns')),
+              DropdownMenuItem(
+                  value: SlideshowTransition.pageTurn, child: Text('Page turn')),
             ],
             onChanged: (v) {
               if (v != null) {

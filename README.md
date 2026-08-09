@@ -28,7 +28,7 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 - Handles portrait and landscape media without cropping
 
 **Slideshow**
-- Fade, slide or **Ken Burns** transitions
+- Fade, slide, **Ken Burns**, or **page turn** transitions
 - Configurable interval, shuffle, and a blurred backdrop behind letterboxed shots
 - **Multi-select albums** and play them all as one combined slideshow
 - Images are fully decoded before they animate, so slides never flicker in

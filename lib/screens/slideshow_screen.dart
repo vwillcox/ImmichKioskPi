@@ -208,6 +208,32 @@ class _SlideshowScreenState extends State<SlideshowScreen> {
                     ).animate(anim);
                     return SlideTransition(position: inFromRight, child: child);
                   }
+                  if (t == SlideshowTransition.pageTurn) {
+                    // The incoming photo rotates in from edge-on (as if it
+                    // were the next page); the outgoing one rotates the same
+                    // way out, hinged on the same edge, so they read as one
+                    // continuous page turning rather than two independent
+                    // animations. Capped at 90° so the mirrored back of the
+                    // image is never visible. Transform itself isn't
+                    // animation-aware — unlike FadeTransition/SlideTransition,
+                    // it only reads anim.value once at build time — so it has
+                    // to be driven explicitly via AnimatedBuilder or it just
+                    // freezes at whatever angle it first built with.
+                    return AnimatedBuilder(
+                      animation: anim,
+                      builder: (context, c) {
+                        final angle = (1 - anim.value) * (pi / 2);
+                        return Transform(
+                          alignment: Alignment.centerLeft,
+                          transform: Matrix4.identity()
+                            ..setEntry(3, 2, 0.0012)
+                            ..rotateY(angle),
+                          child: c,
+                        );
+                      },
+                      child: child,
+                    );
+                  }
                   return FadeTransition(opacity: anim, child: child);
                 },
                 child: slide,
