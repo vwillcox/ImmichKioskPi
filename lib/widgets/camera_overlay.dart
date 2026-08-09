@@ -96,17 +96,15 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
       final player = _player;
       if (player == null || !mounted) return;
 
-      // A raw H.264 elementary stream carries no timestamps, so left to
-      // itself mpv invents them and buffers, and the picture runs behind what
-      // the camera is actually looking at. Told the real frame rate and asked
-      // not to buffer, it draws each frame as it lands — which is what a live
-      // view wants. There's no audio track to bother decoding.
+      // Asked not to buffer and to show frames untimed, mpv draws each one as
+      // it lands rather than running behind what the camera is looking at,
+      // which is what a live view wants. RTSP over TCP because UDP loses
+      // frames on this network. The stream carries an audio track we have no
+      // use for.
       final native = player.platform;
       if (native is NativePlayer) {
         for (final o in const [
-          ['demuxer-lavf-format', 'h264'],
-          ['correct-pts', 'no'],
-          ['container-fps-override', '30'],
+          ['rtsp-transport', 'tcp'],
           ['cache', 'no'],
           ['untimed', 'yes'],
           ['video-latency-hacks', 'yes'],

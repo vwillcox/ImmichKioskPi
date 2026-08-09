@@ -163,58 +163,50 @@ class CameraService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Put the phone into the state this view expects before the stream opens,
-  /// so the first frames already have the right lens, size and zoom.
-  /// Ask for only what isn't already set.
-  ///
-  /// Re-selecting the lens rebinds the camera on the phone, and it comes back
-  /// composing for a portrait screen — the picture then arrives on its side,
-  /// letterboxed into a landscape frame. It only recovers when the phone's
-  /// app is started afresh. So the lens is only ever sent when it genuinely
-  /// differs from what the phone is already on, which for the usual case of
-  /// "open the view on the lens it was left on" means sending nothing at all.
+  /// Put the phone into the state this view expects before the stream opens.
   Future<void> _applyStartupState() async {
     await refreshStatus();
     final now = _status;
-
-    final changes = <String, String>{
-      'rotate': '${settings.rotate}',
-      'zoom': _zoom.toStringAsFixed(1),
-    };
-    if (now?.currentCameraId != settings.cameraId) {
-      changes['camera'] = settings.cameraId;
-    }
     if (now?.currentStreamRes != settings.streamResolution) {
-      changes['resolution'] = settings.streamResolution;
-    }
-    await _control(changes);
-
-    // A lens or size change restarts the camera; give it a moment to come
-    // back before anything opens the stream.
-    if (changes.containsKey('camera') || changes.containsKey('resolution')) {
+      await _get('/settings/video_size?set=${settings.streamResolution}');
+      // Changing the size restarts capture; let it come back before the
+      // stream is opened.
       await Future<void>.delayed(const Duration(milliseconds: 900));
     }
+    await _get('/settings/orientation?set=landscape');
   }
 
   Future<void> refreshStatus() async {
     if (!isConfigured) return;
     try {
       final r = await _dio.getUri<Map<String, dynamic>>(
-        Uri.parse('${settings.baseUrl}/info.json'),
+        Uri.parse('${settings.baseUrl}/status.json'),
         options: Options(responseType: ResponseType.json),
       );
       final data = r.data ?? const <String, dynamic>{};
-      final cams = (data['cameras'] as List?) ?? const [];
-      final now = data['settings'] as Map<String, dynamic>? ?? const {};
+      final cur = data['curvals'] as Map<String, dynamic>? ?? const {};
+      final front = '${cur['ffc']}' == 'on';
+      _torch = '${cur['torch']}' == 'on';
+      _cameraId = front ? 'front' : 'back';
       _status = PhoneStatus(
-        lenses: cams
-            .whereType<Map<String, dynamic>>()
-            .map(PhoneLens.fromJson)
-            .toList(),
-        batteryPercent: (data['batteryPercent'] as num?)?.toInt(),
-        wifiStrength: (data['wifiStrength'] as num?)?.toInt(),
-        currentCameraId: now['cameraId'] as String?,
-        currentStreamRes: now['streamRes'] as String?,
+        // IP Webcam exposes one back and one front camera, switched with the
+        // front-facing-camera flag rather than by id.
+        lenses: const [
+          PhoneLens(
+              id: 'back',
+              label: 'Back',
+              facing: 'back',
+              minZoom: 1.0,
+              maxZoom: 10.0),
+          PhoneLens(
+              id: 'front',
+              label: 'Front',
+              facing: 'front',
+              minZoom: 1.0,
+              maxZoom: 10.0),
+        ],
+        currentCameraId: _cameraId,
+        currentStreamRes: cur['video_size'] as String?,
       );
       _lastError = null;
     } catch (e) {
@@ -253,7 +245,8 @@ class CameraService extends ChangeNotifier {
     _zoomDebounce = Timer(const Duration(milliseconds: 120), () {
       final z = _pendingZoom;
       _pendingZoom = null;
-      if (z != null) unawaited(_control({'zoom': z.toStringAsFixed(1)}));
+      // IP Webcam counts zoom in percent of the sensor's range, 100 being 1x.
+      if (z != null) unawaited(_get('/ptz?zoom=${(z * 100).round()}'));
     });
   }
 
@@ -262,51 +255,45 @@ class CameraService extends ChangeNotifier {
     _cameraId = id;
     _zoom = 1.0;
     notifyListeners();
-    await _control({'camera': id, 'zoom': '1.0'});
+    await _get('/settings/ffc?set=${id == 'front' ? 'on' : 'off'}');
   }
 
   Future<void> setTorch(bool on) async {
     _torch = on;
     notifyListeners();
-    await _control({'torch': on ? 'on' : 'off'});
+    await _get(on ? '/enabletorch' : '/disabletorch');
   }
 
-  /// Send one or more control keys. Any path with a query string is treated
-  /// as a command by the phone, so the path here is just `/`.
-  Future<void> _control(Map<String, String> params) async {
+  /// Every control is a plain GET; IP Webcam answers each with a small XML
+  /// result we have no use for.
+  Future<void> _get(String path) async {
     if (!isConfigured) return;
-    final query = {
-      ...params,
-      'ts': '${DateTime.now().millisecondsSinceEpoch}',
-    };
     try {
       await _dio.getUri<String>(
-        Uri.parse('${settings.baseUrl}/').replace(queryParameters: query),
+        Uri.parse('${settings.baseUrl}$path'),
         options: Options(responseType: ResponseType.plain),
       );
       _lastError = null;
     } catch (e) {
       _lastError = 'Camera unreachable';
-      debugPrint('CameraService: control $params failed: $e');
+      debugPrint('CameraService: $path failed: $e');
       notifyListeners();
     }
   }
 
-  /// URL media_kit opens for the picture — a raw Annex-B H.264 elementary
-  /// stream, hardware-encoded on the phone.
+  /// URL media_kit opens for the picture: H.264 over RTSP.
   ///
-  /// About 25fps against MJPEG's 15, for less bandwidth (9 Mbit/s against 12).
-  /// MJPEG at 15fps visibly stutters; that is the phone's JPEG encoder topping
-  /// out, and it is no better at 720p, so there is nothing to gain by asking
-  /// for less. Decoding H.264 costs more here — roughly 18% of one core
-  /// against MJPEG's 10%, the Pi 5 having no hardware H.264 decoder — which is
-  /// a fair trade for the frame rate.
-  ///
-  /// Both endpoints compose for whatever orientation the phone's *display* is
-  /// in, so the phone has to be unlocked and landscape or the picture arrives
-  /// on its side, letterboxed into a landscape frame. That is a property of
-  /// the phone, not of either encoder.
-  String get streamUrl => '${settings.baseUrl}/video/h264';
+  /// IP Webcam also serves MJPEG, but at 20fps it costs 180 Mbit/s — it sends
+  /// near-lossless JPEGs — where this is a fraction of that. It also tags the
+  /// stream with the sensor's rotation, so mpv turns the picture the right way
+  /// up by itself; nothing here has to know which way the phone is lying.
+  String get streamUrl {
+    final host = settings.address.split(':').first;
+    final port = settings.address.contains(':')
+        ? settings.address.split(':').last
+        : '8080';
+    return 'rtsp://$host:$port/h264_ulaw.sdp';
+  }
 
   @override
   void dispose() {
