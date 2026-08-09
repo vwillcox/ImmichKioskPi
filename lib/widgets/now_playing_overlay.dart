@@ -12,6 +12,7 @@ import '../services/config_service.dart';
 import '../services/now_playing_service.dart';
 import '../services/playback_source.dart';
 import '../services/spotify_service.dart';
+import 'spotify_panels.dart';
 
 String _fmt(Duration d) {
   String two(int n) => n.toString().padLeft(2, '0');
@@ -423,6 +424,42 @@ class _DetailContent extends StatelessWidget {
                   style: const TextStyle(color: Colors.white70, fontSize: 22),
                 ),
               ),
+              // Spotify-only: the AVRCP source has no notion of other
+              // devices, a queue, or a library to start something from.
+              // Sits up here rather than in the transport bar so the device
+              // switcher lands next to the device name it changes.
+              if (service is SpotifyService) ...[
+                _HeaderButton(
+                  icon: Icons.speaker_group,
+                  tooltip: 'Play on…',
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) =>
+                        SpotifyDevicesDialog(service: service as SpotifyService),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _HeaderButton(
+                  icon: Icons.queue_music,
+                  tooltip: 'Up next',
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) =>
+                        SpotifyQueueDialog(service: service as SpotifyService),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _HeaderButton(
+                  icon: Icons.library_music,
+                  tooltip: 'Play something',
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) =>
+                        SpotifyBrowseDialog(service: service as SpotifyService),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               const Icon(Icons.close_fullscreen,
                   color: Colors.white54, size: 28),
             ],
@@ -739,6 +776,39 @@ class _PlaylistPickerDialogState extends State<_PlaylistPickerDialog> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// An icon button in the expanded player's header. Deliberately a generous
+/// target — everything on this panel is driven by a finger.
+class _HeaderButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  const _HeaderButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.10),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            width: 56,
+            height: 56,
+            child: Icon(icon, color: Colors.white70, size: 26),
           ),
         ),
       ),
