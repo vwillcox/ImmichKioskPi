@@ -154,14 +154,18 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
 
   /// When Spotify 429s, it says how long to stay away for — sometimes hours.
   /// Retrying regardless (as this used to) never recovers and only keeps the
-  /// block alive, so nothing touches the API again until this passes.
-  DateTime? _rateLimitedUntil;
+  /// block alive, so nothing touches that endpoint again until it passes.
+  ///
+  /// Kept per endpoint rather than for the service as a whole: the limits
+  /// are applied per endpoint too, and one of them being blocked for hours
+  /// shouldn't take the rest of the integration down with it.
+  final Map<String, DateTime> _rateLimitedUntil = {};
 
-  bool get _rateLimited {
-    final until = _rateLimitedUntil;
+  bool _rateLimited(String what) {
+    final until = _rateLimitedUntil[what];
     if (until == null) return false;
     if (DateTime.now().isBefore(until)) return true;
-    _rateLimitedUntil = null;
+    _rateLimitedUntil.remove(what);
     return false;
   }
 
@@ -170,9 +174,10 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
     if (e is! DioException || e.response?.statusCode != 429) return false;
     final header = e.response?.headers.value('retry-after');
     final seconds = int.tryParse(header ?? '') ?? 60;
-    _rateLimitedUntil = DateTime.now().add(Duration(seconds: seconds));
+    final until = DateTime.now().add(Duration(seconds: seconds));
+    _rateLimitedUntil[what] = until;
     debugPrint('Spotify rate-limited on $what; backing off ${seconds}s '
-        '(until $_rateLimitedUntil)');
+        '(until $until)');
     return true;
   }
 
@@ -190,6 +195,10 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   /// Call after settings change — right after [connect] or [disconnect].
   void refreshFromSettings() {
     _pollTimer?.cancel();
+    // _speedUpPolling() is a no-op while this is set, so leaving it true
+    // after cancelling the timer above means polling never restarts and the
+    // panel sits frozen on whatever it last saw.
+    _fastPolling = false;
     if (_settings.isConfigured) {
       _beginPolling();
     } else {
@@ -479,7 +488,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       trackId: trackId,
     );
     _artUrl = art;
-    if (trackId.isNotEmpty && !_rateLimited) {
+    if (trackId.isNotEmpty && !_rateLimited('liked-status')) {
       final now = DateTime.now();
       final trackChanged = trackId != _lastLikedRecheckTrackId;
       final intervalElapsed = _lastLikedRecheckAt == null ||
@@ -644,7 +653,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
   static String _trackUri(String trackId) => 'spotify:track:$trackId';
 
   Future<void> _refreshLikedStatus(String trackId) async {
-    if (_rateLimited) return;
+    if (_rateLimited('liked-status')) return;
     _likedCheckedForTrackId = trackId;
     final token = await _validAccessToken();
     if (token == null) return;
@@ -756,7 +765,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     Map<String, dynamic>? query,
     required SpotifyItem? Function(Map<String, dynamic>) map,
   }) async {
-    if (_rateLimited) return const [];
+    if (_rateLimited(what)) return const [];
     final token = await _validAccessToken();
     if (token == null) return const [];
     try {
@@ -804,7 +813,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
   }
 
   Future<List<SpotifyDevice>> loadDevices() async {
-    if (_rateLimited) return const [];
+    if (_rateLimited('loadDevices')) return const [];
     final token = await _validAccessToken();
     if (token == null) return const [];
     try {
@@ -857,7 +866,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
   /// What's coming up next. The response's `queue` is upcoming items only —
   /// `currently_playing` is separate and already shown by the panel.
   Future<List<SpotifyItem>> loadQueue() async {
-    if (_rateLimited) return const [];
+    if (_rateLimited('loadQueue')) return const [];
     final token = await _validAccessToken();
     if (token == null) return const [];
     try {
