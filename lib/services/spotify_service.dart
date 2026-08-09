@@ -96,6 +96,8 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   @override
   IconData get sourceIcon => Icons.podcasts;
 
+  /// The track a liked-status request is currently in flight for — guards
+  /// against a slow response landing after the track has already moved on.
   String? _likedCheckedForTrackId;
   bool _isLiked = false;
   @override
@@ -397,7 +399,11 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       trackId: trackId,
     );
     _artUrl = art;
-    if (trackId.isNotEmpty && trackId != _likedCheckedForTrackId) {
+    // Re-checked every poll, not just once per track: liking/unliking from
+    // Spotify itself (the phone, the web player) while this same track
+    // keeps playing here otherwise never gets picked up, since nothing else
+    // about the player state changes to prompt a recheck.
+    if (trackId.isNotEmpty) {
       unawaited(_refreshLikedStatus(trackId));
     }
     _deviceHasVolume = device?['supports_volume'] as bool? ?? false;
