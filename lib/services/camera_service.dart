@@ -43,10 +43,17 @@ class PhoneStatus {
   final int? batteryPercent;
   final int? wifiStrength;
 
+  /// What the phone is currently set to, so we only send the settings that
+  /// actually need changing.
+  final String? currentCameraId;
+  final String? currentStreamRes;
+
   const PhoneStatus({
     this.lenses = const [],
     this.batteryPercent,
     this.wifiStrength,
+    this.currentCameraId,
+    this.currentStreamRes,
   });
 }
 
@@ -158,17 +165,35 @@ class CameraService extends ChangeNotifier {
 
   /// Put the phone into the state this view expects before the stream opens,
   /// so the first frames already have the right lens, size and zoom.
+  /// Ask for only what isn't already set.
+  ///
+  /// Re-selecting the lens rebinds the camera on the phone, and it comes back
+  /// composing for a portrait screen — the picture then arrives on its side,
+  /// letterboxed into a landscape frame. It only recovers when the phone's
+  /// app is started afresh. So the lens is only ever sent when it genuinely
+  /// differs from what the phone is already on, which for the usual case of
+  /// "open the view on the lens it was left on" means sending nothing at all.
   Future<void> _applyStartupState() async {
-    await _control({
-      'camera': settings.cameraId,
-      'resolution': settings.streamResolution,
+    await refreshStatus();
+    final now = _status;
+
+    final changes = <String, String>{
       'rotate': '${settings.rotate}',
       'zoom': _zoom.toStringAsFixed(1),
-    });
-    // Selecting the lens restarts the camera on the phone; give it a moment
-    // to come back at the requested size before anything opens the stream.
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    await refreshStatus();
+    };
+    if (now?.currentCameraId != settings.cameraId) {
+      changes['camera'] = settings.cameraId;
+    }
+    if (now?.currentStreamRes != settings.streamResolution) {
+      changes['resolution'] = settings.streamResolution;
+    }
+    await _control(changes);
+
+    // A lens or size change restarts the camera; give it a moment to come
+    // back before anything opens the stream.
+    if (changes.containsKey('camera') || changes.containsKey('resolution')) {
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+    }
   }
 
   Future<void> refreshStatus() async {
@@ -180,6 +205,7 @@ class CameraService extends ChangeNotifier {
       );
       final data = r.data ?? const <String, dynamic>{};
       final cams = (data['cameras'] as List?) ?? const [];
+      final now = data['settings'] as Map<String, dynamic>? ?? const {};
       _status = PhoneStatus(
         lenses: cams
             .whereType<Map<String, dynamic>>()
@@ -187,6 +213,8 @@ class CameraService extends ChangeNotifier {
             .toList(),
         batteryPercent: (data['batteryPercent'] as num?)?.toInt(),
         wifiStrength: (data['wifiStrength'] as num?)?.toInt(),
+        currentCameraId: now['cameraId'] as String?,
+        currentStreamRes: now['streamRes'] as String?,
       );
       _lastError = null;
     } catch (e) {

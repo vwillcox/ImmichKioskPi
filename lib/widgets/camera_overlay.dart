@@ -38,6 +38,7 @@ class _CameraOverlayState extends State<CameraOverlay>
   Player? _player;
   VideoController? _video;
   bool _starting = false;
+  bool _streaming = false;
 
   /// Zoom at the moment a pinch began, so the gesture scales from there
   /// rather than compounding every update.
@@ -57,23 +58,46 @@ class _CameraOverlayState extends State<CameraOverlay>
     stopDrift();
     _hudTimer?.cancel();
     _controller.dispose();
-    unawaited(_stopStream());
+    unawaited(_player?.dispose());
     super.dispose();
   }
 
+  /// Bring up the player and hand libmpv its render target, once.
+  ///
+  /// The [Video] widget must be in the tree and painted *before* any media is
+  /// opened. Open a stream first and libmpv finds it has nowhere to draw, so
+  /// it falls back to a video output that opens its own window — which on
+  /// this compositor lands on top of the kiosk as a rectangle that never
+  /// repaints, over the middle of the picture.
+  Future<void> _ensurePlayer() async {
+    if (_player != null) return;
+    final player = Player();
+    final video = VideoController(
+      player,
+      // Same reason as the video player: hardware decoding on the Pi's GL
+      // path renders a solid frame instead of the picture.
+      configuration: const VideoControllerConfiguration(
+        enableHardwareAcceleration: false,
+      ),
+    );
+    setState(() {
+      _player = player;
+      _video = video;
+    });
+    // VideoController's constructor returns before it has done anything: the
+    // native controller that registers the texture and hands libmpv its
+    // render context is only built on a post-frame callback, asynchronously.
+    // This future is what completes when that is actually in place.
+    await video.platform.future;
+  }
+
   Future<void> _startStream(CameraService service) async {
-    if (_player != null || _starting) return;
+    if (_streaming || _starting) return;
     _starting = true;
     try {
-      final player = Player();
-      final video = VideoController(
-        player,
-        // Same reason as the video player: hardware decoding on the Pi's GL
-        // path renders a solid frame instead of the picture.
-        configuration: const VideoControllerConfiguration(
-          enableHardwareAcceleration: false,
-        ),
-      );
+      await _ensurePlayer();
+      final player = _player;
+      if (player == null || !mounted) return;
 
       // An MJPEG stream carries no timestamps, so left to itself mpv buffers
       // and invents them, and the picture runs behind what the camera is
@@ -104,20 +128,10 @@ class _CameraOverlayState extends State<CameraOverlay>
       // restart the camera on the phone, and a stream opened across that
       // restart keeps the geometry it saw first.
       await service.ready;
-      if (!mounted || !service.isOpen) {
-        await player.dispose();
-        return;
-      }
+      if (!mounted || !service.isOpen) return;
 
       await player.open(Media(service.streamUrl));
-      if (!mounted) {
-        await player.dispose();
-        return;
-      }
-      setState(() {
-        _player = player;
-        _video = video;
-      });
+      _streaming = true;
     } catch (e) {
       debugPrint('CameraOverlay: could not open stream: $e');
     } finally {
@@ -125,11 +139,13 @@ class _CameraOverlayState extends State<CameraOverlay>
     }
   }
 
+  /// Drop the connection to the phone without tearing down the player: the
+  /// render target is expensive to establish and, as above, getting it wrong
+  /// costs a stray window. The player is disposed in [dispose].
   Future<void> _stopStream() async {
-    final player = _player;
-    _player = null;
-    _video = null;
-    if (player != null) await player.dispose();
+    if (!_streaming) return;
+    _streaming = false;
+    await _player?.stop();
   }
 
   void _showHud(String text) {
@@ -159,12 +175,17 @@ class _CameraOverlayState extends State<CameraOverlay>
     final service = context.watch<CameraService>();
 
     if (!service.isOpen) {
-      if (_player != null) unawaited(_stopStream());
+      if (_streaming) unawaited(_stopStream());
       if (_controller.value != 0) _controller.value = 0;
       return const SizedBox.shrink();
     }
 
-    if (_player == null) unawaited(_startStream(service));
+    // After the frame, not during it: bringing the player up calls setState.
+    if (!_streaming && !_starting) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && service.isOpen) unawaited(_startStream(service));
+      });
+    }
 
     final target = service.isExpanded ? 1.0 : 0.0;
     if (_controller.value != target) {
@@ -259,14 +280,7 @@ class _Window extends StatelessWidget {
     final expanded = expansion > 0.5;
     final radius = BorderRadius.circular(24 * (1 - expansion));
 
-    return GestureDetector(
-      onTap: onTap,
-      onDoubleTap: expanded ? onResetZoom : null,
-      onScaleStart: expanded ? onScaleStart : null,
-      onScaleUpdate: expanded ? onScaleUpdate : null,
-      child: ClipRRect(
-        borderRadius: radius,
-        child: Container(
+    final content = Container(
           color: Colors.black,
           child: Stack(
             fit: StackFit.expand,
@@ -286,6 +300,19 @@ class _Window extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 3),
                   ),
                 ),
+              // Taps are handled by a layer of its own *above* the picture
+              // rather than by an ancestor: the video widget takes part in
+              // the gesture arena too, and when it wins the tap that should
+              // have expanded the window goes nowhere.
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onTap,
+                  onDoubleTap: expanded ? onResetZoom : null,
+                  onScaleStart: expanded ? onScaleStart : null,
+                  onScaleUpdate: expanded ? onScaleUpdate : null,
+                ),
+              ),
               if (service.lastError != null)
                 Center(
                   child: Container(
@@ -336,16 +363,18 @@ class _Window extends StatelessWidget {
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  child: Opacity(
-                    opacity: ((expansion - 0.6) / 0.4).clamp(0.0, 1.0),
-                    child: _ExpandedControls(service: service),
-                  ),
+                  child: _ExpandedControls(service: service),
                 ),
             ],
           ),
-        ),
-      ),
-    );
+        );
+
+    // Only clip while the corners are actually rounded. Full screen there is
+    // nothing to clip, and a clip that size is an offscreen layer the Pi's
+    // GL driver would rather not be asked for.
+    return expansion < 0.01
+        ? ClipRRect(borderRadius: radius, child: content)
+        : content;
   }
 }
 
