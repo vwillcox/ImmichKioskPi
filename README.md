@@ -364,6 +364,14 @@ systemctl --user enable --now librespot.service
 "Kiosk" should now appear in Spotify's Connect device list within a few
 seconds. Requires Spotify Premium, same as librespot itself does.
 
+**On audio quality:** the unit passes `--bitrate 320`, the highest Ogg Vorbis
+quality Spotify Connect carries ("Very High" in Spotify's own app) — the
+default is 160 if that flag is left off. True **lossless** (24-bit/44.1kHz
+FLAC) isn't reachable here or on any other Connect device: Spotify's Lossless
+tier only streams inside its own official apps, over a different pipeline
+than Connect entirely, so this is a Spotify-side limitation rather than
+something librespot or this setup can work around.
+
 ### Indoor temperature sensor
 
 The indoor reading comes from a Govee H510x (H5101/H5102/H5104/H5177), which
