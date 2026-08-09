@@ -8,6 +8,7 @@ import '../models/immich_models.dart';
 import '../services/immich_service.dart';
 import '../services/config_service.dart';
 import '../services/locked_folder_service.dart';
+import '../widgets/now_playing_overlay.dart';
 import '../widgets/remote_image.dart';
 import 'album_screen.dart';
 import 'locked_folder_screen.dart';
@@ -211,8 +212,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: _selectionMode ? _selectionAppBar() : _normalAppBar(),
       // The weather overlay is deliberately not shown here — it's for the
-      // slideshow (photo-frame mode) only.
-      body: _buildBody(),
+      // slideshow (photo-frame mode) only. The now-playing player, on the
+      // other hand, takes over full-screen here when music is playing and no
+      // slideshow is running — there's nothing better to show — but stays
+      // out of the way while picking albums for a multi-select slideshow.
+      body: Stack(
+        children: [
+          _buildBody(),
+          if (!_selectionMode) const NowPlayingOverlay(startExpanded: true),
+        ],
+      ),
     );
   }
 

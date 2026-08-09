@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui' show ImageFilter;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -25,7 +28,19 @@ String _fmt(Duration d) {
 /// Place inside a Stack that fills the screen (slideshow only).
 class NowPlayingOverlay extends StatefulWidget {
   final EdgeInsets margin;
-  const NowPlayingOverlay({super.key, this.margin = const EdgeInsets.all(28)});
+
+  /// Start already expanded to the full player rather than the small corner
+  /// card. Used on the home screen — there's no slideshow to keep clear
+  /// there, so if music is playing there's nothing better to show than the
+  /// player itself; tapping it still shrinks to the corner like anywhere
+  /// else, uncovering the album grid to go start a slideshow.
+  final bool startExpanded;
+
+  const NowPlayingOverlay({
+    super.key,
+    this.margin = const EdgeInsets.all(28),
+    this.startExpanded = false,
+  });
 
   @override
   State<NowPlayingOverlay> createState() => _NowPlayingOverlayState();
@@ -46,20 +61,42 @@ class _NowPlayingOverlayState extends State<NowPlayingOverlay>
 
   bool get _expanded => _controller.value > 0.5;
 
+  /// Only set on the home screen (see [NowPlayingOverlay.startExpanded]) —
+  /// shrinking there is meant as a brief "let me pick an album" detour, not
+  /// a standing preference, so it pops back up on its own if nothing came of
+  /// it within [_autoExpandDelay].
+  Timer? _autoExpandTimer;
+  static const Duration _autoExpandDelay = Duration(seconds: 10);
+
   @override
   void initState() {
     super.initState();
+    if (widget.startExpanded) _controller.value = 1;
     startDrift();
   }
 
   @override
   void dispose() {
+    _autoExpandTimer?.cancel();
     stopDrift();
     _controller.dispose();
     super.dispose();
   }
 
-  void _toggle() => _expanded ? _controller.reverse() : _controller.forward();
+  void _toggle() {
+    if (_expanded) {
+      _controller.reverse();
+      if (widget.startExpanded) {
+        _autoExpandTimer?.cancel();
+        _autoExpandTimer = Timer(_autoExpandDelay, () {
+          if (mounted && !_expanded) _controller.forward();
+        });
+      }
+    } else {
+      _autoExpandTimer?.cancel();
+      _controller.forward();
+    }
+  }
 
   static const Size _collapsedSize = Size(420, 150);
 
@@ -106,7 +143,12 @@ class _NowPlayingOverlayState extends State<NowPlayingOverlay>
                         child: GestureDetector(
                           onTap: _toggle,
                           child: Container(
-                            color: Colors.black.withValues(alpha: 0.6 * v),
+                            // On the home screen there's no photo worth
+                            // seeing through it, so go fully opaque and hide
+                            // the album grid outright; over the slideshow,
+                            // dim rather than blot out the photo entirely.
+                            color: Colors.black
+                                .withValues(alpha: (widget.startExpanded ? 1.0 : 0.6) * v),
                           ),
                         ),
                       ),
@@ -144,10 +186,15 @@ class _NowPlayingOverlayState extends State<NowPlayingOverlay>
 
   Rect _expandedRect(Size screen) {
     const inset = 28.0;
-    // Cap the height so the card hugs its content rather than leaving a lot of
-    // empty space above and below on a 1200px-tall panel.
-    final width = (screen.width - inset * 2).clamp(0.0, 1400.0);
-    final height = (screen.height - inset * 2).clamp(0.0, 620.0);
+    // Over the slideshow, cap the height so the card hugs its content rather
+    // than leaving a lot of empty space above and below on a 1200px-tall
+    // panel and blotting out more of the photo than it needs to. On the home
+    // screen there's a solid black backdrop behind it instead of a photo, so
+    // it's free to grow to fill almost the whole screen.
+    final maxWidth = widget.startExpanded ? 2400.0 : 1400.0;
+    final maxHeight = widget.startExpanded ? 1400.0 : 620.0;
+    final width = (screen.width - inset * 2).clamp(0.0, maxWidth);
+    final height = (screen.height - inset * 2).clamp(0.0, maxHeight);
     return Rect.fromLTWH((screen.width - width) / 2,
         (screen.height - height) / 2, width, height);
   }
@@ -181,6 +228,11 @@ class _Panel extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            if (detailOpacity > 0)
+              Opacity(
+                opacity: detailOpacity,
+                child: _ArtworkBackdrop(url: service.artUrl),
+              ),
             if (collapsedOpacity > 0)
               Opacity(
                 opacity: collapsedOpacity,
@@ -194,6 +246,47 @@ class _Panel extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The current track's art, blown up behind the expanded player and blurred
+/// so it stays a backdrop rather than competing with the sharp square
+/// artwork already shown in the content on top. Fades to solid black by
+/// halfway down so the title/controls always sit on a plain, readable
+/// background rather than on top of the image itself.
+class _ArtworkBackdrop extends StatelessWidget {
+  final String? url;
+  const _ArtworkBackdrop({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    if (url == null) return const SizedBox.shrink();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ImageFiltered(
+          imageFilter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: CachedNetworkImage(
+            imageUrl: url!,
+            fit: BoxFit.cover,
+            errorWidget: (_, __, ___) => const SizedBox.shrink(),
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.1),
+                Colors.black,
+              ],
+              stops: const [0.0, 0.9],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -389,18 +482,21 @@ class _DetailContent extends StatelessWidget {
                                   color: Colors.white60, fontSize: 18)),
                         ],
                       ),
-                      const SizedBox(height: 22),
-                      _Controls(service: service),
-                      if (service.hasVolume) ...[
-                        const SizedBox(height: 14),
-                        _VolumeRow(service: service),
-                      ],
                     ],
                   ),
                 ),
               ],
             ),
           ),
+          // Its own full-width bar rather than squeezed into the text
+          // column: bigger buttons, spread out, so they're quick and
+          // forgiving to hit on a touchscreen rather than needing precision.
+          const SizedBox(height: 24),
+          _Controls(service: service),
+          if (service.hasVolume) ...[
+            const SizedBox(height: 16),
+            _VolumeRow(service: service),
+          ],
         ],
       ),
     );
@@ -442,12 +538,12 @@ class _ProgressBarState extends State<_ProgressBar> {
 
     return SliderTheme(
       data: SliderTheme.of(context).copyWith(
-        trackHeight: 8,
+        trackHeight: 10,
         activeTrackColor: const Color(0xFF7FB6FF),
         inactiveTrackColor: Colors.white24,
         thumbColor: const Color(0xFF7FB6FF),
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 11),
-        overlayShape: const RoundSliderOverlayShape(overlayRadius: 22),
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 16),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 30),
       ),
       child: Slider(
         value: (_dragValue ?? n.progress).clamp(0.0, 1.0),
@@ -484,53 +580,57 @@ class _Controls extends StatelessWidget {
     }
     final repeatOn = n.repeat != 'off';
 
+    // A full-width bar rather than packed to one side, with bigger buttons
+    // throughout — this is meant to be hit quickly without looking, not
+    // aimed at precisely.
     return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _RoundButton(
           icon: Icons.skip_previous,
-          size: 66,
+          size: 88,
           onTap: service.previous,
         ),
-        const SizedBox(width: 18),
+        const SizedBox(width: 22),
         _RoundButton(
           icon: n.isPlaying ? Icons.pause : Icons.play_arrow,
-          size: 86,
+          size: 116,
           filled: true,
           onTap: service.playPause,
         ),
-        const SizedBox(width: 18),
-        _RoundButton(icon: Icons.skip_next, size: 66, onTap: service.next),
-        const Spacer(),
+        const SizedBox(width: 22),
+        _RoundButton(icon: Icons.skip_next, size: 88, onTap: service.next),
+        const SizedBox(width: 48),
         _RoundButton(
           icon: repeatIcon,
-          size: 58,
+          size: 76,
           active: repeatOn,
           activeColor: accent,
           onTap: service.cycleRepeat,
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
         _RoundButton(
           icon: Icons.shuffle,
-          size: 58,
+          size: 76,
           active: n.shuffle,
           activeColor: accent,
           onTap: service.toggleShuffle,
         ),
         if (service.canLike) ...[
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           _RoundButton(
             icon: service.isLiked ? Icons.favorite : Icons.favorite_border,
-            size: 58,
+            size: 76,
             active: service.isLiked,
             activeColor: const Color(0xFFFF6B81),
             onTap: service.toggleLike,
           ),
         ],
         if (service.canAddToPlaylist) ...[
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           _RoundButton(
             icon: Icons.playlist_add,
-            size: 58,
+            size: 76,
             onTap: () => showDialog(
               context: context,
               builder: (_) => _PlaylistPickerDialog(service: service),
@@ -713,22 +813,22 @@ class _VolumeRow extends StatelessWidget {
       children: [
         _RoundButton(
           icon: _icon(v, muted),
-          size: 58,
+          size: 72,
           active: muted,
           activeColor: const Color(0xFFFF8A8A),
           onTap: service.toggleMute,
         ),
-        const SizedBox(width: 14),
+        const SizedBox(width: 16),
         Expanded(
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              trackHeight: 8,
+              trackHeight: 10,
               activeTrackColor: muted ? Colors.white24 : accent,
               inactiveTrackColor: Colors.white24,
               thumbColor: muted ? Colors.white54 : accent,
               // Big thumb and overlay: this is driven by fingers.
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 15),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 28),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 18),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 32),
             ),
             child: Slider(
               value: v,
@@ -736,13 +836,13 @@ class _VolumeRow extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 12),
         SizedBox(
-          width: 62,
+          width: 70,
           child: Text(
             '${(v * 100).round()}%',
             textAlign: TextAlign.right,
-            style: const TextStyle(color: Colors.white70, fontSize: 20),
+            style: const TextStyle(color: Colors.white70, fontSize: 22),
           ),
         ),
       ],
