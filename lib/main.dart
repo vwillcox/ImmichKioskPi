@@ -13,6 +13,7 @@ import 'services/indoor_sensor_service.dart';
 import 'services/locked_folder_service.dart';
 import 'services/media_cache.dart';
 import 'services/now_playing_service.dart';
+import 'services/spotify_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
 import 'screens/album_screen.dart';
@@ -47,6 +48,12 @@ void main() async {
     ..preferAudioRouted = config.config.nowPlaying.playAudioHere;
   unawaited(nowPlaying.start());
 
+  // Full playback control for a Spotify Premium account via the Web API,
+  // shown in preference to the AVRCP source above whenever it has something
+  // to show. A no-op until the one-time login is done in Settings.
+  final spotify = SpotifyService(config);
+  unawaited(spotify.start());
+
   runApp(
     MultiProvider(
       providers: [
@@ -55,6 +62,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => LockedFolderService(config)),
         ChangeNotifierProvider.value(value: weather),
         ChangeNotifierProvider.value(value: nowPlaying),
+        ChangeNotifierProvider.value(value: spotify),
         ChangeNotifierProvider.value(value: indoor),
       ],
       child: const ImmichKioskPiApp(),

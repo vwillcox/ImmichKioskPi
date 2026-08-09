@@ -9,6 +9,7 @@ import '../services/indoor_sensor_service.dart';
 import '../services/locked_folder_service.dart';
 import '../services/media_cache.dart';
 import '../services/now_playing_service.dart';
+import '../services/spotify_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/weather_overlay.dart';
 import 'about_screen.dart';
@@ -126,6 +127,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 32),
           _section('Now playing'),
           const _NowPlayingSettingsTile(),
+
+          const Divider(height: 32),
+          _section('Spotify'),
+          const _SpotifySettingsTile(),
 
           const Divider(height: 32),
           _section('Slideshow'),
@@ -712,6 +717,172 @@ class _HomeAssistantSettingsTile extends StatelessWidget {
       trailing: const Icon(Icons.chevron_right),
       onTap: () => _edit(context),
       isThreeLine: false,
+    );
+  }
+}
+
+/// Full Spotify playback control via the Web API, shown in preference to the
+/// AVRCP phone source whenever it has something active. Authenticated with
+/// OAuth Authorization Code + PKCE, so only a Client ID is needed — see
+/// [SpotifyService] for the flow itself.
+class _SpotifySettingsTile extends StatelessWidget {
+  const _SpotifySettingsTile();
+
+  Future<void> _edit(BuildContext context) async {
+    final config = context.read<ConfigService>();
+    final spotify = context.read<SpotifyService>();
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _SpotifyDialog(config: config, spotify: spotify),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<ConfigService>().config.spotify;
+    final spotify = context.watch<SpotifyService>();
+    return ListTile(
+      leading: Icon(Icons.podcasts,
+          color: spotify.available ? const Color(0xFF1ED760) : null),
+      title: const Text('Spotify'),
+      subtitle: Text(
+        !s.isConfigured
+            ? 'Not connected — full playback control alongside the phone'
+            : spotify.available
+                ? 'Connected — playing "${spotify.now.title}"'
+                : 'Connected, but nothing playing right now',
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _edit(context),
+    );
+  }
+}
+
+class _SpotifyDialog extends StatefulWidget {
+  final ConfigService config;
+  final SpotifyService spotify;
+  const _SpotifyDialog({required this.config, required this.spotify});
+
+  @override
+  State<_SpotifyDialog> createState() => _SpotifyDialogState();
+}
+
+class _SpotifyDialogState extends State<_SpotifyDialog> {
+  late final TextEditingController _clientId =
+      TextEditingController(text: widget.config.config.spotify.clientId);
+  bool _connecting = false;
+  String? _error;
+
+  Future<void> _connect() async {
+    final id = _clientId.text.trim();
+    if (id.isEmpty) {
+      setState(() => _error = 'Enter the Client ID first.');
+      return;
+    }
+    setState(() {
+      _connecting = true;
+      _error = null;
+    });
+    final err = await widget.spotify.connect(id);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _connecting = false;
+      _error = err;
+    });
+  }
+
+  Future<void> _disconnect() async {
+    await widget.spotify.disconnect();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isConfigured = widget.config.config.spotify.isConfigured;
+    return AlertDialog(
+      title: const Text('Spotify'),
+      content: SizedBox(
+        width: 640,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Create a free app at developer.spotify.com/dashboard, then '
+                'paste its Client ID below. Register this exact Redirect URI '
+                'on that app:',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                SpotifyService.redirectUri,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontFamily: 'monospace',
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _clientId,
+                enabled: !_connecting,
+                style: const TextStyle(fontSize: 18),
+                decoration: const InputDecoration(
+                  labelText: 'Client ID',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!,
+                    style: const TextStyle(color: Color(0xFFFF8A8A))),
+              ],
+              if (_connecting) ...[
+                const SizedBox(height: 14),
+                const Row(
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'A browser window opened for you to log into '
+                        'Spotify. Come back here once you have approved '
+                        'access.',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        if (isConfigured)
+          TextButton(
+            onPressed: _connecting ? null : _disconnect,
+            child: const Text('Disconnect',
+                style: TextStyle(color: Color(0xFFFF8A8A))),
+          ),
+        TextButton(
+          onPressed: _connecting ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _connecting ? null : _connect,
+          child: Text(isConfigured ? 'Reconnect' : 'Connect'),
+        ),
+      ],
     );
   }
 }

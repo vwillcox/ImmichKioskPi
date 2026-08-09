@@ -36,6 +36,9 @@ dependencies:
   # D-Bus client, used to read BlueZ media metadata (now playing on the phone)
   dbus: ^0.7.10
 
+  # SHA-256 for Spotify's OAuth PKCE code challenge
+  crypto: ^3.0.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

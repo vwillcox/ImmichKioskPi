@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:dbus/dbus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Icons, IconData;
+
+import 'playback_source.dart';
 
 /// What the connected phone is playing, read from BlueZ over D-Bus.
 class NowPlaying {
@@ -51,7 +54,7 @@ class NowPlaying {
 /// The phone must be paired and streaming media audio to the Pi; that is what
 /// brings the AVRCP control channel up. Album art isn't carried over AVRCP, so
 /// it's looked up separately from the iTunes Search API by artist + title.
-class NowPlayingService extends ChangeNotifier {
+class NowPlayingService extends ChangeNotifier implements PlaybackSource {
   static const String _bluez = 'org.bluez';
   static const String _playerIface = 'org.bluez.MediaPlayer1';
   static const String _deviceIface = 'org.bluez.Device1';
@@ -79,8 +82,11 @@ class NowPlayingService extends ChangeNotifier {
   bool get audioRouted => _preferAudioRouted;
 
   /// Volume as 0..1 for the UI.
+  @override
   double get volume => (_volume / _maxVolume).clamp(0.0, 1.0);
+  @override
   bool get muted => _volume == 0;
+  @override
   bool get hasVolume => _transport != null;
 
   StreamSubscription<DBusSignal>? _signalSub;
@@ -93,14 +99,18 @@ class NowPlayingService extends ChangeNotifier {
 
   /// True once nothing has been playing for [idleTimeout]. Cleared the instant
   /// playback resumes, so the panel comes straight back.
+  @override
   bool get idleHidden => _idleHidden;
 
   NowPlaying _now = const NowPlaying();
+  @override
   NowPlaying get now => _now;
 
+  @override
   bool get available => _player != null;
 
   String? _artUrl;
+  @override
   String? get artUrl => _artUrl;
   String _artForKey = '';
   final Map<String, String?> _artCache = {};
@@ -191,6 +201,7 @@ class NowPlayingService extends ChangeNotifier {
   }
 
   /// Set volume from a 0..1 slider value.
+  @override
   Future<void> setVolume(double fraction) async {
     final raw = (fraction.clamp(0.0, 1.0) * _maxVolume).round();
     _volume = raw;
@@ -205,6 +216,7 @@ class NowPlayingService extends ChangeNotifier {
   }
 
   /// Mute drops the volume to zero and remembers where it was.
+  @override
   Future<void> toggleMute() async {
     if (muted) {
       final restore = _volumeBeforeMute > 0 ? _volumeBeforeMute : _maxVolume ~/ 3;
@@ -427,10 +439,23 @@ class NowPlayingService extends ChangeNotifier {
     }
   }
 
+  @override
   Future<void> playPause() =>
       _now.isPlaying ? _call('Pause') : _call('Play');
+  @override
   Future<void> next() => _call('Next');
+  @override
   Future<void> previous() => _call('Previous');
+
+  /// BlueZ's AVRCP surface has no absolute-seek method, only relative
+  /// fast-forward/rewind, so there's nothing faithful to do here.
+  @override
+  bool get canSeek => false;
+  @override
+  Future<void> seek(Duration position) async {}
+
+  @override
+  IconData get sourceIcon => Icons.bluetooth_audio;
 
   Future<void> _setProperty(String name, String value) async {
     try {
@@ -441,12 +466,14 @@ class NowPlayingService extends ChangeNotifier {
   }
 
   /// Cycle off -> repeat this track -> repeat all -> off.
+  @override
   Future<void> cycleRepeat() async {
     const order = ['off', 'singletrack', 'alltracks'];
     final i = order.indexOf(_now.repeat);
     await _setProperty('Repeat', order[(i + 1) % order.length]);
   }
 
+  @override
   Future<void> toggleShuffle() =>
       _setProperty('Shuffle', _now.shuffle ? 'off' : 'alltracks');
 

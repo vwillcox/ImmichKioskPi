@@ -218,6 +218,35 @@ class HomeAssistantSettings {
       };
 }
 
+/// A Spotify Premium account, controlled directly via the Web API rather
+/// than through the phone's AVRCP link.
+///
+/// Authenticated with OAuth Authorization Code + PKCE, so there's no client
+/// secret to store — only the Client ID (free, from a Spotify Developer
+/// Dashboard app) and the refresh token obtained from the one-time login in
+/// Settings. See [SpotifyService] for the flow itself.
+class SpotifySettings {
+  String clientId;
+  String refreshToken;
+
+  SpotifySettings({
+    this.clientId = '',
+    this.refreshToken = '',
+  });
+
+  bool get isConfigured => clientId.isNotEmpty && refreshToken.isNotEmpty;
+
+  factory SpotifySettings.fromJson(Map<String, dynamic> j) => SpotifySettings(
+        clientId: j['clientId'] as String? ?? '',
+        refreshToken: j['refreshToken'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'clientId': clientId,
+        'refreshToken': refreshToken,
+      };
+}
+
 class AppConfig {
   String immichUrl;
   String apiKey;
@@ -228,6 +257,7 @@ class AppConfig {
   WeatherSettings weather;
   NowPlayingSettings nowPlaying;
   HomeAssistantSettings homeAssistant;
+  SpotifySettings spotify;
 
   /// Video player volume (0-100) and mute, remembered between videos.
   double videoVolume;
@@ -242,12 +272,14 @@ class AppConfig {
     WeatherSettings? weather,
     NowPlayingSettings? nowPlaying,
     HomeAssistantSettings? homeAssistant,
+    SpotifySettings? spotify,
     this.videoVolume = 100,
     this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
         weather = weather ?? WeatherSettings(),
         nowPlaying = nowPlaying ?? NowPlayingSettings(),
-        homeAssistant = homeAssistant ?? HomeAssistantSettings();
+        homeAssistant = homeAssistant ?? HomeAssistantSettings(),
+        spotify = spotify ?? SpotifySettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -270,6 +302,9 @@ class AppConfig {
           ? HomeAssistantSettings.fromJson(
               j['homeAssistant'] as Map<String, dynamic>)
           : HomeAssistantSettings(),
+      spotify: j['spotify'] is Map<String, dynamic>
+          ? SpotifySettings.fromJson(j['spotify'] as Map<String, dynamic>)
+          : SpotifySettings(),
       videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
       videoMuted: j['videoMuted'] as bool? ?? false,
     );
@@ -284,6 +319,7 @@ class AppConfig {
         'weather': weather.toJson(),
         'nowPlaying': nowPlaying.toJson(),
         'homeAssistant': homeAssistant.toJson(),
+        'spotify': spotify.toJson(),
         'videoVolume': videoVolume,
         'videoMuted': videoMuted,
       };

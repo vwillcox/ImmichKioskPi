@@ -7,6 +7,8 @@ import 'burn_in_drift.dart';
 import '../config/app_config.dart';
 import '../services/config_service.dart';
 import '../services/now_playing_service.dart';
+import '../services/playback_source.dart';
+import '../services/spotify_service.dart';
 
 String _fmt(Duration d) {
   String two(int n) => n.toString().padLeft(2, '0');
@@ -64,7 +66,15 @@ class _NowPlayingOverlayState extends State<NowPlayingOverlay>
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<ConfigService>().config.nowPlaying;
-    final service = context.watch<NowPlayingService>();
+    // Both sources are watched unconditionally so the overlay rebuilds
+    // whichever one changes; Spotify wins whenever it has something to show,
+    // since it's the richer of the two (real seek position, per-device
+    // volume, high-res artwork) — the AVRCP source is the fallback for
+    // whatever else the phone might be playing (a podcast app, YouTube Music)
+    // that Spotify's API knows nothing about.
+    final spotify = context.watch<SpotifyService>();
+    final avrcp = context.watch<NowPlayingService>();
+    final service = spotify.available ? spotify : avrcp;
     if (!settings.enabled ||
         !service.available ||
         !service.now.hasTrack ||
@@ -144,7 +154,7 @@ class _NowPlayingOverlayState extends State<NowPlayingOverlay>
 }
 
 class _Panel extends StatelessWidget {
-  final NowPlayingService service;
+  final PlaybackSource service;
   final double expansion;
   const _Panel({required this.service, required this.expansion});
 
@@ -227,7 +237,7 @@ class _Artwork extends StatelessWidget {
 }
 
 class _CollapsedContent extends StatelessWidget {
-  final NowPlayingService service;
+  final PlaybackSource service;
   const _CollapsedContent({required this.service});
 
   @override
@@ -299,7 +309,7 @@ class _CollapsedContent extends StatelessWidget {
 }
 
 class _DetailContent extends StatelessWidget {
-  final NowPlayingService service;
+  final PlaybackSource service;
   const _DetailContent({required this.service});
 
   @override
@@ -312,8 +322,7 @@ class _DetailContent extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.bluetooth_audio,
-                  color: Color(0xFF7FB6FF), size: 26),
+              Icon(service.sourceIcon, color: const Color(0xFF7FB6FF), size: 26),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -367,16 +376,7 @@ class _DetailContent extends StatelessWidget {
                         ),
                       ],
                       const SizedBox(height: 26),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: n.progress,
-                          minHeight: 8,
-                          backgroundColor: Colors.white24,
-                          valueColor: const AlwaysStoppedAnimation(
-                              Color(0xFF7FB6FF)),
-                        ),
-                      ),
+                      _ProgressBar(service: service),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -407,8 +407,62 @@ class _DetailContent extends StatelessWidget {
   }
 }
 
+/// The track's progress bar. Becomes a draggable seek slider when the source
+/// supports it (Spotify); otherwise it's the plain display-only bar AVRCP has
+/// always had, since BlueZ's MediaPlayer1 has no absolute-seek method to
+/// back a drag gesture with.
+class _ProgressBar extends StatefulWidget {
+  final PlaybackSource service;
+  const _ProgressBar({required this.service});
+
+  @override
+  State<_ProgressBar> createState() => _ProgressBarState();
+}
+
+class _ProgressBarState extends State<_ProgressBar> {
+  // While dragging, show the finger's own position rather than fighting with
+  // live updates from the poller; only commit the seek on release.
+  double? _dragValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final n = widget.service.now;
+
+    if (!widget.service.canSeek) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: LinearProgressIndicator(
+          value: n.progress,
+          minHeight: 8,
+          backgroundColor: Colors.white24,
+          valueColor: const AlwaysStoppedAnimation(Color(0xFF7FB6FF)),
+        ),
+      );
+    }
+
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        trackHeight: 8,
+        activeTrackColor: const Color(0xFF7FB6FF),
+        inactiveTrackColor: Colors.white24,
+        thumbColor: const Color(0xFF7FB6FF),
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 11),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 22),
+      ),
+      child: Slider(
+        value: (_dragValue ?? n.progress).clamp(0.0, 1.0),
+        onChanged: (v) => setState(() => _dragValue = v),
+        onChangeEnd: (v) {
+          widget.service.seek(n.duration * v);
+          setState(() => _dragValue = null);
+        },
+      ),
+    );
+  }
+}
+
 class _Controls extends StatelessWidget {
-  final NowPlayingService service;
+  final PlaybackSource service;
   const _Controls({required this.service});
 
   @override
@@ -508,10 +562,13 @@ class _RoundButton extends StatelessWidget {
   }
 }
 
-/// Mute button plus a volume slider. Drives AVRCP absolute volume on the
-/// Bluetooth transport, so it changes the level on the phone too.
+/// Mute button plus a volume slider. For AVRCP this drives absolute volume on
+/// the Bluetooth transport (so it changes the level on the phone too); for
+/// Spotify it drives the active Spotify Connect device's own volume — a
+/// different knob from the phone's Bluetooth volume, only shown when that
+/// device reports it supports remote volume at all.
 class _VolumeRow extends StatelessWidget {
-  final NowPlayingService service;
+  final PlaybackSource service;
   const _VolumeRow({required this.service});
 
   IconData _icon(double v, bool muted) {
