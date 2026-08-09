@@ -3,12 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'dart:math';
+
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+
 import '../config/app_config.dart';
 import '../services/config_service.dart';
 import '../services/indoor_sensor_service.dart';
 import '../services/locked_folder_service.dart';
 import '../services/media_cache.dart';
 import '../services/now_playing_service.dart';
+import '../services/share_inbox_service.dart';
 import '../services/spotify_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/weather_overlay.dart';
@@ -131,6 +136,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 32),
           _section('Spotify'),
           const _SpotifySettingsTile(),
+
+          const Divider(height: 32),
+          _section('Share Inbox'),
+          const _ShareInboxSettingsTile(),
 
           const Divider(height: 32),
           _section('Slideshow'),
@@ -884,6 +893,242 @@ class _SpotifyDialogState extends State<_SpotifyDialog> {
           onPressed: _connecting ? null : _connect,
           child: Text(isConfigured ? 'Reconnect' : 'Connect'),
         ),
+      ],
+    );
+  }
+}
+
+/// Lets people with the companion app share a photo/GIF/video/link/note to
+/// the kiosk. See [ShareInboxService] for how it's actually received —
+/// there's no relay, the kiosk listens for these itself.
+class _ShareInboxSettingsTile extends StatelessWidget {
+  const _ShareInboxSettingsTile();
+
+  Future<void> _edit(BuildContext context) async {
+    final config = context.read<ConfigService>();
+    final shareInbox = context.read<ShareInboxService>();
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _ShareInboxDialog(config: config, shareInbox: shareInbox),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<ConfigService>().config.shareInbox;
+    return ListTile(
+      leading: const Icon(Icons.ios_share),
+      title: const Text('Share Inbox'),
+      subtitle: Text(s.senderTokens.isEmpty
+          ? 'Listening on :${s.listenPort} — no senders added yet'
+          : 'Listening on :${s.listenPort} — ${s.senderTokens.length} '
+              '${s.senderTokens.length == 1 ? 'sender' : 'senders'}'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _edit(context),
+    );
+  }
+}
+
+class _ShareInboxDialog extends StatefulWidget {
+  final ConfigService config;
+  final ShareInboxService shareInbox;
+  const _ShareInboxDialog({required this.config, required this.shareInbox});
+
+  @override
+  State<_ShareInboxDialog> createState() => _ShareInboxDialogState();
+}
+
+class _ShareInboxDialogState extends State<_ShareInboxDialog> {
+  late final TextEditingController _port;
+  late List<SenderToken> _tokens;
+  late double _volume;
+  final _newName = TextEditingController();
+
+  static final _rand = Random.secure();
+  static String _randomToken() {
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    return List.generate(32, (_) => chars[_rand.nextInt(chars.length)]).join();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final s = widget.config.config.shareInbox;
+    _port = TextEditingController(text: s.listenPort.toString());
+    _volume = s.notificationVolume;
+    _tokens = s.senderTokens
+        .map((t) => SenderToken(name: t.name, token: t.token))
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    _port.dispose();
+    _newName.dispose();
+    super.dispose();
+  }
+
+  void _addSender() {
+    final name = _newName.text.trim();
+    if (name.isEmpty) return;
+    setState(() {
+      _tokens.add(SenderToken(name: name, token: _randomToken()));
+      _newName.clear();
+    });
+  }
+
+  void _copy(String token) {
+    Clipboard.setData(ClipboardData(text: token));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Token copied')));
+  }
+
+  Future<void> _save() async {
+    final port = int.tryParse(_port.text.trim());
+    if (port == null || port < 1 || port > 65535) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a port between 1 and 65535')));
+      return;
+    }
+    final s = widget.config.config.shareInbox;
+    s.listenPort = port;
+    s.notificationVolume = _volume;
+    s.senderTokens = _tokens;
+    await widget.config.save();
+    await widget.shareInbox.refreshFromSettings();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Share Inbox'),
+      content: SizedBox(
+        width: 640,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'People with the companion app can share a photo, GIF, video, '
+                'link or note to this kiosk. Add a name below, hand that '
+                'person the generated token to enter in their app.',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _port,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(fontSize: 18),
+                decoration: const InputDecoration(
+                  labelText: 'Listen port',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  const Icon(Icons.notifications, color: Colors.white70, size: 20),
+                  const SizedBox(width: 10),
+                  const Text('Notification volume',
+                      style: TextStyle(color: Colors.white)),
+                  const Spacer(),
+                  Text('${_volume.round()}%',
+                      style: const TextStyle(color: Colors.white54)),
+                ],
+              ),
+              Slider(
+                value: _volume,
+                max: 100,
+                divisions: 20,
+                onChanged: (v) => setState(() => _volume = v),
+              ),
+              const Text(
+                "Separate from the music/video volume — turning this down "
+                "won't affect what's playing.",
+                style: TextStyle(color: Colors.white54, fontSize: 13),
+              ),
+              const SizedBox(height: 18),
+              const Text('Senders',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              if (_tokens.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No one added yet',
+                      style: TextStyle(color: Colors.white54)),
+                ),
+              for (final t in _tokens)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Text(t.name,
+                            style: const TextStyle(color: Colors.white)),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          t.token,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Colors.white54,
+                              fontFamily: 'monospace',
+                              fontSize: 13),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 20),
+                        tooltip: 'Copy token',
+                        onPressed: () => _copy(t.token),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete,
+                            size: 20, color: Color(0xFFFF8A8A)),
+                        tooltip: 'Remove',
+                        onPressed: () => setState(() => _tokens.remove(t)),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _newName,
+                      style: const TextStyle(fontSize: 16),
+                      decoration: const InputDecoration(
+                        labelText: 'Add sender (name)',
+                        hintText: "Mum's phone",
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: (_) => _addSender(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _addSender,
+                    child: const Text('Add'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Save')),
       ],
     );
   }

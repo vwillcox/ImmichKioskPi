@@ -251,6 +251,70 @@ class SpotifySettings {
       };
 }
 
+/// A person allowed to share content to the kiosk from the companion app —
+/// [name] is shown as attribution on incoming shares ("From: Mum's phone"),
+/// [token] is the bearer credential their app was set up with.
+class SenderToken {
+  String name;
+  String token;
+
+  SenderToken({required this.name, required this.token});
+
+  factory SenderToken.fromJson(Map<String, dynamic> j) => SenderToken(
+        name: j['name'] as String? ?? '',
+        token: j['token'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {'name': name, 'token': token};
+}
+
+/// Lets people with the companion app share a photo, GIF, video, web link or
+/// text to the kiosk from anywhere (Android's share sheet). The kiosk itself
+/// listens for these — no separate relay — see [ShareInboxService].
+class ShareInboxSettings {
+  /// Port the kiosk's own HTTP listener binds to. Whatever's in front of it
+  /// on the network (a reverse proxy, port forwarding) is the user's own
+  /// concern — this app only needs to know which local port to bind.
+  int listenPort;
+
+  /// Mute the incoming-share chime. Also toggleable from the home screen's
+  /// top bar, since it's meant to be reached quickly.
+  bool dndMuted;
+
+  /// The chime plays through its own player instance, separate from
+  /// whatever's playing music/video, so this is independent of that
+  /// volume — turning music down (or up) doesn't touch this. 0-100.
+  double notificationVolume;
+
+  List<SenderToken> senderTokens;
+
+  ShareInboxSettings({
+    this.listenPort = 8081,
+    this.dndMuted = false,
+    this.notificationVolume = 80,
+    List<SenderToken>? senderTokens,
+  }) : senderTokens = senderTokens ?? [];
+
+  factory ShareInboxSettings.fromJson(Map<String, dynamic> j) {
+    return ShareInboxSettings(
+      listenPort: (j['listenPort'] as num?)?.toInt() ?? 8081,
+      dndMuted: j['dndMuted'] as bool? ?? false,
+      notificationVolume: (j['notificationVolume'] as num?)?.toDouble() ?? 80,
+      senderTokens: (j['senderTokens'] as List?)
+              ?.map((t) => SenderToken.fromJson(t as Map<String, dynamic>))
+              .toList() ??
+          [],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'listenPort': listenPort,
+        'dndMuted': dndMuted,
+        'notificationVolume': notificationVolume,
+        'senderTokens': senderTokens.map((t) => t.toJson()).toList(),
+      };
+}
+
 class AppConfig {
   String immichUrl;
   String apiKey;
@@ -262,6 +326,7 @@ class AppConfig {
   NowPlayingSettings nowPlaying;
   HomeAssistantSettings homeAssistant;
   SpotifySettings spotify;
+  ShareInboxSettings shareInbox;
 
   /// Video player volume (0-100) and mute, remembered between videos.
   double videoVolume;
@@ -277,13 +342,15 @@ class AppConfig {
     NowPlayingSettings? nowPlaying,
     HomeAssistantSettings? homeAssistant,
     SpotifySettings? spotify,
+    ShareInboxSettings? shareInbox,
     this.videoVolume = 100,
     this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
         weather = weather ?? WeatherSettings(),
         nowPlaying = nowPlaying ?? NowPlayingSettings(),
         homeAssistant = homeAssistant ?? HomeAssistantSettings(),
-        spotify = spotify ?? SpotifySettings();
+        spotify = spotify ?? SpotifySettings(),
+        shareInbox = shareInbox ?? ShareInboxSettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -309,6 +376,9 @@ class AppConfig {
       spotify: j['spotify'] is Map<String, dynamic>
           ? SpotifySettings.fromJson(j['spotify'] as Map<String, dynamic>)
           : SpotifySettings(),
+      shareInbox: j['shareInbox'] is Map<String, dynamic>
+          ? ShareInboxSettings.fromJson(j['shareInbox'] as Map<String, dynamic>)
+          : ShareInboxSettings(),
       videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
       videoMuted: j['videoMuted'] as bool? ?? false,
     );
@@ -324,6 +394,7 @@ class AppConfig {
         'nowPlaying': nowPlaying.toJson(),
         'homeAssistant': homeAssistant.toJson(),
         'spotify': spotify.toJson(),
+        'shareInbox': shareInbox.toJson(),
         'videoVolume': videoVolume,
         'videoMuted': videoMuted,
       };

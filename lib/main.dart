@@ -13,6 +13,7 @@ import 'services/indoor_sensor_service.dart';
 import 'services/locked_folder_service.dart';
 import 'services/media_cache.dart';
 import 'services/now_playing_service.dart';
+import 'services/share_inbox_service.dart';
 import 'services/spotify_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
@@ -23,6 +24,7 @@ import 'screens/locked_folder_screen.dart';
 import 'screens/setup_screen.dart';
 import 'screens/slideshow_screen.dart';
 import 'screens/video_player_screen.dart';
+import 'widgets/incoming_share_overlay.dart';
 import 'widgets/now_playing_overlay.dart';
 import 'theme.dart';
 
@@ -54,6 +56,11 @@ void main() async {
   final spotify = SpotifyService(config);
   unawaited(spotify.start());
 
+  // Lets the companion phone app share a photo/GIF/video/link/note to the
+  // kiosk directly — no separate relay, just a small HTTP listener here.
+  final shareInbox = ShareInboxService(config);
+  unawaited(shareInbox.start());
+
   runApp(
     MultiProvider(
       providers: [
@@ -64,6 +71,7 @@ void main() async {
         ChangeNotifierProvider.value(value: nowPlaying),
         ChangeNotifierProvider.value(value: spotify),
         ChangeNotifierProvider.value(value: indoor),
+        ChangeNotifierProvider.value(value: shareInbox),
       ],
       child: const ImmichKioskPiApp(),
     ),
@@ -83,6 +91,16 @@ class ImmichKioskPiApp extends StatelessWidget {
       // Flutter's Linux embedder, so enable drag-scrolling for every pointer
       // kind (otherwise touch drag doesn't scroll lists/grids).
       scrollBehavior: const _AppScrollBehavior(),
+      // Stacked above the routed content itself (rather than added to each
+      // screen individually) so a shared-content notification can pop up
+      // over *any* screen — settings, a slideshow, a video — not just the
+      // couple of screens the now-playing overlay lives in.
+      builder: (context, child) => Stack(
+        children: [
+          ?child,
+          const IncomingShareOverlay(),
+        ],
+      ),
       home: const _RootGate(),
     );
   }
