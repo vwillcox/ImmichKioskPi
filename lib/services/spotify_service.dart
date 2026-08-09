@@ -100,6 +100,16 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   /// against a slow response landing after the track has already moved on.
   String? _likedCheckedForTrackId;
   bool _isLiked = false;
+
+  /// Re-checked periodically rather than every single poll: liking/unliking
+  /// from Spotify itself (the phone, the web player) while this same track
+  /// keeps playing here otherwise never gets picked up, since nothing else
+  /// about the player state changes to prompt a recheck — but checking it
+  /// every 2s (the main poll interval) was enough extra traffic to get this
+  /// endpoint specifically 429'd.
+  DateTime? _lastLikedRecheckAt;
+  String? _lastLikedRecheckTrackId;
+  static const Duration _likedRecheckInterval = Duration(seconds: 20);
   @override
   bool get canLike => true;
   @override
@@ -361,6 +371,8 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       _artUrl = null;
       _isLiked = false;
       _likedCheckedForTrackId = null;
+      _lastLikedRecheckAt = null;
+      _lastLikedRecheckTrackId = null;
       notifyListeners();
     }
     _slowDownPolling();
@@ -399,12 +411,16 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       trackId: trackId,
     );
     _artUrl = art;
-    // Re-checked every poll, not just once per track: liking/unliking from
-    // Spotify itself (the phone, the web player) while this same track
-    // keeps playing here otherwise never gets picked up, since nothing else
-    // about the player state changes to prompt a recheck.
     if (trackId.isNotEmpty) {
-      unawaited(_refreshLikedStatus(trackId));
+      final now = DateTime.now();
+      final trackChanged = trackId != _lastLikedRecheckTrackId;
+      final intervalElapsed = _lastLikedRecheckAt == null ||
+          now.difference(_lastLikedRecheckAt!) >= _likedRecheckInterval;
+      if (trackChanged || intervalElapsed) {
+        _lastLikedRecheckAt = now;
+        _lastLikedRecheckTrackId = trackId;
+        unawaited(_refreshLikedStatus(trackId));
+      }
     }
     _deviceHasVolume = device?['supports_volume'] as bool? ?? false;
     final vol = device?['volume_percent'];
