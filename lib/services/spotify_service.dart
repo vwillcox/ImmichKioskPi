@@ -40,8 +40,13 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
       'playlist-read-private playlist-modify-public playlist-modify-private';
 
   static const Duration idleTimeout = Duration(minutes: 1);
-  static const Duration _activePoll = Duration(seconds: 3);
+  static const Duration _activePoll = Duration(seconds: 2);
   static const Duration _idlePoll = Duration(seconds: 10);
+  /// Advances the shown position between real polls, so the progress bar
+  /// moves smoothly instead of jumping once every [_activePoll] — the same
+  /// reason AVRCP has its own 1-second position timer. Purely local; doesn't
+  /// touch the network.
+  static const Duration _tick = Duration(milliseconds: 250);
 
   final ConfigService _configService;
   final Dio _dio = Dio(BaseOptions(
@@ -56,6 +61,7 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   String? _accessToken;
   DateTime? _accessTokenExpiry;
   Timer? _pollTimer;
+  Timer? _tickTimer;
   bool _fastPolling = false;
 
   NowPlaying _now = const NowPlaying();
@@ -109,6 +115,8 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
     if (_settings.isConfigured) {
       _beginPolling();
     } else {
+      _tickTimer?.cancel();
+      _tickTimer = null;
       _accessToken = null;
       _available = false;
       _now = const NowPlaying();
@@ -120,6 +128,17 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   void _beginPolling() {
     unawaited(_poll());
     _speedUpPolling();
+    _tickTimer ??= Timer.periodic(_tick, (_) => _advancePosition());
+  }
+
+  void _advancePosition() {
+    if (!_now.isPlaying) return;
+    final next = _now.position + _tick;
+    // Let the next real poll settle the track change rather than guessing
+    // what comes next (repeat, shuffle, end of queue, ...).
+    if (next >= _now.duration) return;
+    _now = _now.copyWith(position: next);
+    notifyListeners();
   }
 
   // ---- OAuth: Authorization Code + PKCE -----------------------------------
@@ -623,6 +642,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _tickTimer?.cancel();
     _idleTimer?.cancel();
     _dio.close();
     super.dispose();

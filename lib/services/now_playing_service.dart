@@ -38,6 +38,22 @@ class NowPlaying {
     this.trackId = '',
   });
 
+  /// Only [position] can usefully change between real refreshes — everything
+  /// else is only known from the source's own update, so isn't worth a full
+  /// parameter list here.
+  NowPlaying copyWith({Duration? position}) => NowPlaying(
+        title: title,
+        artist: artist,
+        album: album,
+        duration: duration,
+        position: position ?? this.position,
+        status: status,
+        repeat: repeat,
+        shuffle: shuffle,
+        deviceName: deviceName,
+        trackId: trackId,
+      );
+
   bool get isPlaying => status == 'playing';
 
   /// True when there's a real track to show (AVRCP reports "Not Provided"
