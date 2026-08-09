@@ -245,8 +245,12 @@ class CameraService extends ChangeNotifier {
     _zoomDebounce = Timer(const Duration(milliseconds: 120), () {
       final z = _pendingZoom;
       _pendingZoom = null;
-      // IP Webcam counts zoom in percent of the sensor's range, 100 being 1x.
-      if (z != null) unawaited(_get('/ptz?zoom=${(z * 100).round()}'));
+      // 100 is 1x here, so the ratio scales straight up. Note this is not
+      // the same number `/ptz?zoom=` takes — that one is a percentage of the
+      // sensor's range, where anything above 100 pins it at maximum.
+      if (z != null) {
+        unawaited(_get('/settings/zoom?set=${(z * 100).round()}'));
+      }
     });
   }
 
