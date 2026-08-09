@@ -251,6 +251,83 @@ class SpotifySettings {
       };
 }
 
+/// A phone running the android-ip-camera app, used as a wireless camera.
+///
+/// The phone streams hardware-encoded H.264 from `/video/h264` and takes
+/// control commands as query strings on any path (`/?zoom=5.0&ts=<millis>`),
+/// so zoom happens on the phone's sensor rather than by cropping the picture
+/// once it gets here.
+class CameraSettings {
+  bool enabled;
+
+  /// `host:port` of the phone, e.g. `192.168.1.52:4444`.
+  String address;
+  String username;
+  String password;
+
+  /// Which lens to open on — the id from the phone's `/info.json`.
+  String cameraId;
+
+  /// Stream size asked of the phone. The panel is 1920x1200, so 1080p is as
+  /// much as is worth sending.
+  String streamResolution;
+
+  /// Degrees to turn the picture by on the phone, for when it ends up mounted
+  /// on its side or upside down. Applied there rather than here so the whole
+  /// frame is still used.
+  int rotate;
+
+  /// Zoom ratio the view opens at, and the most the phone will accept.
+  double defaultZoom;
+  double maxZoom;
+
+  CameraSettings({
+    this.enabled = false,
+    this.address = '',
+    this.username = '',
+    this.password = '',
+    this.cameraId = '0',
+    this.streamResolution = '1920x1080',
+    this.rotate = 0,
+    this.defaultZoom = 1.0,
+    this.maxZoom = 10.0,
+  });
+
+  bool get isConfigured => enabled && address.isNotEmpty;
+
+  /// Base URL with credentials inlined — mpv authenticates from the URL.
+  String get baseUrl {
+    final creds = username.isEmpty
+        ? ''
+        : '${Uri.encodeComponent(username)}:${Uri.encodeComponent(password)}@';
+    return 'http://$creds$address';
+  }
+
+  factory CameraSettings.fromJson(Map<String, dynamic> j) => CameraSettings(
+        enabled: j['enabled'] as bool? ?? false,
+        address: j['address'] as String? ?? '',
+        username: j['username'] as String? ?? '',
+        password: j['password'] as String? ?? '',
+        cameraId: j['cameraId'] as String? ?? '0',
+        streamResolution: j['streamResolution'] as String? ?? '1920x1080',
+        rotate: (j['rotate'] as num?)?.toInt() ?? 0,
+        defaultZoom: (j['defaultZoom'] as num?)?.toDouble() ?? 1.0,
+        maxZoom: (j['maxZoom'] as num?)?.toDouble() ?? 10.0,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        'address': address,
+        'username': username,
+        'password': password,
+        'cameraId': cameraId,
+        'streamResolution': streamResolution,
+        'rotate': rotate,
+        'defaultZoom': defaultZoom,
+        'maxZoom': maxZoom,
+      };
+}
+
 /// Turning the panel off by itself when there's nothing worth showing.
 ///
 /// The screen is switched via the same host-side `screen_control.py` service
@@ -363,6 +440,7 @@ class AppConfig {
   SpotifySettings spotify;
   ShareInboxSettings shareInbox;
   ScreenSettings screen;
+  CameraSettings camera;
 
   /// Video player volume (0-100) and mute, remembered between videos.
   double videoVolume;
@@ -380,6 +458,7 @@ class AppConfig {
     SpotifySettings? spotify,
     ShareInboxSettings? shareInbox,
     ScreenSettings? screen,
+    CameraSettings? camera,
     this.videoVolume = 100,
     this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
@@ -388,7 +467,8 @@ class AppConfig {
         homeAssistant = homeAssistant ?? HomeAssistantSettings(),
         spotify = spotify ?? SpotifySettings(),
         shareInbox = shareInbox ?? ShareInboxSettings(),
-        screen = screen ?? ScreenSettings();
+        screen = screen ?? ScreenSettings(),
+        camera = camera ?? CameraSettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -420,6 +500,9 @@ class AppConfig {
       screen: j['screen'] is Map<String, dynamic>
           ? ScreenSettings.fromJson(j['screen'] as Map<String, dynamic>)
           : ScreenSettings(),
+      camera: j['camera'] is Map<String, dynamic>
+          ? CameraSettings.fromJson(j['camera'] as Map<String, dynamic>)
+          : CameraSettings(),
       videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
       videoMuted: j['videoMuted'] as bool? ?? false,
     );
@@ -437,6 +520,7 @@ class AppConfig {
         'spotify': spotify.toJson(),
         'shareInbox': shareInbox.toJson(),
         'screen': screen.toJson(),
+        'camera': camera.toJson(),
         'videoVolume': videoVolume,
         'videoMuted': videoMuted,
       };

@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
 import 'models/immich_models.dart';
+import 'services/camera_service.dart';
 import 'services/config_service.dart';
 import 'services/immich_service.dart';
 import 'services/indoor_sensor_service.dart';
@@ -25,6 +26,7 @@ import 'screens/locked_folder_screen.dart';
 import 'screens/setup_screen.dart';
 import 'screens/slideshow_screen.dart';
 import 'screens/video_player_screen.dart';
+import 'widgets/camera_overlay.dart';
 import 'widgets/incoming_share_overlay.dart';
 import 'widgets/now_playing_overlay.dart';
 import 'theme.dart';
@@ -79,6 +81,7 @@ void main() async {
         ChangeNotifierProvider.value(value: indoor),
         ChangeNotifierProvider.value(value: shareInbox),
         Provider<ScreenIdleService>.value(value: screenIdle),
+        ChangeNotifierProvider(create: (_) => CameraService(config)),
       ],
       child: const ImmichKioskPiApp(),
     ),
@@ -120,6 +123,7 @@ class ImmichKioskPiApp extends StatelessWidget {
           children: [
             ?child,
             IncomingShareOverlay(navigatorKey: rootNavigatorKey),
+            const CameraOverlay(),
           ],
         ),
       ),

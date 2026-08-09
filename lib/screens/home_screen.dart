@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/immich_models.dart';
+import '../services/camera_service.dart';
 import '../services/immich_service.dart';
 import '../services/config_service.dart';
 import '../services/locked_folder_service.dart';
@@ -240,6 +241,14 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.lock),
               tooltip: 'Locked Folder',
               onPressed: _openLockedFolder,
+            ),
+          if (context.watch<CameraService>().isConfigured)
+            IconButton(
+              icon: Icon(context.watch<CameraService>().isOpen
+                  ? Icons.videocam_off
+                  : Icons.videocam),
+              tooltip: 'Camera',
+              onPressed: context.read<CameraService>().toggleOpen,
             ),
           const _DndSwitch(),
           IconButton(

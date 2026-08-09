@@ -8,6 +8,7 @@ import 'dart:math';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../config/app_config.dart';
+import '../services/camera_service.dart';
 import '../services/config_service.dart';
 import '../services/indoor_sensor_service.dart';
 import '../services/locked_folder_service.dart';
@@ -141,6 +142,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 32),
           _section('Screen'),
           const _ScreenSettingsTile(),
+
+          const Divider(height: 32),
+          _section('Camera'),
+          const _CameraSettingsTile(),
 
           const Divider(height: 32),
           _section('Share Inbox'),
@@ -1201,6 +1206,132 @@ class _ScreenSettingsTile extends StatelessWidget {
             },
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// A phone running the android-ip-camera app, used as a wireless camera.
+///
+/// The stream itself is H.264 straight from the phone's hardware encoder, and
+/// zooming asks the phone to zoom its sensor rather than enlarging the picture
+/// once it arrives — see [CameraService] for the control protocol.
+class _CameraSettingsTile extends StatelessWidget {
+  const _CameraSettingsTile();
+
+  Future<void> _edit(BuildContext context) async {
+    final service = context.read<ConfigService>();
+    final camera = context.read<CameraService>();
+    final s = service.config.camera;
+    final address = TextEditingController(text: s.address);
+    final user = TextEditingController(text: s.username);
+    final pass = TextEditingController(text: s.password);
+    final resolution = TextEditingController(text: s.streamResolution);
+    final rotate = TextEditingController(text: '${s.rotate}');
+
+    Widget field(String label, TextEditingController c,
+            {String? hint, bool obscure = false}) =>
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: TextField(
+            controller: c,
+            obscureText: obscure,
+            style: const TextStyle(fontSize: 18),
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: hint,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        );
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Camera'),
+        content: SizedBox(
+          width: 640,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'A phone running android-ip-camera, on the same network. '
+                  'Take the address and credentials from the app on the phone; '
+                  'turn its HTTPS off, since it uses a self-signed certificate.',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 14),
+                field('Address', address, hint: '192.168.1.52:4444'),
+                field('Username', user),
+                field('Password', pass, obscure: true),
+                field('Stream size', resolution, hint: '1920x1080'),
+                field('Rotate (degrees)', rotate, hint: '0, 90, 180 or 270'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true) return;
+    s.address = address.text.trim().replaceAll(RegExp(r'^https?://'), '');
+    s.username = user.text.trim();
+    s.password = pass.text;
+    s.streamResolution = resolution.text.trim();
+    s.rotate = int.tryParse(rotate.text.trim()) ?? 0;
+    await service.save();
+    await camera.refreshStatus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final service = context.watch<ConfigService>();
+    final s = service.config.camera;
+    final camera = context.watch<CameraService>();
+    final status = camera.status;
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.videocam),
+          title: const Text('Phone camera'),
+          subtitle: const Text(
+              'Shows a live view from a phone running android-ip-camera, '
+              'from a button in the top bar.'),
+          isThreeLine: true,
+          value: s.enabled,
+          onChanged: (v) {
+            s.enabled = v;
+            service.save();
+          },
+        ),
+        if (s.enabled)
+          ListTile(
+            leading: const Icon(Icons.videocam_outlined),
+            title: const Text('Camera phone'),
+            subtitle: Text(
+              s.address.isEmpty
+                  ? 'Not configured'
+                  : status == null
+                      ? '${s.address} — ${camera.lastError ?? 'not reached yet'}'
+                      : '${s.address} — ${status.lenses.length} lens'
+                          '${status.lenses.length == 1 ? '' : 'es'}'
+                          '${status.batteryPercent == null ? '' : ', battery ${status.batteryPercent}%'}',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _edit(context),
+          ),
       ],
     );
   }
