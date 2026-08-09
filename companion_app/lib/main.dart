@@ -61,7 +61,11 @@ class ShareLogEntry {
   final String label;
   final bool ok;
   final String? error;
-  ShareLogEntry({required this.label, required this.ok, this.error});
+  /// Null for the one "share received before setup" placeholder entry —
+  /// nothing to resend there.
+  final SharedMediaFile? file;
+  ShareLogEntry(
+      {required this.label, required this.ok, this.error, this.file});
 }
 
 class HomeScreen extends StatefulWidget {
@@ -164,12 +168,15 @@ class _HomeScreenState extends State<HomeScreen> {
             label: label,
             ok: ok,
             error: ok ? null : 'HTTP ${resp.statusCode}: ${resp.body}',
+            file: f,
           )));
     } catch (e) {
-      setState(() =>
-          _log.insert(0, ShareLogEntry(label: label, ok: false, error: '$e')));
+      setState(() => _log.insert(
+          0, ShareLogEntry(label: label, ok: false, error: '$e', file: f)));
     }
   }
+
+  Future<void> _resend(SharedMediaFile f) => _sendOne(f);
 
   String _guessMime(SharedMediaFile f) {
     final ext = f.path.toLowerCase().split('.').last;
@@ -263,6 +270,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         title: Text(entry.label),
                         subtitle: entry.error != null ? Text(entry.error!) : null,
+                        trailing: entry.file == null
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.replay),
+                                tooltip: 'Resend',
+                                onPressed: () => _resend(entry.file!),
+                              ),
                       );
                     },
                   ),
