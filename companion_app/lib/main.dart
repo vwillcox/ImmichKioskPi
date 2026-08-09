@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'compose_screen.dart';
+
 void main() => runApp(const KioskShareApp());
 
 class KioskShareApp extends StatelessWidget {
@@ -205,6 +207,13 @@ class _HomeScreenState extends State<HomeScreen> {
     if (result != null) setState(() => _settings = result);
   }
 
+  Future<void> _compose() async {
+    final items = await Navigator.of(context).push<List<SharedMediaFile>>(
+      MaterialPageRoute(builder: (_) => const ComposeScreen()),
+    );
+    if (items != null && items.isNotEmpty) await _handleShares(items);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -218,6 +227,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
         ],
       ),
+      floatingActionButton: _loaded
+          ? FloatingActionButton.extended(
+              onPressed: _compose,
+              icon: const Icon(Icons.edit),
+              label: const Text('New message'),
+            )
+          : null,
       body: !_loaded
           ? const Center(child: CircularProgressIndicator())
           : Column(
