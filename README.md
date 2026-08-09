@@ -390,6 +390,13 @@ systemctl --user enable --now librespot.service
 "Kiosk" should now appear in Spotify's Connect device list within a few
 seconds. Requires Spotify Premium, same as librespot itself does.
 
+**On transferring playback away from the kiosk:** stock librespot restarts
+the track from the beginning when you move playback from "Kiosk" to a phone
+or desktop, if you're playing from a large context like Liked Songs — an
+[upstream bug](https://github.com/librespot-org/librespot/issues/1459) open
+since January 2025. [`patches/`](patches/) carries a fix for it, along with
+the cause and how to build it.
+
 **On audio quality:** the unit passes `--bitrate 320`, the highest Ogg Vorbis
 quality Spotify Connect carries ("Very High" in Spotify's own app) — the
 default is 160 if that flag is left off. True **lossless** (24-bit/44.1kHz

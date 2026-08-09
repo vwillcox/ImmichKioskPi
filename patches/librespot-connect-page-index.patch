@@ -1,0 +1,99 @@
+diff --git a/connect/src/state.rs b/connect/src/state.rs
+index f810d85..796e934 100644
+--- a/connect/src/state.rs
++++ b/connect/src/state.rs
+@@ -492,11 +492,57 @@ impl ConnectState {
+             .await
+     }
+ 
++    /// The request as it should go out on the wire.
++    ///
++    /// Internally the current position is tracked as a single flat index into
++    /// the concatenation of every context page resolved so far, but Spotify
++    /// describes a position as a (page, track-within-page) pair. Left alone,
++    /// `page` is never set at all and `track` carries the flat index, which
++    /// only happens to be correct while a context fits in one page. For
++    /// anything larger — a big playlist, or Liked Songs — the pair points at
++    /// a track that doesn't exist on page 0, and clients receiving the state
++    /// (on a transfer, say) fall back to the start of the context instead of
++    /// resuming. Translating here, at the edge, keeps all of the internal
++    /// bookkeeping working on flat indices as before.
++    fn request_to_send(&self) -> PutStateRequest {
++        let mut request = self.request.clone();
++
++        // a shuffled context isn't played in page order, so a page/track pair
++        // can't describe the position within it
++        if self.shuffling_context() {
++            return request;
++        }
++
++        let Ok(ctx) = self.get_context(self.active_context) else {
++            return request;
++        };
++        let Some(index) = request
++            .device
++            .as_mut()
++            .and_then(|d| d.player_state.as_mut())
++            .and_then(|p| p.index.as_mut())
++        else {
++            return request;
++        };
++
++        let flat = index.track as usize;
++        let page = ctx
++            .page_offsets
++            .iter()
++            .rposition(|&start| start <= flat)
++            .unwrap_or(0);
++
++        index.page = page as u32;
++        index.track = (flat - ctx.page_offsets.get(page).copied().unwrap_or(0)) as u32;
++
++        request
++    }
++
+     /// Sends the connect state for the connect session to the remote server
+     pub async fn send_state(&self, session: &Session) -> SpClientResult {
+         session
+             .spclient()
+-            .put_connect_state_request(&self.request)
++            .put_connect_state_request(&self.request_to_send())
+             .await
+     }
+ }
+diff --git a/connect/src/state/context.rs b/connect/src/state/context.rs
+index 5913022..08852a9 100644
+--- a/connect/src/state/context.rs
++++ b/connect/src/state/context.rs
+@@ -28,6 +28,13 @@ pub struct StateContext {
+     pub restrictions: Option<Restrictions>,
+     /// is used to keep track which tracks are already loaded into the next_tracks
+     pub index: ContextIndex,
++    /// Flat index at which each context page begins.
++    ///
++    /// Pages are flattened into `tracks` as they resolve, but the position we
++    /// report to Spotify is a (page, track-within-page) pair, so the page
++    /// boundaries have to be remembered to reconstruct it. Always starts with
++    /// a 0 for the first page.
++    pub page_offsets: Vec<usize>,
+ }
+ 
+ #[derive(Default, Debug, Copy, Clone, PartialEq, Hash, Eq)]
+@@ -380,6 +387,7 @@ impl ConnectState {
+             restrictions,
+             metadata,
+             index: ContextIndex::new(),
++            page_offsets: vec![context_length.unwrap_or(0)],
+         }
+     }
+ 
+@@ -511,6 +519,9 @@ impl ConnectState {
+             .as_mut()
+             .ok_or(StateError::NoContext(ContextType::Default))?;
+ 
++        // this page starts where the flattened list currently ends
++        ctx.page_offsets.push(ctx.tracks.len());
++
+         for t in context.tracks {
+             ctx.tracks.push(t)
+         }
