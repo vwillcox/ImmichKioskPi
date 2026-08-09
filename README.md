@@ -103,6 +103,22 @@ Ken Burns pan with a cross-fade between slides:
 
 ![Slideshow animation](docs/screenshots/05-slideshow-animation.gif)
 
+### Now playing
+
+When music is playing and no slideshow is running, the player takes over
+full-screen with a blurred album-art backdrop and large, quick-to-tap
+controls:
+
+| Full-screen player | Controls close-up |
+|---|---|
+| ![Now-playing player, full screen](docs/screenshots/06-nowplaying-player.jpg) | ![Now-playing controls close-up](docs/screenshots/07-nowplaying-controls.jpg) |
+| Tap it to shrink to a corner card and pick an album — it pops back up on its own after a few seconds if nothing came of it. | Transport, repeat, shuffle, like and add-to-playlist all sized for a quick tap rather than precision. |
+
+> Album artwork shown here is © its respective rights holder (in this
+> screenshot, DreamWorks Animation / the "How to Train Your Dragon"
+> soundtrack) — fetched live from Spotify to demonstrate the UI. This
+> project claims no ownership of it.
+
 *(Also available as [MP4](docs/screenshots/05-slideshow-animation.mp4) at higher quality.)*
 
 > Screenshots use albums without people in them. On the albums grid every
