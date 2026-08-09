@@ -22,7 +22,14 @@ import '../services/share_inbox_service.dart';
 /// (or, for a web link, out to Chromium), since that's a different screen
 /// entirely rather than a bigger version of this one.
 class IncomingShareOverlay extends StatefulWidget {
-  const IncomingShareOverlay({super.key});
+  /// This overlay sits as a *sibling* of the app's own Navigator — both are
+  /// children of the Stack in main.dart's `MaterialApp.builder`, precisely
+  /// so it can show up over any screen — which means `Navigator.of(context)`
+  /// from inside it can't find that Navigator by walking up the tree; it's
+  /// not an ancestor. A global key to the same Navigator sidesteps that.
+  final GlobalKey<NavigatorState> navigatorKey;
+
+  const IncomingShareOverlay({super.key, required this.navigatorKey});
 
   @override
   State<IncomingShareOverlay> createState() => _IncomingShareOverlayState();
@@ -34,10 +41,15 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
   static const EdgeInsets _margin = EdgeInsets.all(28);
 
   /// How long a shared web page stays open in Chromium before the kiosk
-  /// takes its own focus back — there's no keyboard or window chrome on this
-  /// bare labwc session for the user to close it with otherwise.
-  static const Duration _webViewTimeout = Duration(seconds: 60);
+  /// takes its own focus back and closes it — a safety net for whenever the
+  /// close button below isn't used.
+  static const Duration _webViewTimeout = Duration(minutes: 2);
   static const String _kioskAppId = 'info.talktech.immichkioskpi';
+
+  /// The open link-viewer's process, if any — kept so the close button and
+  /// the timeout can both actually end the same one.
+  Process? _browserProc;
+  Timer? _webViewTimer;
 
   @override
   void initState() {
@@ -48,22 +60,23 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
   @override
   void dispose() {
     stopDrift();
+    _webViewTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _open(ShareInboxService service, SharedItem item) async {
     service.dequeue();
+    final navigator = widget.navigatorKey.currentState;
+    if (navigator == null) return;
     switch (item.type) {
       case ShareType.image:
       case ShareType.gif:
-        if (!mounted) return;
-        await Navigator.of(context).push(MaterialPageRoute(
+        await navigator.push(MaterialPageRoute(
           builder: (_) =>
               SharedImageScreen(path: item.localPath!, sender: item.sender),
         ));
       case ShareType.video:
-        if (!mounted) return;
-        await Navigator.of(context).push(MaterialPageRoute(
+        await navigator.push(MaterialPageRoute(
           builder: (_) => VideoPlayerScreen(
             asset: Asset(
                 id: 'shared',
@@ -73,8 +86,7 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
           ),
         ));
       case ShareType.text:
-        if (!mounted) return;
-        await Navigator.of(context).push(MaterialPageRoute(
+        await navigator.push(MaterialPageRoute(
           builder: (_) =>
               SharedTextScreen(text: item.content!, sender: item.sender),
         ));
@@ -83,7 +95,22 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
     }
   }
 
+  /// Chromium's own app-mode title bar draws its own close button rather
+  /// than getting one from a window manager — and on this bare Wayland/Ozone
+  /// setup that button turns out not to be resizable at all (neither
+  /// `--force-device-scale-factor`, which only touches Chromium's own page
+  /// rendering, nor `GDK_SCALE`, which Ozone bypasses entirely since it
+  /// isn't going through GTK, has any effect on it). Rather than fight
+  /// that, the window is sized smaller than the screen — labwc centers it,
+  /// leaving the kiosk visible (and tappable) in the margin — and a real,
+  /// large close button lives there instead, part of the kiosk's own UI.
   Future<void> _openLink(String url) async {
+    // Read before any `await` — using BuildContext after one risks the
+    // widget having been unmounted in the meantime.
+    final screen = MediaQuery.sizeOf(context);
+    final windowWidth = (screen.width * 0.82).round();
+    final windowHeight = (screen.height * 0.78).round();
+
     final chromium = await Process.run('which', ['chromium']);
     if (chromium.exitCode != 0) {
       debugPrint('IncomingShareOverlay: chromium not found, cannot open $url');
@@ -91,25 +118,41 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
     }
     Process? proc;
     try {
+      final home = Platform.environment['HOME'];
       proc = await Process.start('chromium', [
         '--app=$url',
         '--ozone-platform=wayland',
         '--password-store=basic',
+        '--window-size=$windowWidth,$windowHeight',
+        // Chromium is single-instance per profile: without its own
+        // profile, this would just hand the URL to whatever chromium
+        // window already happens to be open (e.g. the one Spotify login
+        // uses) instead of starting fresh — silently ignoring every flag
+        // here, and leaving nothing to actually kill on close/timeout.
+        if (home != null)
+          '--user-data-dir=$home/.cache/immich_kiosk_pi/chromium-share-viewer',
       ]);
     } catch (e) {
       debugPrint('IncomingShareOverlay: could not open browser: $e');
       return;
     }
-    Timer(_webViewTimeout, () async {
-      try {
-        await Process.run(
-            'wlrctl', ['toplevel', 'focus', 'app_id:$_kioskAppId']);
-      } catch (_) {
-        // wlrctl not installed — nothing more to do, the user can switch
-        // back by touch same as they would for any other window.
-      }
-      proc?.kill();
-    });
+    setState(() => _browserProc = proc);
+    _webViewTimer = Timer(_webViewTimeout, _closeLinkViewer);
+  }
+
+  Future<void> _closeLinkViewer() async {
+    _webViewTimer?.cancel();
+    _webViewTimer = null;
+    final proc = _browserProc;
+    if (proc == null) return;
+    setState(() => _browserProc = null);
+    try {
+      await Process.run('wlrctl', ['toplevel', 'focus', 'app_id:$_kioskAppId']);
+    } catch (_) {
+      // wlrctl not installed — the close below still ends the page; the
+      // user can switch back by touch same as for any other window.
+    }
+    proc.kill();
   }
 
   Rect _cardRect(Size screen) {
@@ -122,7 +165,8 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
   Widget build(BuildContext context) {
     final service = context.watch<ShareInboxService>();
     final item = service.current;
-    if (item == null) return const SizedBox.shrink();
+    final linkOpen = _browserProc != null;
+    if (item == null && !linkOpen) return const SizedBox.shrink();
 
     return Positioned.fill(
       child: IgnorePointer(
@@ -133,31 +177,84 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
             final rect = applyDrift(_cardRect(screen), screen);
             return Stack(
               children: [
-                Positioned.fromRect(
-                  rect: rect,
-                  child: TweenAnimationBuilder<double>(
-                    key: ValueKey(item),
-                    tween: Tween(begin: 0, end: 1),
-                    duration: const Duration(milliseconds: 260),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, t, child) => Opacity(
-                      opacity: t,
-                      child: Transform.translate(
-                        offset: Offset(0, (1 - t) * 16),
-                        child: child,
+                if (item != null)
+                  Positioned.fromRect(
+                    rect: rect,
+                    child: TweenAnimationBuilder<double>(
+                      key: ValueKey(item),
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, t, child) => Opacity(
+                        opacity: t,
+                        child: Transform.translate(
+                          offset: Offset(0, (1 - t) * 16),
+                          child: child,
+                        ),
+                      ),
+                      child: _Card(
+                        item: item,
+                        pendingCount: service.pendingCount,
+                        onTap: () => _open(service, item),
+                        onDismiss: service.dequeue,
                       ),
                     ),
-                    child: _Card(
-                      item: item,
-                      pendingCount: service.pendingCount,
-                      onTap: () => _open(service, item),
-                      onDismiss: service.dequeue,
+                  ),
+                // The shared page's own window is sized smaller than the
+                // screen precisely so this stays visible (and tappable)
+                // in the margin around it — see _openLink.
+                if (linkOpen)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 28,
+                    child: Center(
+                      child: _CloseLinkButton(onTap: _closeLinkViewer),
                     ),
                   ),
-                ),
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// A large, unmissable "close the shared page" button, shown in the margin
+/// left visible around the intentionally-undersized Chromium window (see
+/// [_IncomingShareOverlayState._openLink]) — real and reliably tappable,
+/// unlike Chromium's own tiny app-mode close button on this setup.
+class _CloseLinkButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CloseLinkButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFB3261E),
+      borderRadius: BorderRadius.circular(32),
+      elevation: 6,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(32),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 32, vertical: 18),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.close, color: Colors.white, size: 28),
+              SizedBox(width: 10),
+              Text(
+                'Close shared page',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -78,12 +78,19 @@ void main() async {
   );
 }
 
+/// The overlay added in [ImmichKioskPiApp]'s `builder` sits as a *sibling* of
+/// this Navigator (both are children of the same Stack), not a descendant of
+/// it, so `Navigator.of(context)` from inside the overlay can't find it by
+/// walking up the tree. A global key to the same Navigator sidesteps that.
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
 class ImmichKioskPiApp extends StatelessWidget {
   const ImmichKioskPiApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: 'ImmichKioskPi',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
@@ -98,7 +105,7 @@ class ImmichKioskPiApp extends StatelessWidget {
       builder: (context, child) => Stack(
         children: [
           ?child,
-          const IncomingShareOverlay(),
+          IncomingShareOverlay(navigatorKey: rootNavigatorKey),
         ],
       ),
       home: const _RootGate(),

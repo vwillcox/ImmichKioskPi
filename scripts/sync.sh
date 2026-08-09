@@ -20,6 +20,7 @@ rsync -az --delete \
   --exclude '.dart_tool/' \
   --exclude 'linux/flutter/ephemeral/' \
   --exclude '**/.DS_Store' \
+  --exclude 'companion_app/' \
   "$HERE"/ "$PI:$PI_DIR"/
 
 echo "Synced $HERE -> $PI:$PI_DIR"
