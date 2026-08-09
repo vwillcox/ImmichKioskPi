@@ -123,7 +123,7 @@ class ImmichKioskPiApp extends StatelessWidget {
           children: [
             ?child,
             IncomingShareOverlay(navigatorKey: rootNavigatorKey),
-            const CameraOverlay(),
+            CameraOverlay(navigatorKey: rootNavigatorKey),
           ],
         ),
       ),

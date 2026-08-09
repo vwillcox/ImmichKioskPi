@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:provider/provider.dart';
 
+import '../screens/camera_screen.dart';
 import '../services/camera_service.dart';
 import 'burn_in_drift.dart';
 
@@ -12,37 +13,34 @@ import 'burn_in_drift.dart';
 ///
 /// Sits above every screen (added in `main.dart`'s `MaterialApp.builder`, like
 /// the shared-content popup) so the camera can be brought up over a slideshow
-/// or the album grid alike. It opens as a small window in the corner and
-/// expands to fill the panel on a tap; pinching while expanded zooms the
-/// phone's sensor rather than scaling the picture here, so zooming in gains
-/// real detail instead of enlarging pixels.
+/// or the album grid alike. This is the small corner window; tapping it opens
+/// [CameraScreen], which is where the picture goes full screen and where
+/// pinching zooms the phone's sensor rather than scaling the picture here.
 ///
 /// The stream is opened when the window appears and closed the moment it goes
 /// away — the phone only encodes while somebody is actually looking.
 class CameraOverlay extends StatefulWidget {
-  const CameraOverlay({super.key});
+  const CameraOverlay({super.key, required this.navigatorKey});
+
+  /// The overlay is a *sibling* of the Navigator, not a descendant, so
+  /// `Navigator.of(context)` can't find it by walking up the tree.
+  final GlobalKey<NavigatorState> navigatorKey;
 
   @override
   State<CameraOverlay> createState() => _CameraOverlayState();
 }
 
-class _CameraOverlayState extends State<CameraOverlay>
-    with SingleTickerProviderStateMixin, BurnInDriftMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 320),
-  );
-  late final Animation<double> _t =
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOutCubic);
+class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
+  final GlobalKey _windowKey = GlobalKey();
 
   Player? _player;
   VideoController? _video;
   bool _starting = false;
   bool _streaming = false;
 
-  /// Zoom at the moment a pinch began, so the gesture scales from there
-  /// rather than compounding every update.
-  double _zoomAtGestureStart = 1.0;
+  /// True while [CameraScreen] is up. The corner window is a sibling of the
+  /// Navigator, so without this it stays painted on top of the page.
+  bool _fullScreen = false;
 
   String? _hud;
   Timer? _hudTimer;
@@ -57,7 +55,6 @@ class _CameraOverlayState extends State<CameraOverlay>
   void dispose() {
     stopDrift();
     _hudTimer?.cancel();
-    _controller.dispose();
     unawaited(_player?.dispose());
     super.dispose();
   }
@@ -99,15 +96,17 @@ class _CameraOverlayState extends State<CameraOverlay>
       final player = _player;
       if (player == null || !mounted) return;
 
-      // An MJPEG stream carries no timestamps, so left to itself mpv buffers
-      // and invents them, and the picture runs behind what the camera is
-      // actually looking at. Asked not to buffer and to show frames untimed,
-      // it draws each one as it lands — which is what a live view wants.
-      // There's no audio track to bother decoding.
+      // A raw H.264 elementary stream carries no timestamps, so left to
+      // itself mpv invents them and buffers, and the picture runs behind what
+      // the camera is actually looking at. Told the real frame rate and asked
+      // not to buffer, it draws each frame as it lands — which is what a live
+      // view wants. There's no audio track to bother decoding.
       final native = player.platform;
       if (native is NativePlayer) {
         for (final o in const [
-          ['demuxer-lavf-format', 'mpjpeg'],
+          ['demuxer-lavf-format', 'h264'],
+          ['correct-pts', 'no'],
+          ['container-fps-override', '30'],
           ['cache', 'no'],
           ['untimed', 'yes'],
           ['video-latency-hacks', 'yes'],
@@ -148,26 +147,6 @@ class _CameraOverlayState extends State<CameraOverlay>
     await _player?.stop();
   }
 
-  void _showHud(String text) {
-    setState(() => _hud = text);
-    _hudTimer?.cancel();
-    _hudTimer = Timer(const Duration(milliseconds: 900), () {
-      if (mounted) setState(() => _hud = null);
-    });
-  }
-
-  void _onScaleStart(CameraService service, ScaleStartDetails d) {
-    _zoomAtGestureStart = service.zoom;
-  }
-
-  void _onScaleUpdate(CameraService service, ScaleUpdateDetails d) {
-    // A single finger reports a scale of 1.0 while dragging, which would
-    // otherwise be read as a zoom gesture and fight the tap handler.
-    if (d.pointerCount < 2) return;
-    service.setZoom(_zoomAtGestureStart * d.scale);
-    _showHud('${service.zoom.toStringAsFixed(1)}×');
-  }
-
   static const Size _collapsedSize = Size(480, 270);
 
   @override
@@ -176,9 +155,10 @@ class _CameraOverlayState extends State<CameraOverlay>
 
     if (!service.isOpen) {
       if (_streaming) unawaited(_stopStream());
-      if (_controller.value != 0) _controller.value = 0;
       return const SizedBox.shrink();
     }
+    // Hidden, but the stream stays up: the page is showing it.
+    if (_fullScreen) return const SizedBox.shrink();
 
     // After the frame, not during it: bringing the player up calls setState.
     if (!_streaming && !_starting) {
@@ -187,60 +167,45 @@ class _CameraOverlayState extends State<CameraOverlay>
       });
     }
 
-    final target = service.isExpanded ? 1.0 : 0.0;
-    if (_controller.value != target) {
-      service.isExpanded ? _controller.forward() : _controller.reverse();
-    }
+    final window = _Window(
+      key: _windowKey,
+      service: service,
+      video: _video,
+      hud: _hud,
+      onTap: _openFullScreen,
+    );
 
     return Positioned.fill(
       child: LayoutBuilder(
         builder: (context, constraints) {
           final screen = Size(constraints.maxWidth, constraints.maxHeight);
-          final collapsed = applyDrift(_collapsedRect(screen), screen);
-          final expanded = _expandedRect(screen);
-
-          return AnimatedBuilder(
-            animation: _t,
-            builder: (context, _) {
-              final v = _t.value;
-              final rect = Rect.lerp(collapsed, expanded, v)!;
-              return Stack(
-                children: [
-                  if (v > 0.01)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        ignoring: v < 0.5,
-                        child: GestureDetector(
-                          onTap: () => service.setExpanded(false),
-                          child: Container(
-                            color: Colors.black.withValues(alpha: v),
-                          ),
-                        ),
-                      ),
-                    ),
-                  Positioned.fromRect(
-                    rect: rect,
-                    child: _Window(
-                      service: service,
-                      video: _video,
-                      expansion: v,
-                      hud: _hud,
-                      onTap: () => service.setExpanded(!service.isExpanded),
-                      onScaleStart: (d) => _onScaleStart(service, d),
-                      onScaleUpdate: (d) => _onScaleUpdate(service, d),
-                      onResetZoom: () {
-                        service.setZoom(service.minZoom);
-                        _showHud('${service.minZoom.toStringAsFixed(1)}×');
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
+          final rect = applyDrift(_collapsedRect(screen), screen);
+          return Stack(
+            children: [Positioned.fromRect(rect: rect, child: window)],
           );
         },
       ),
     );
+  }
+
+  /// Full screen is a route of its own rather than this window grown to fill
+  /// the panel — see [CameraScreen]. This window's stream is dropped while it
+  /// is up so the phone is only ever asked for one.
+  Future<void> _openFullScreen() async {
+    final navigator = widget.navigatorKey.currentState;
+    final player = _player;
+    final video = _video;
+    if (navigator == null || player == null || video == null) return;
+
+    // The page borrows this player rather than building its own: two alive at
+    // once and the second never opens, and disposing this one to make room
+    // leaves its replacement hanging before it registers a texture. The
+    // stream simply stays up while the page shows it instead of this window.
+    setState(() => _fullScreen = true);
+    await navigator.push(MaterialPageRoute(
+      builder: (_) => CameraScreen(player: player, controller: video),
+    ));
+    if (mounted) setState(() => _fullScreen = false);
   }
 
   Rect _collapsedRect(Size screen) {
@@ -250,35 +215,24 @@ class _CameraOverlayState extends State<CameraOverlay>
     return Rect.fromLTWH(
         m, screen.height - size.height - m, size.width, size.height);
   }
-
-  Rect _expandedRect(Size screen) => Rect.fromLTWH(0, 0, screen.width, screen.height);
 }
 
 class _Window extends StatelessWidget {
   const _Window({
+    super.key,
     required this.service,
     required this.video,
-    required this.expansion,
     required this.hud,
     required this.onTap,
-    required this.onScaleStart,
-    required this.onScaleUpdate,
-    required this.onResetZoom,
   });
 
   final CameraService service;
   final VideoController? video;
-  final double expansion;
   final String? hud;
   final VoidCallback onTap;
-  final void Function(ScaleStartDetails) onScaleStart;
-  final void Function(ScaleUpdateDetails) onScaleUpdate;
-  final VoidCallback onResetZoom;
 
   @override
   Widget build(BuildContext context) {
-    final expanded = expansion > 0.5;
-    final radius = BorderRadius.circular(24 * (1 - expansion));
 
     final content = Container(
           color: Colors.black,
@@ -286,11 +240,14 @@ class _Window extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (video != null)
-                Video(
-                  controller: video!,
-                  controls: NoVideoControls,
-                  fit: BoxFit.contain,
-                  fill: Colors.black,
+                RotatedBox(
+                  quarterTurns: service.settings.viewQuarterTurns,
+                  child: Video(
+                    controller: video!,
+                    controls: NoVideoControls,
+                    fit: BoxFit.contain,
+                    fill: Colors.black,
+                  ),
                 )
               else
                 const Center(
@@ -308,9 +265,6 @@ class _Window extends StatelessWidget {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: onTap,
-                  onDoubleTap: expanded ? onResetZoom : null,
-                  onScaleStart: expanded ? onScaleStart : null,
-                  onScaleUpdate: expanded ? onScaleUpdate : null,
                 ),
               ),
               if (service.lastError != null)
@@ -352,35 +306,23 @@ class _Window extends StatelessWidget {
               Positioned(
                 top: 8,
                 right: 8,
-                child: _IconButton(
+                child: CameraRoundButton(
                   icon: Icons.close,
-                  size: expanded ? 64 : 40,
+                  size: 40,
                   onPressed: service.close,
                 ),
               ),
-              if (expanded)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: _ExpandedControls(service: service),
-                ),
             ],
           ),
         );
 
-    // Only clip while the corners are actually rounded. Full screen there is
-    // nothing to clip, and a clip that size is an offscreen layer the Pi's
-    // GL driver would rather not be asked for.
-    return expansion < 0.01
-        ? ClipRRect(borderRadius: radius, child: content)
-        : content;
+    return ClipRRect(borderRadius: BorderRadius.circular(24), child: content);
   }
 }
 
-/// Zoom, lens and torch, shown along the bottom while the view is full screen.
-class _ExpandedControls extends StatelessWidget {
-  const _ExpandedControls({required this.service});
+/// Zoom, lens and torch, shown along the bottom of the full-screen view.
+class CameraControls extends StatelessWidget {
+  const CameraControls({super.key, required this.service});
 
   final CameraService service;
 
@@ -454,7 +396,7 @@ class _ExpandedControls extends StatelessWidget {
                 ],
               ),
             ),
-            _IconButton(
+            CameraRoundButton(
               icon: service.torch ? Icons.flashlight_on : Icons.flashlight_off,
               size: 64,
               onPressed: () => service.setTorch(!service.torch),
@@ -484,8 +426,9 @@ class _ExpandedControls extends StatelessWidget {
   }
 }
 
-class _IconButton extends StatelessWidget {
-  const _IconButton({
+class CameraRoundButton extends StatelessWidget {
+  const CameraRoundButton({
+    super.key,
     required this.icon,
     required this.size,
     required this.onPressed,

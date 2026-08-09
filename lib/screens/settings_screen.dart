@@ -1228,6 +1228,7 @@ class _CameraSettingsTile extends StatelessWidget {
     final pass = TextEditingController(text: s.password);
     final resolution = TextEditingController(text: s.streamResolution);
     final rotate = TextEditingController(text: '${s.rotate}');
+    final turns = TextEditingController(text: '${s.viewQuarterTurns}');
 
     Widget field(String label, TextEditingController c,
             {String? hint, bool obscure = false}) =>
@@ -1267,7 +1268,11 @@ class _CameraSettingsTile extends StatelessWidget {
                 field('Username', user),
                 field('Password', pass, obscure: true),
                 field('Stream size', resolution, hint: '1920x1080'),
-                field('Rotate (degrees)', rotate, hint: '0, 90, 180 or 270'),
+                field('Rotate on the phone (degrees)', rotate,
+                    hint: '0, 90, 180 or 270 — MJPEG only'),
+                field('Turn the picture here (quarter turns)', turns,
+                    hint: '0-3, for when the phone gets its own orientation '
+                        'wrong'),
               ],
             ),
           ),
@@ -1291,6 +1296,7 @@ class _CameraSettingsTile extends StatelessWidget {
     s.password = pass.text;
     s.streamResolution = resolution.text.trim();
     s.rotate = int.tryParse(rotate.text.trim()) ?? 0;
+    s.viewQuarterTurns = (int.tryParse(turns.text.trim()) ?? 0) % 4;
     await service.save();
     await camera.refreshStatus();
   }

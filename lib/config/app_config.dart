@@ -274,8 +274,18 @@ class CameraSettings {
 
   /// Degrees to turn the picture by on the phone, for when it ends up mounted
   /// on its side or upside down. Applied there rather than here so the whole
-  /// frame is still used.
+  /// frame is still used — but only its MJPEG encoder honours it.
   int rotate;
+
+  /// Quarter turns applied to the picture *here*, as a last resort.
+  ///
+  /// The phone's streaming app composes for whatever orientation it believes
+  /// it is in, and on this device it gets that wrong and stays wrong: the
+  /// scene arrives on its side however the phone is held, locked, previewing
+  /// or restarted, and its H.264 encoder ignores the rotate control entirely.
+  /// Turning the picture here always works, at the cost of the frame no
+  /// longer matching the panel's shape.
+  int viewQuarterTurns;
 
   /// Zoom ratio the view opens at, and the most the phone will accept.
   double defaultZoom;
@@ -289,6 +299,7 @@ class CameraSettings {
     this.cameraId = '0',
     this.streamResolution = '1920x1080',
     this.rotate = 0,
+    this.viewQuarterTurns = 0,
     this.defaultZoom = 1.0,
     this.maxZoom = 10.0,
   });
@@ -311,6 +322,7 @@ class CameraSettings {
         cameraId: j['cameraId'] as String? ?? '0',
         streamResolution: j['streamResolution'] as String? ?? '1920x1080',
         rotate: (j['rotate'] as num?)?.toInt() ?? 0,
+        viewQuarterTurns: (j['viewQuarterTurns'] as num?)?.toInt() ?? 0,
         defaultZoom: (j['defaultZoom'] as num?)?.toDouble() ?? 1.0,
         maxZoom: (j['maxZoom'] as num?)?.toDouble() ?? 10.0,
       );
@@ -323,6 +335,7 @@ class CameraSettings {
         'cameraId': cameraId,
         'streamResolution': streamResolution,
         'rotate': rotate,
+        'viewQuarterTurns': viewQuarterTurns,
         'defaultZoom': defaultZoom,
         'maxZoom': maxZoom,
       };

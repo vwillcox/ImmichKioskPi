@@ -292,18 +292,21 @@ class CameraService extends ChangeNotifier {
     }
   }
 
-  /// URL media_kit opens for the picture.
+  /// URL media_kit opens for the picture — a raw Annex-B H.264 elementary
+  /// stream, hardware-encoded on the phone.
   ///
-  /// MJPEG rather than the phone's H.264 endpoint, despite H.264 managing
-  /// twice the frame rate for a third of the bandwidth: on this phone the
-  /// H.264 path ignores the display rotation, so the picture arrives on its
-  /// side *and* cropped to a portrait slice of what the camera can see. Its
-  /// MJPEG path composes the same way the phone's own preview does — upright,
-  /// landscape, whole field of view — and costs less to decode here besides
-  /// (about 10% of one core against H.264's 18%, the Pi 5 having no hardware
-  /// H.264 decoder). 13.5fps is the phone's JPEG encoder topping out; it is
-  /// the same at 720p, so there's nothing to gain by asking for less.
-  String get streamUrl => '${settings.baseUrl}/video/mjpeg';
+  /// About 25fps against MJPEG's 15, for less bandwidth (9 Mbit/s against 12).
+  /// MJPEG at 15fps visibly stutters; that is the phone's JPEG encoder topping
+  /// out, and it is no better at 720p, so there is nothing to gain by asking
+  /// for less. Decoding H.264 costs more here — roughly 18% of one core
+  /// against MJPEG's 10%, the Pi 5 having no hardware H.264 decoder — which is
+  /// a fair trade for the frame rate.
+  ///
+  /// Both endpoints compose for whatever orientation the phone's *display* is
+  /// in, so the phone has to be unlocked and landscape or the picture arrives
+  /// on its side, letterboxed into a landscape frame. That is a property of
+  /// the phone, not of either encoder.
+  String get streamUrl => '${settings.baseUrl}/video/h264';
 
   @override
   void dispose() {
