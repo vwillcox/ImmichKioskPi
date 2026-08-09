@@ -136,6 +136,31 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   /// Opens a browser for the one-time Spotify login, catches the redirect on
   /// a loopback server, and exchanges the code for tokens. Returns null on
   /// success, or a message to show the user on failure.
+  /// The command to open a URL in a real, visible browser window on this
+  /// screen — not xdg-open, which on this Pi's bare labwc session (no full
+  /// desktop environment) resolves to Chromium, but with defaults that
+  /// crash it outright: it picks the X11 ozone platform and dies with
+  /// "Missing X server or $DISPLAY", and even forced onto Wayland it blocks
+  /// on a GNOME-Keyring "choose a password" prompt with nothing to do with
+  /// Spotify. Both are suppressed by the flags below. Falls back to
+  /// xdg-open on a machine where Chromium isn't the browser.
+  Future<({String executable, List<String> args})> _browserCommand(
+      String url) async {
+    final chromium = await Process.run('which', ['chromium']);
+    if (chromium.exitCode == 0) {
+      return (
+        executable: 'chromium',
+        args: [
+          '--ozone-platform=wayland',
+          '--password-store=basic',
+          '--new-window',
+          url,
+        ],
+      );
+    }
+    return (executable: 'xdg-open', args: [url]);
+  }
+
   Future<String?> connect(String clientId) async {
     final verifier = _randomUrlSafe(64);
     final challenge = codeChallengeFor(verifier);
@@ -159,7 +184,8 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
     });
 
     try {
-      await Process.start('xdg-open', [authUrl.toString()]);
+      final browser = await _browserCommand(authUrl.toString());
+      await Process.start(browser.executable, browser.args);
     } catch (e) {
       await server.close(force: true);
       return 'Could not open a browser: $e';
