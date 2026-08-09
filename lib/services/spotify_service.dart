@@ -104,12 +104,40 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   /// Re-checked periodically rather than every single poll: liking/unliking
   /// from Spotify itself (the phone, the web player) while this same track
   /// keeps playing here otherwise never gets picked up, since nothing else
-  /// about the player state changes to prompt a recheck — but checking it
-  /// every 2s (the main poll interval) was enough extra traffic to get this
-  /// endpoint specifically 429'd.
+  /// about the player state changes to prompt a recheck.
+  ///
+  /// Kept deliberately infrequent. This endpoint is rate-limited far more
+  /// tightly than the player one, and its answer changes rarely — polling it
+  /// every 2s (the main poll interval) earned an hours-long 429 block, and
+  /// even 20s was more than it tolerates sustained.
   DateTime? _lastLikedRecheckAt;
   String? _lastLikedRecheckTrackId;
-  static const Duration _likedRecheckInterval = Duration(seconds: 20);
+  static const Duration _likedRecheckInterval = Duration(minutes: 1);
+
+  /// When Spotify 429s, it says how long to stay away for — sometimes hours.
+  /// Retrying regardless (as this used to) never recovers and only keeps the
+  /// block alive, so nothing touches the API again until this passes.
+  DateTime? _rateLimitedUntil;
+
+  bool get _rateLimited {
+    final until = _rateLimitedUntil;
+    if (until == null) return false;
+    if (DateTime.now().isBefore(until)) return true;
+    _rateLimitedUntil = null;
+    return false;
+  }
+
+  /// Records a `Retry-After` if [e] is a 429. Returns true if it was one.
+  bool _noteIfRateLimited(Object e, String what) {
+    if (e is! DioException || e.response?.statusCode != 429) return false;
+    final header = e.response?.headers.value('retry-after');
+    final seconds = int.tryParse(header ?? '') ?? 60;
+    _rateLimitedUntil = DateTime.now().add(Duration(seconds: seconds));
+    debugPrint('Spotify rate-limited on $what; backing off ${seconds}s '
+        '(until $_rateLimitedUntil)');
+    return true;
+  }
+
   @override
   bool get canLike => true;
   @override
@@ -360,7 +388,9 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       }
       _applyPlayerState((r.data as Map).cast<String, dynamic>());
     } catch (e) {
-      debugPrint('Spotify poll error: $e');
+      if (!_noteIfRateLimited(e, 'player poll')) {
+        debugPrint('Spotify poll error: $e');
+      }
     }
   }
 
@@ -411,7 +441,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       trackId: trackId,
     );
     _artUrl = art;
-    if (trackId.isNotEmpty) {
+    if (trackId.isNotEmpty && !_rateLimited) {
       final now = DateTime.now();
       final trackChanged = trackId != _lastLikedRecheckTrackId;
       final intervalElapsed = _lastLikedRecheckAt == null ||
@@ -491,7 +521,9 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
         ),
       );
     } catch (e) {
-      debugPrint('Spotify $method $path error: $e');
+      if (!_noteIfRateLimited(e, '$method $path')) {
+        debugPrint('Spotify \$method \$path error: \$e');
+      }
     }
     // Reflect the change immediately rather than waiting for the next poll.
     unawaited(_poll());
@@ -574,6 +606,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
   static String _trackUri(String trackId) => 'spotify:track:$trackId';
 
   Future<void> _refreshLikedStatus(String trackId) async {
+    if (_rateLimited) return;
     _likedCheckedForTrackId = trackId;
     final token = await _validAccessToken();
     if (token == null) return;
@@ -588,7 +621,9 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       _isLiked = list.isNotEmpty && list.first == true;
       notifyListeners();
     } catch (e) {
-      debugPrint('Spotify liked-status error: $e');
+      if (!_noteIfRateLimited(e, 'liked-status')) {
+        debugPrint('Spotify liked-status error: $e');
+      }
     }
   }
 
@@ -615,7 +650,8 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
         ),
       );
     } catch (e) {
-      debugPrint('Spotify toggleLike error: $e');
+      _noteIfRateLimited(e, 'toggleLike');
+      debugPrint('Spotify toggleLike error: \$e');
       _isLiked = wasLiked;
       notifyListeners();
     }
@@ -639,7 +675,9 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
               ))
           .toList();
     } catch (e) {
-      debugPrint('Spotify loadPlaylists error: $e');
+      if (!_noteIfRateLimited(e, 'loadPlaylists')) {
+        debugPrint('Spotify loadPlaylists error: \$e');
+      }
       return const [];
     }
   }
@@ -657,7 +695,9 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
     } catch (e) {
-      debugPrint('Spotify addToPlaylist error: $e');
+      if (!_noteIfRateLimited(e, 'addToPlaylist')) {
+        debugPrint('Spotify addToPlaylist error: \$e');
+      }
     }
   }
 
