@@ -47,8 +47,8 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
 
   /// Whether frames are actually arriving, as opposed to the stream merely
   /// having been asked for.
-  bool _hasPicture = false;
-  StreamSubscription<int?>? _widthSub;
+  StreamSubscription<String>? _errorSub;
+  StreamSubscription<bool>? _completedSub;
   Timer? _retryTimer;
 
   @override
@@ -59,10 +59,16 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
     // came back before the network did, the phone was off its charger, its
     // app was restarted. Rather than sit on a black rectangle until somebody
     // notices, keep asking.
-    _retryTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+    //
+    // Only ever retry a stream that libmpv itself gave up on. An earlier
+    // version retried whenever no picture had been *seen*, judged by the
+    // width the player reports; that width never arrives on this setup, so it
+    // tore down and rebuilt a perfectly good stream every few seconds and
+    // nothing was ever drawn.
+    _retryTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (!mounted || _fullScreen) return;
       final service = context.read<CameraService>();
-      if (!service.isOpen || _hasPicture || _starting) return;
+      if (!service.isOpen || _starting || _streaming) return;
       unawaited(_restart(service));
     });
   }
@@ -72,7 +78,8 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
     stopDrift();
     _hudTimer?.cancel();
     _retryTimer?.cancel();
-    unawaited(_widthSub?.cancel());
+    unawaited(_errorSub?.cancel());
+    unawaited(_completedSub?.cancel());
     unawaited(_player?.dispose());
     super.dispose();
   }
@@ -94,7 +101,12 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
   /// repaints, over the middle of the picture.
   Future<void> _ensurePlayer() async {
     if (_player != null) return;
-    final player = Player();
+    // libmpv's own log, forwarded to stderr. This app's only window into why
+    // a stream opens without complaint and then shows nothing.
+    final player = Player(
+      configuration: const PlayerConfiguration(logLevel: MPVLogLevel.info),
+    );
+    player.stream.log.listen((e) => debugPrint('mpv[${e.prefix}] ${e.text}'));
     final video = VideoController(
       player,
       // Same reason as the video player: hardware decoding on the Pi's GL
@@ -130,6 +142,11 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
       final native = player.platform;
       if (native is NativePlayer) {
         for (final o in const [
+          // The Pi 5 has no hardware H.264 decoder, and left to itself mpv
+          // probes CUDA and Vulkan, fails both, and never brings its video
+          // output up at all — it decodes the stream and shows nothing.
+          // VideoControllerConfiguration's flag does not reach libmpv here.
+          ['hwdec', 'no'],
           ['rtsp-transport', 'tcp'],
           ['cache', 'no'],
           ['untimed', 'yes'],
@@ -158,9 +175,17 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
       // A stream that opens without complaint but never delivers a frame is
       // the failure that actually happens here, so trust the picture rather
       // than the absence of an exception.
-      _widthSub ??= player.stream.width.listen((w) {
-        final has = (w ?? 0) > 0;
-        if (has != _hasPicture && mounted) setState(() => _hasPicture = has);
+      // A stream libmpv drops (the phone rebooted, its app was restarted)
+      // leaves _streaming false so the timer above picks it up again.
+      _errorSub ??= player.stream.error.listen((e) {
+        debugPrint('CameraOverlay: stream error: $e');
+        _streaming = false;
+        if (mounted) setState(() {});
+      });
+      _completedSub ??= player.stream.completed.listen((done) {
+        if (!done) return;
+        _streaming = false;
+        if (mounted) setState(() {});
       });
     } catch (e) {
       debugPrint('CameraOverlay: could not open stream: $e');
@@ -186,7 +211,6 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
 
     if (!service.isOpen) {
       if (_streaming) unawaited(_stopStream());
-      _hasPicture = false;
       return const SizedBox.shrink();
     }
     // Hidden, but the stream stays up: the page is showing it.
@@ -204,7 +228,7 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
       service: service,
       video: _video,
       hud: _hud,
-      waiting: !_hasPicture,
+      waiting: !_streaming,
       onTap: _openFullScreen,
     );
 
