@@ -45,18 +45,44 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
   String? _hud;
   Timer? _hudTimer;
 
+  /// Whether frames are actually arriving, as opposed to the stream merely
+  /// having been asked for.
+  bool _hasPicture = false;
+  StreamSubscription<int?>? _widthSub;
+  Timer? _retryTimer;
+
   @override
   void initState() {
     super.initState();
     startDrift();
+    // The phone can be unreachable for entirely ordinary reasons — the Pi
+    // came back before the network did, the phone was off its charger, its
+    // app was restarted. Rather than sit on a black rectangle until somebody
+    // notices, keep asking.
+    _retryTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted || _fullScreen) return;
+      final service = context.read<CameraService>();
+      if (!service.isOpen || _hasPicture || _starting) return;
+      unawaited(_restart(service));
+    });
   }
 
   @override
   void dispose() {
     stopDrift();
     _hudTimer?.cancel();
+    _retryTimer?.cancel();
+    unawaited(_widthSub?.cancel());
     unawaited(_player?.dispose());
     super.dispose();
+  }
+
+  /// Drop a stream that never produced a picture and ask for it again.
+  Future<void> _restart(CameraService service) async {
+    _streaming = false;
+    await _player?.stop();
+    await service.refreshStatus();
+    if (mounted && service.isOpen) await _startStream(service);
   }
 
   /// Bring up the player and hand libmpv its render target, once.
@@ -129,6 +155,13 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
 
       await player.open(Media(service.streamUrl));
       _streaming = true;
+      // A stream that opens without complaint but never delivers a frame is
+      // the failure that actually happens here, so trust the picture rather
+      // than the absence of an exception.
+      _widthSub ??= player.stream.width.listen((w) {
+        final has = (w ?? 0) > 0;
+        if (has != _hasPicture && mounted) setState(() => _hasPicture = has);
+      });
     } catch (e) {
       debugPrint('CameraOverlay: could not open stream: $e');
     } finally {
@@ -153,6 +186,7 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
 
     if (!service.isOpen) {
       if (_streaming) unawaited(_stopStream());
+      _hasPicture = false;
       return const SizedBox.shrink();
     }
     // Hidden, but the stream stays up: the page is showing it.
@@ -170,6 +204,7 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
       service: service,
       video: _video,
       hud: _hud,
+      waiting: !_hasPicture,
       onTap: _openFullScreen,
     );
 
@@ -221,12 +256,14 @@ class _Window extends StatelessWidget {
     required this.service,
     required this.video,
     required this.hud,
+    required this.waiting,
     required this.onTap,
   });
 
   final CameraService service;
   final VideoController? video;
   final String? hud;
+  final bool waiting;
   final VoidCallback onTap;
 
   @override
@@ -265,7 +302,19 @@ class _Window extends StatelessWidget {
                   onTap: onTap,
                 ),
               ),
-              if (service.lastError != null)
+              if (waiting)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      service.lastError ?? 'Waiting for the camera…',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 16),
+                    ),
+                  ),
+                )
+              else if (service.lastError != null)
                 Center(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
