@@ -17,6 +17,86 @@ Built with Flutter (native Linux), so it stays smooth on a Pi.
 
 ---
 
+## What's new on this branch
+
+Work in progress on `pullMessages`, not yet merged to `main`.
+
+**A phone as a wireless camera**
+- An old Android phone running [IP Webcam](https://play.google.com/store/apps/details?id=com.pas.webcam)
+  becomes a camera for the kiosk. A button in the top bar opens a small window
+  in a corner; tapping that opens it full screen, where pinching zooms the
+  phone's sensor rather than enlarging the picture here.
+- The picture comes over RTSP (H.264). IP Webcam tags the stream with the
+  sensor's rotation, so it arrives the right way up whichever way the phone is
+  lying, and its MJPEG alternative costs an absurd 180 Mbit/s by comparison.
+- Zoom, lens, torch and stream size are driven over IP Webcam's HTTP API. The
+  stream is only open while the window is, so the phone isn't encoding around
+  the clock.
+- Settings → Camera holds the address, credentials, stream size and position.
+
+**Share Inbox**
+- A companion Android app shares photos, GIFs, videos, links and notes straight
+  to the kiosk, with a popup, a chime and per-person tokens. See
+  [Share Inbox](#share-inbox).
+
+**Spotify**
+- Device switcher, queue view, and browse panels for playlists, recently played
+  and top tracks.
+- A local librespot patch fixing transfers *off* the kiosk landing on the wrong
+  track — see [`patches/`](patches/).
+- Rate limiting now honours Spotify's `Retry-After` per endpoint instead of
+  hammering through 429s.
+
+**Screen**
+- Turns itself off when nothing is playing, no slideshow is running and nobody
+  has touched it; a touch or music brings it back. See
+  [Turning the screen off by itself](#turning-the-screen-off-by-itself).
+
+**Overlay positions**
+- Weather, now playing and the camera window each pick a corner, and two can
+  never end up in the same one — moving a panel onto an occupied corner swaps
+  the pair.
+
+---
+
+## Known issues
+
+**Camera**
+- The Pi 5 has no hardware H.264 decoder, so the stream is decoded in software
+  — roughly half a core at 1080p25. Occasional block corruption has been seen;
+  frame dropping and mpv's latency hacks are now off, which should stop it, but
+  it hasn't been observed over a long run yet. Dropping the phone to 720p in
+  Settings → Camera roughly halves the decode cost if it recurs.
+- **IP Webcam has no login by default** — set one in its settings, or the
+  stream is open to anything on your network.
+- **Enable "start server on boot" in IP Webcam.** Nothing serves after the
+  phone reboots otherwise, and the kiosk will simply wait.
+- Zoom is a sensor crop, not optical. On phones with a periscope lens that lens
+  is not reachable by any third-party app, so zooming in gains framing, not
+  detail.
+- If the phone's app is force-stopped abruptly enough times it leaks its client
+  slots, after which it accepts connections and sends nothing. Force-stopping
+  and reopening it clears that.
+
+**Spotify**
+- A Development Mode app can't use the batch endpoints, browse/categories, or
+  artist top-tracks, and search is capped at 10 results. Extended Quota Mode
+  lifts these.
+- Spotify Connect can't carry lossless, so the kiosk device is capped at
+  320 kbps — a Spotify-side limit, not a librespot one.
+- The librespot fix lives in [`patches/`](patches/) and is applied to a local
+  build; it isn't upstream.
+
+**Deployment**
+- `deploy/labwc-autostart` doesn't start `vidaa_remote.service`, which a
+  live install may rely on. Merge rather than overwrite if you use the TV
+  remote.
+- Nothing on the Pi keeps a journal for user units, so the app's output is
+  discarded unless a `StandardOutput=` drop-in is added — see
+  [Development](#development).
+
+---
+
 ## Features
 
 **Photos & video**
@@ -665,8 +745,23 @@ Handy service commands on the Pi:
 
 ```bash
 systemctl --user restart immich_kiosk_pi
-journalctl --user -u immich_kiosk_pi -f
 ```
+
+**Getting logs.** A Pi OS install typically keeps no journal for *user* units —
+`journalctl --user` reports "No journal files were found" — so everything the
+app prints goes nowhere. Redirect it to a file instead:
+
+```bash
+mkdir -p ~/.config/systemd/user/immich_kiosk_pi.service.d
+printf '[Service]\nStandardOutput=append:/tmp/kiosk.log\nStandardError=append:/tmp/kiosk.log\n' \
+  > ~/.config/systemd/user/immich_kiosk_pi.service.d/log.conf
+systemctl --user daemon-reload && systemctl --user restart immich_kiosk_pi
+tail -f /tmp/kiosk.log
+```
+
+That catches `debugPrint`, unhandled async errors, and libmpv's own log — the
+last of which is the only way to see why a camera stream opens without
+complaint and then shows nothing.
 
 The window is fullscreen and borderless by default. Set `IMMICH_KIOSK_WINDOWED=1`
 to run it in a normal window while debugging.
