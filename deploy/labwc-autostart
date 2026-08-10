@@ -8,9 +8,12 @@ systemctl --user import-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR GDK_BACKEND 
 # Launch (or relaunch) the app.
 systemctl --user restart immich_kiosk_pi.service
 
-# And the Spotify Connect device. Both units are WantedBy
-# graphical-session.target, but labwc never activates that target, so
-# nothing starts them at boot unless it is done here — enabling the unit
-# is not enough, and a reboot otherwise leaves "Kiosk" missing from the
-# list of Spotify devices with the service sitting inactive.
+# And everything else that hangs off the session.
+#
+# Every one of these units is WantedBy graphical-session.target, but labwc
+# never activates that target, so nothing starts them at boot unless it is
+# done here — enabling the unit is not enough. A reboot otherwise leaves
+# "Kiosk" missing from Spotify's device list, and the screen controller
+# dead, which silently breaks both the idle screen-off and Alexa.
 systemctl --user restart librespot.service
+systemctl --user restart screen-control.service
