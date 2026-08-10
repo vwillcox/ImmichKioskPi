@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:provider/provider.dart';
 
+import '../config/app_config.dart' show OverlayCorner;
 import '../screens/camera_screen.dart';
 import '../services/camera_service.dart';
 import 'burn_in_drift.dart';
@@ -240,7 +241,8 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final screen = Size(constraints.maxWidth, constraints.maxHeight);
-          final rect = applyDrift(_collapsedRect(screen), screen);
+          final rect = applyDrift(
+              _collapsedRect(screen, service.settings.corner), screen);
           return Stack(
             children: [Positioned.fromRect(rect: rect, child: window)],
           );
@@ -269,12 +271,19 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
     if (mounted) setState(() => _fullScreen = false);
   }
 
-  Rect _collapsedRect(Size screen) {
+  Rect _collapsedRect(Size screen, OverlayCorner corner) {
     const size = _collapsedSize;
     const m = 28.0;
-    // Bottom left — the now-playing panel and weather take the other corners.
+    final isTop =
+        corner == OverlayCorner.topLeft || corner == OverlayCorner.topRight;
+    final isLeft =
+        corner == OverlayCorner.topLeft || corner == OverlayCorner.bottomLeft;
     return Rect.fromLTWH(
-        m, screen.height - size.height - m, size.width, size.height);
+      isLeft ? m : screen.width - size.width - m,
+      isTop ? m : screen.height - size.height - m,
+      size.width,
+      size.height,
+    );
   }
 }
 

@@ -306,7 +306,9 @@ class _WeatherSettingsTile extends StatelessWidget {
             value: s.corner,
             enabled: s.enabled,
             onChanged: (c) {
-              s.corner = c;
+              final config = context.read<ConfigService>();
+              config.config.assignCorner(OverlaySlot.weather, c);
+              config.save();
               service.updateSettings(s);
             },
           ),
@@ -629,7 +631,7 @@ class _NowPlayingSettingsTile extends StatelessWidget {
                   .toList(),
               onChanged: (v) {
                 if (v != null) {
-                  s.corner = v;
+                  config.config.assignCorner(OverlaySlot.nowPlaying, v);
                   config.save();
                 }
               },
@@ -1322,7 +1324,23 @@ class _CameraSettingsTile extends StatelessWidget {
             service.save();
           },
         ),
-        if (s.enabled)
+        if (s.enabled) ...[
+          ListTile(
+            leading: const Icon(Icons.picture_in_picture_alt_outlined),
+            title: const Text('Position'),
+            subtitle: Text(cornerLabel(s.corner)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: _CornerPicker(
+              value: s.corner,
+              enabled: true,
+              onChanged: (c) {
+                service.config.assignCorner(OverlaySlot.camera, c);
+                service.save();
+              },
+            ),
+          ),
           ListTile(
             leading: const Icon(Icons.videocam_outlined),
             title: const Text('Camera phone'),
@@ -1338,6 +1356,7 @@ class _CameraSettingsTile extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _edit(context),
           ),
+        ],
       ],
     );
   }

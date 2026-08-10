@@ -61,6 +61,22 @@ class SlideshowSettings {
 
 enum OverlayCorner { topLeft, topRight, bottomLeft, bottomRight }
 
+/// The panels that float in a corner. Their positions are managed together
+/// so that two can never be assigned the same one — see
+/// [AppConfig.assignCorner].
+enum OverlaySlot { weather, nowPlaying, camera }
+
+String slotLabel(OverlaySlot s) {
+  switch (s) {
+    case OverlaySlot.weather:
+      return 'Weather';
+    case OverlaySlot.nowPlaying:
+      return 'Now playing';
+    case OverlaySlot.camera:
+      return 'Camera';
+  }
+}
+
 OverlayCorner _cornerFromString(String? s) {
   switch (s) {
     case 'topLeft':
@@ -272,6 +288,9 @@ class CameraSettings {
   /// much as is worth sending.
   String streamResolution;
 
+  /// Which corner the small window sits in.
+  OverlayCorner corner;
+
   /// Degrees to turn the picture by on the phone, for when it ends up mounted
   /// on its side or upside down. Applied there rather than here so the whole
   /// frame is still used — but only its MJPEG encoder honours it.
@@ -297,6 +316,7 @@ class CameraSettings {
     this.username = '',
     this.password = '',
     this.cameraId = '0',
+    this.corner = OverlayCorner.bottomRight,
     this.streamResolution = '1920x1080',
     this.rotate = 0,
     this.viewQuarterTurns = 0,
@@ -320,6 +340,11 @@ class CameraSettings {
         username: j['username'] as String? ?? '',
         password: j['password'] as String? ?? '',
         cameraId: j['cameraId'] as String? ?? '0',
+        // Bottom right by default rather than the shared fallback's top
+        // right, which the weather panel already has.
+        corner: j['corner'] == null
+            ? OverlayCorner.bottomRight
+            : _cornerFromString(j['corner'] as String?),
         streamResolution: j['streamResolution'] as String? ?? '1920x1080',
         rotate: (j['rotate'] as num?)?.toInt() ?? 0,
         viewQuarterTurns: (j['viewQuarterTurns'] as num?)?.toInt() ?? 0,
@@ -333,6 +358,7 @@ class CameraSettings {
         'username': username,
         'password': password,
         'cameraId': cameraId,
+        'corner': cornerToString(corner),
         'streamResolution': streamResolution,
         'rotate': rotate,
         'viewQuarterTurns': viewQuarterTurns,
@@ -485,7 +511,65 @@ class AppConfig {
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
+  OverlayCorner cornerOf(OverlaySlot slot) {
+    switch (slot) {
+      case OverlaySlot.weather:
+        return weather.corner;
+      case OverlaySlot.nowPlaying:
+        return nowPlaying.corner;
+      case OverlaySlot.camera:
+        return camera.corner;
+    }
+  }
+
+  void _setCorner(OverlaySlot slot, OverlayCorner corner) {
+    switch (slot) {
+      case OverlaySlot.weather:
+        weather.corner = corner;
+      case OverlaySlot.nowPlaying:
+        nowPlaying.corner = corner;
+      case OverlaySlot.camera:
+        camera.corner = corner;
+    }
+  }
+
+  /// Move [slot] to [corner], displacing whatever was already there into the
+  /// corner [slot] is leaving.
+  ///
+  /// Three panels and four corners, so every request can be honoured — which
+  /// is why this swaps rather than refusing. Two panels can therefore never
+  /// end up stacked on top of each other, without the settings screen having
+  /// to validate anything or grey options out.
+  void assignCorner(OverlaySlot slot, OverlayCorner corner) {
+    final vacated = cornerOf(slot);
+    if (vacated == corner) return;
+    for (final other in OverlaySlot.values) {
+      if (other != slot && cornerOf(other) == corner) {
+        _setCorner(other, vacated);
+      }
+    }
+    _setCorner(slot, corner);
+  }
+
+  /// Settled configurations written before the camera had a corner of its own
+  /// can arrive with two panels in the same place. Move the later one to
+  /// whichever corner is still free.
+  void _separateCorners() {
+    final taken = <OverlayCorner>{};
+    for (final slot in OverlaySlot.values) {
+      final corner = cornerOf(slot);
+      if (taken.add(corner)) continue;
+      final free = OverlayCorner.values.firstWhere((c) => !taken.contains(c));
+      _setCorner(slot, free);
+      taken.add(free);
+    }
+  }
+
   factory AppConfig.fromJson(Map<String, dynamic> j) {
+    return _fromJson(j).._separateCorners();
+  }
+
+  static AppConfig _fromJson(Map<String, dynamic> j) {
     return AppConfig(
       immichUrl: (j['immichUrl'] as String? ?? '').replaceAll(RegExp(r'/+$'), ''),
       apiKey: j['apiKey'] as String? ?? '',
