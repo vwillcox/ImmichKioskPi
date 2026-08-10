@@ -150,7 +150,11 @@ class _CameraOverlayState extends State<CameraOverlay> with BurnInDriftMixin {
           ['rtsp-transport', 'tcp'],
           ['cache', 'no'],
           ['untimed', 'yes'],
-          ['video-latency-hacks', 'yes'],
+          // No latency hacks and no frame dropping. Both trade correctness
+          // for immediacy, and on a software H.264 decode that shows up as
+          // blocks and smearing that persist until the next keyframe —
+          // decoding carries on from a frame it only partly got.
+          ['framedrop', 'no'],
           ['interpolation', 'no'],
           ['demuxer-lavf-analyzeduration', '0.1'],
           ['network-timeout', '5'],
