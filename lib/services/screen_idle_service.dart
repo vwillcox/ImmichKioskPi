@@ -67,6 +67,21 @@ class ScreenIdleService {
     _offByUs = false;
   }
 
+  /// Something arrived that's worth looking at — bring the panel up.
+  ///
+  /// Unlike waking for music, this doesn't check who switched the screen off:
+  /// somebody deliberately sent this to the frame, and Do Not Disturb is the
+  /// control for not wanting to be interrupted. With it on, nothing here
+  /// happens at all.
+  Future<void> wakeForNotification() async {
+    if (_configService.config.shareInbox.dndMuted) return;
+    // Treat it as use, so the idle timer starts again from now rather than
+    // switching the panel straight back off.
+    _lastInteraction = DateTime.now();
+    await _setScreen(on: true);
+    _offByUs = false;
+  }
+
   /// Set by [SlideshowScreen] while it's on screen — a running slideshow is
   /// the whole point of the display, so it never counts as idle.
   set slideshowRunning(bool running) {

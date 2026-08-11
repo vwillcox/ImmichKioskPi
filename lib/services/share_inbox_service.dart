@@ -56,6 +56,11 @@ class ShareInboxService extends ChangeNotifier {
 
   ShareInboxService(this._configService);
 
+  /// Called when something lands. A hook rather than a dependency because the
+  /// screen service is built after this one, and because the inbox has no
+  /// business knowing how the panel is switched on.
+  Future<void> Function()? onItemArrived;
+
   ShareInboxSettings get _settings => _configService.config.shareInbox;
 
   SharedItem? get current => _queue.isEmpty ? null : _queue.first;
@@ -212,6 +217,8 @@ class ShareInboxService extends ChangeNotifier {
     _queue.add(item);
     notifyListeners();
     if (!_settings.dndMuted) unawaited(_playChime());
+    // Left to decide for itself whether Do Not Disturb applies.
+    unawaited(onItemArrived?.call());
   }
 
   /// Copied out of the asset bundle once on startup so media_kit can play it

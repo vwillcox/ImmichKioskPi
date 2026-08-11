@@ -69,6 +69,10 @@ void main() async {
   // itself is left to the host-side screen_control.py service.
   final screenIdle = ScreenIdleService(config, [spotify, nowPlaying])..start();
 
+  // A share arriving is worth waking the panel for — unless Do Not Disturb is
+  // on, which the screen service checks for itself.
+  shareInbox.onItemArrived = screenIdle.wakeForNotification;
+
   runApp(
     MultiProvider(
       providers: [
