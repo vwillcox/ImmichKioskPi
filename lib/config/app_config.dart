@@ -1,4 +1,7 @@
 /// Persistent app configuration (connection, slideshow, weather overlay).
+library;
+
+import '../dashboard/dashboard_model.dart';
 
 enum SlideshowTransition { fade, slide, kenBurns, pageTurn }
 
@@ -480,6 +483,7 @@ class AppConfig {
   ShareInboxSettings shareInbox;
   ScreenSettings screen;
   CameraSettings camera;
+  DashboardSettings dashboard;
 
   /// Video player volume (0-100) and mute, remembered between videos.
   double videoVolume;
@@ -498,6 +502,7 @@ class AppConfig {
     ShareInboxSettings? shareInbox,
     ScreenSettings? screen,
     CameraSettings? camera,
+    DashboardSettings? dashboard,
     this.videoVolume = 100,
     this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
@@ -507,7 +512,8 @@ class AppConfig {
         spotify = spotify ?? SpotifySettings(),
         shareInbox = shareInbox ?? ShareInboxSettings(),
         screen = screen ?? ScreenSettings(),
-        camera = camera ?? CameraSettings();
+        camera = camera ?? CameraSettings(),
+        dashboard = dashboard ?? DashboardSettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -600,6 +606,9 @@ class AppConfig {
       camera: j['camera'] is Map<String, dynamic>
           ? CameraSettings.fromJson(j['camera'] as Map<String, dynamic>)
           : CameraSettings(),
+      dashboard: j['dashboard'] is Map<String, dynamic>
+          ? DashboardSettings.fromJson(j['dashboard'] as Map<String, dynamic>)
+          : DashboardSettings(),
       videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
       videoMuted: j['videoMuted'] as bool? ?? false,
     );
@@ -618,6 +627,7 @@ class AppConfig {
         'shareInbox': shareInbox.toJson(),
         'screen': screen.toJson(),
         'camera': camera.toJson(),
+        'dashboard': dashboard.toJson(),
         'videoVolume': videoVolume,
         'videoMuted': videoMuted,
       };

@@ -12,6 +12,7 @@ import '../services/locked_folder_service.dart';
 import '../widgets/now_playing_overlay.dart';
 import '../widgets/remote_image.dart';
 import 'album_screen.dart';
+import 'dashboard_screen.dart';
 import 'locked_folder_screen.dart';
 import 'pin_screen.dart';
 import 'settings_screen.dart';
@@ -241,6 +242,14 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.lock),
               tooltip: 'Locked Folder',
               onPressed: _openLockedFolder,
+            ),
+          if (context.watch<ConfigService>().config.dashboard.enabled)
+            IconButton(
+              icon: const Icon(Icons.dashboard_outlined),
+              tooltip: 'Dashboard',
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const DashboardScreen(),
+              )),
             ),
           if (context.watch<CameraService>().isConfigured)
             IconButton(

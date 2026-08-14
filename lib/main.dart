@@ -7,8 +7,11 @@ import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
 import 'models/immich_models.dart';
+import 'dashboard/widgets/widgets.dart';
 import 'services/camera_service.dart';
 import 'services/config_service.dart';
+import 'services/dashboard_service.dart';
+import 'services/feed_service.dart';
 import 'services/immich_service.dart';
 import 'services/indoor_sensor_service.dart';
 import 'services/locked_folder_service.dart';
@@ -64,6 +67,18 @@ void main() async {
   final shareInbox = ShareInboxService(config);
   unawaited(shareInbox.start());
 
+  // Widget types have to be registered before anything reads the dashboard:
+  // the editor's palette and each widget's settings form are both generated
+  // from the registry.
+  registerBuiltInWidgets();
+
+  // Feeds for the dashboard's calendar and news widgets, shared by URL so two
+  // widgets on the same feed cost one fetch.
+  final feeds = FeedService()..start();
+
+  final dashboard = DashboardService(config);
+  unawaited(dashboard.start());
+
   // Switches the panel off by itself when nothing's playing and no
   // slideshow is running — see ScreenIdleService for why the switching
   // itself is left to the host-side screen_control.py service.
@@ -86,6 +101,8 @@ void main() async {
         ChangeNotifierProvider.value(value: shareInbox),
         Provider<ScreenIdleService>.value(value: screenIdle),
         ChangeNotifierProvider(create: (_) => CameraService(config)),
+        ChangeNotifierProvider.value(value: feeds),
+        ChangeNotifierProvider.value(value: dashboard),
       ],
       child: const ImmichKioskPiApp(),
     ),

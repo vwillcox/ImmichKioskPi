@@ -10,6 +10,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../config/app_config.dart';
 import '../services/camera_service.dart';
 import '../services/config_service.dart';
+import '../services/dashboard_service.dart';
 import '../services/indoor_sensor_service.dart';
 import '../services/locked_folder_service.dart';
 import '../services/media_cache.dart';
@@ -142,6 +143,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 32),
           _section('Screen'),
           const _ScreenSettingsTile(),
+
+          const Divider(height: 32),
+          _section('Dashboard'),
+          const _DashboardSettingsTile(),
 
           const Divider(height: 32),
           _section('Camera'),
@@ -1355,6 +1360,123 @@ class _CameraSettingsTile extends StatelessWidget {
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _edit(context),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The widget dashboard and the browser page that arranges it.
+class _DashboardSettingsTile extends StatelessWidget {
+  const _DashboardSettingsTile();
+
+  Future<void> _editPort(BuildContext context) async {
+    final service = context.read<ConfigService>();
+    final dashboard = context.read<DashboardService>();
+    final s = service.config.dashboard;
+    final port = TextEditingController(text: '${s.editorPort}');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Editor port'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'The port the dashboard editor is served on. Separate from '
+                'the Share Inbox, so one can be exposed beyond your network '
+                'without the other.',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: port,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(fontSize: 18),
+                decoration: const InputDecoration(
+                  labelText: 'Port',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    s.editorPort = int.tryParse(port.text.trim()) ?? 8090;
+    await service.save();
+    await dashboard.refreshFromSettings();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final service = context.watch<ConfigService>();
+    final dashboard = context.watch<DashboardService>();
+    final s = service.config.dashboard;
+    final theme = dashboard.themes.byId(s.themeId);
+
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.dashboard_outlined),
+          title: const Text('Widget dashboard'),
+          subtitle: const Text(
+              'A screen of widgets — clock, weather, calendar, news, now '
+              'playing — arranged from a browser. Adds a button to the top bar.'),
+          isThreeLine: true,
+          value: s.enabled,
+          onChanged: (v) async {
+            s.enabled = v;
+            await service.save();
+            await dashboard.refreshFromSettings();
+          },
+        ),
+        if (s.enabled) ...[
+          ListTile(
+            leading: const Icon(Icons.open_in_browser),
+            title: const Text('Arrange it in a browser'),
+            subtitle: Text(dashboard.editorAddress),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _editPort(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Theme'),
+            subtitle: Text('${theme.name} · '
+                '${s.widgets.length} widget${s.widgets.length == 1 ? '' : 's'}'),
+            trailing: DropdownButton<String>(
+              value: dashboard.themes.all.any((t) => t.id == s.themeId)
+                  ? s.themeId
+                  : dashboard.themes.all.first.id,
+              underline: const SizedBox.shrink(),
+              items: dashboard.themes.all
+                  .map((t) => DropdownMenuItem(
+                        value: t.id,
+                        child: Text(t.name),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v == null) return;
+                s.themeId = v;
+                service.save();
+              },
+            ),
           ),
         ],
       ],

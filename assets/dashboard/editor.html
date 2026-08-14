@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kiosk dashboard</title>
+<style>
+  :root {
+    --bg: #0e1016; --panel: #171a22; --line: #262b36;
+    --text: #eef1f6; --muted: #9aa3b2; --accent: #7dd3fc; --danger: #f87171;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; flex: 1; }
+  button, select {
+    font: inherit; color: var(--text); background: #212734;
+    border: 1px solid var(--line); border-radius: 9px; padding: 9px 14px;
+    cursor: pointer; min-height: 40px;
+  }
+  button.primary { background: var(--accent); color: #06232e; border-color: transparent; font-weight: 600; }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { color: var(--muted); font-size: 13px; min-width: 8ch; }
+
+  main { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; padding: 18px; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: minmax(0,1fr); } }
+
+  /* The canvas mirrors the kiosk's 1920x1200 panel. */
+  #canvasWrap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+  #canvas {
+    position: relative; width: 100%; aspect-ratio: 1920 / 1200;
+    background:
+      linear-gradient(to right, rgba(255,255,255,.06) 1px, transparent 1px) 0 0 / calc(100%/12) 100%,
+      linear-gradient(to bottom, rgba(255,255,255,.06) 1px, transparent 1px) 0 0 / 100% calc(100%/8),
+      #0b0d13;
+    border-radius: 8px; overflow: hidden; touch-action: none;
+  }
+  .tile {
+    position: absolute; background: #1d2331; border: 1px solid #313a4d;
+    border-radius: 10px; padding: 8px; overflow: hidden; cursor: grab;
+    display: flex; flex-direction: column; gap: 2px; user-select: none;
+  }
+  .tile.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(125,211,252,.35); }
+  .tile.clash { border-color: var(--danger); }
+  .tile .glyph { font-size: 18px; line-height: 1; }
+  .tile .name { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .handle {
+    position: absolute; right: 0; bottom: 0; width: 26px; height: 26px; cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, var(--accent) 50%); opacity: .65;
+    border-bottom-right-radius: 9px;
+  }
+
+  aside { display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  .palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+  .palette button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; text-align: center; }
+  .palette .g { font-size: 20px; }
+  .palette .n { font-size: 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; background: #0f1219; border: 1px solid var(--line);
+    border-radius: 9px; padding: 10px; color: var(--text); font: inherit;
+  }
+  textarea { min-height: 76px; resize: vertical; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
+  .help { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .empty { color: var(--muted); font-size: 14px; }
+  .warn { color: var(--danger); font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kiosk dashboard</h1>
+  <span id="status">Loading…</span>
+  <select id="theme" title="Theme"></select>
+  <button id="revert">Revert</button>
+  <button id="save" class="primary">Save</button>
+</header>
+
+<main>
+  <div id="canvasWrap">
+    <div id="canvas"></div>
+    <div id="clashWarning" class="warn" hidden>Two widgets overlap — drag one clear.</div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <h2>Add a widget</h2>
+      <div class="palette" id="palette"></div>
+    </div>
+    <div class="card" id="settingsCard">
+      <h2>Widget settings</h2>
+      <div id="settings"><p class="empty">Select a widget to change its settings.</p></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+"use strict";
+
+const state = {
+  schema: null,
+  dashboard: null,
+  selectedId: null,
+  dirty: false,
+};
+
+const canvas = document.getElementById("canvas");
+const statusEl = document.getElementById("status");
+
+const api = {
+  async get(path) {
+    const r = await fetch(path);
+    if (!r.ok) throw new Error(path + " -> " + r.status);
+    return r.json();
+  },
+  async put(path, body) {
+    const r = await fetch(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(path + " -> " + r.status);
+    return r.json();
+  },
+};
+
+function setStatus(text, isError) {
+  statusEl.textContent = text;
+  statusEl.style.color = isError ? "var(--danger)" : "var(--muted)";
+}
+
+function markDirty() {
+  state.dirty = true;
+  setStatus("Unsaved changes");
+}
+
+function typeOf(name) {
+  return state.schema.widgetTypes.find(t => t.type === name);
+}
+
+/* ---------- rendering ---------- */
+
+function overlaps(a, b) {
+  return a.x < b.x + b.width && b.x < a.x + a.width &&
+         a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+function render() {
+  const { columns, rows } = state.schema.grid;
+  canvas.innerHTML = "";
+  let anyClash = false;
+
+  for (const w of state.dashboard.widgets) {
+    const t = typeOf(w.type);
+    const el = document.createElement("div");
+    el.className = "tile" + (w.id === state.selectedId ? " selected" : "");
+    el.style.left = (w.x / columns * 100) + "%";
+    el.style.top = (w.y / rows * 100) + "%";
+    el.style.width = (w.width / columns * 100) + "%";
+    el.style.height = (w.height / rows * 100) + "%";
+    el.dataset.id = w.id;
+
+    const clash = state.dashboard.widgets.some(o => o.id !== w.id && overlaps(w, o));
+    if (clash) { el.classList.add("clash"); anyClash = true; }
+
+    el.innerHTML =
+      '<div class="glyph">' + (t ? t.glyph : "❓") + "</div>" +
+      '<div class="name">' + (t ? t.name : w.type) + "</div>" +
+      '<div class="handle"></div>';
+
+    canvas.appendChild(el);
+  }
+
+  document.getElementById("clashWarning").hidden = !anyClash;
+  renderSettings();
+}
+
+/* ---------- dragging and resizing ---------- */
+
+// One pointer handler for both, because a phone and a mouse should behave
+// the same and Pointer Events already unify them.
+let drag = null;
+
+canvas.addEventListener("pointerdown", (e) => {
+  const tile = e.target.closest(".tile");
+  if (!tile) { state.selectedId = null; render(); return; }
+
+  const w = state.dashboard.widgets.find(x => x.id === tile.dataset.id);
+  if (!w) return;
+
+  state.selectedId = w.id;
+  const rect = canvas.getBoundingClientRect();
+  drag = {
+    widget: w,
+    mode: e.target.classList.contains("handle") ? "resize" : "move",
+    startX: e.clientX,
+    startY: e.clientY,
+    originX: w.x, originY: w.y, originW: w.width, originH: w.height,
+    cellW: rect.width / state.schema.grid.columns,
+    cellH: rect.height / state.schema.grid.rows,
+  };
+  canvas.setPointerCapture(e.pointerId);
+  render();
+  e.preventDefault();
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const { columns, rows } = state.schema.grid;
+  const dx = Math.round((e.clientX - drag.startX) / drag.cellW);
+  const dy = Math.round((e.clientY - drag.startY) / drag.cellH);
+  const w = drag.widget;
+  const t = typeOf(w.type) || { minWidth: 1, minHeight: 1 };
+
+  if (drag.mode === "move") {
+    const nx = clamp(drag.originX + dx, 0, columns - w.width);
+    const ny = clamp(drag.originY + dy, 0, rows - w.height);
+    if (nx === w.x && ny === w.y) return;
+    w.x = nx; w.y = ny;
+  } else {
+    const nw = clamp(drag.originW + dx, t.minWidth || 1, columns - w.x);
+    const nh = clamp(drag.originH + dy, t.minHeight || 1, rows - w.y);
+    if (nw === w.width && nh === w.height) return;
+    w.width = nw; w.height = nh;
+  }
+  markDirty();
+  render();
+});
+
+function endDrag() { if (drag) { drag = null; } }
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+/* ---------- palette ---------- */
+
+function renderPalette() {
+  const palette = document.getElementById("palette");
+  palette.innerHTML = "";
+  for (const t of state.schema.widgetTypes) {
+    const b = document.createElement("button");
+    b.title = t.description;
+    b.innerHTML = '<span class="g">' + t.glyph + '</span><span class="n">' + t.name + "</span>";
+    b.onclick = () => addWidget(t);
+    palette.appendChild(b);
+  }
+}
+
+function firstFreeSlot(width, height) {
+  const { columns, rows } = state.schema.grid;
+  for (let y = 0; y <= rows - height; y++) {
+    for (let x = 0; x <= columns - width; x++) {
+      const candidate = { x, y, width, height };
+      if (!state.dashboard.widgets.some(w => overlaps(candidate, w))) return { x, y };
+    }
+  }
+  return null;
+}
+
+function addWidget(t) {
+  const slot = firstFreeSlot(t.defaultWidth, t.defaultHeight) || { x: 0, y: 0 };
+  const options = {};
+  for (const o of t.options) {
+    if (o.default !== null && o.default !== undefined) options[o.key] = o.default;
+  }
+  const id = "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  state.dashboard.widgets.push({
+    id, type: t.type,
+    x: slot.x, y: slot.y,
+    width: t.defaultWidth, height: t.defaultHeight,
+    options,
+  });
+  state.selectedId = id;
+  markDirty();
+  render();
+}
+
+/* ---------- settings form, built from the schema ---------- */
+
+function renderSettings() {
+  const host = document.getElementById("settings");
+  const w = state.dashboard.widgets.find(x => x.id === state.selectedId);
+  if (!w) {
+    host.innerHTML = '<p class="empty">Select a widget to change its settings.</p>';
+    return;
+  }
+  const t = typeOf(w.type);
+  host.innerHTML = "";
+
+  const title = document.createElement("p");
+  title.style.margin = "0 0 6px";
+  title.innerHTML = "<strong>" + (t ? t.name : w.type) + "</strong>";
+  host.appendChild(title);
+
+  if (t && t.description) {
+    const d = document.createElement("p");
+    d.className = "help";
+    d.textContent = t.description;
+    host.appendChild(d);
+  }
+
+  if (t) {
+    for (const o of t.options) {
+      host.appendChild(field(w, o));
+    }
+  } else {
+    const p = document.createElement("p");
+    p.className = "help";
+    p.textContent = "This kiosk build doesn't have a widget of this type. Its settings are kept as they are.";
+    host.appendChild(p);
+  }
+
+  const size = document.createElement("p");
+  size.className = "help";
+  size.textContent = "Position " + (w.x + 1) + "," + (w.y + 1) + " · " + w.width + "x" + w.height + " cells";
+  host.appendChild(size);
+
+  const del = document.createElement("button");
+  del.className = "danger";
+  del.textContent = "Remove widget";
+  del.style.marginTop = "10px";
+  del.onclick = () => {
+    state.dashboard.widgets = state.dashboard.widgets.filter(x => x.id !== w.id);
+    state.selectedId = null;
+    markDirty();
+    render();
+  };
+  host.appendChild(del);
+}
+
+function field(w, o) {
+  const wrap = document.createElement("div");
+  const value = w.options[o.key] !== undefined ? w.options[o.key] : o.default;
+
+  if (o.kind === "boolean") {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.marginTop = "12px";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = !!value;
+    input.onchange = () => { w.options[o.key] = input.checked; markDirty(); };
+    const label = document.createElement("span");
+    label.textContent = o.label;
+    row.append(input, label);
+    wrap.appendChild(row);
+  } else {
+    const label = document.createElement("label");
+    label.textContent = o.label;
+    wrap.appendChild(label);
+
+    let input;
+    if (o.kind === "choice") {
+      input = document.createElement("select");
+      for (const [k, name] of Object.entries(o.choices || {})) {
+        const opt = document.createElement("option");
+        opt.value = k; opt.textContent = name;
+        input.appendChild(opt);
+      }
+      input.value = value != null ? String(value) : "";
+      input.onchange = () => { w.options[o.key] = input.value; markDirty(); };
+    } else if (o.kind === "multiline") {
+      input = document.createElement("textarea");
+      input.value = value != null ? String(value) : "";
+      input.oninput = () => { w.options[o.key] = input.value; markDirty(); };
+    } else {
+      input = document.createElement("input");
+      input.type = o.kind === "number" ? "number" : "text";
+      input.value = value != null ? String(value) : "";
+      input.oninput = () => {
+        w.options[o.key] = o.kind === "number"
+          ? (input.value === "" ? 0 : Number(input.value))
+          : input.value;
+        markDirty();
+      };
+    }
+    wrap.appendChild(input);
+  }
+
+  if (o.help) {
+    const help = document.createElement("p");
+    help.className = "help";
+    help.textContent = o.help;
+    wrap.appendChild(help);
+  }
+  return wrap;
+}
+
+/* ---------- themes, save, load ---------- */
+
+function renderThemes() {
+  const sel = document.getElementById("theme");
+  sel.innerHTML = "";
+  for (const t of state.schema.themes) {
+    const o = document.createElement("option");
+    o.value = t.id; o.textContent = t.name;
+    sel.appendChild(o);
+  }
+  sel.value = state.dashboard.themeId;
+  sel.onchange = () => { state.dashboard.themeId = sel.value; markDirty(); };
+}
+
+document.getElementById("save").onclick = async () => {
+  try {
+    setStatus("Saving…");
+    await api.put("/api/dashboard", state.dashboard);
+    state.dirty = false;
+    setStatus("Saved");
+  } catch (e) {
+    setStatus("Save failed", true);
+    console.error(e);
+  }
+};
+
+document.getElementById("revert").onclick = () => load(true);
+
+// Nothing here is saved until you press Save, so leaving with changes
+// pending would silently lose them.
+window.addEventListener("beforeunload", (e) => {
+  if (!state.dirty) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
+
+async function load(quiet) {
+  try {
+    if (!quiet) setStatus("Loading…");
+    const [schema, dashboard] = await Promise.all([
+      api.get("/api/schema"),
+      api.get("/api/dashboard"),
+    ]);
+    state.schema = schema;
+    state.dashboard = dashboard;
+    state.selectedId = null;
+    state.dirty = false;
+    renderPalette();
+    renderThemes();
+    render();
+    setStatus("Ready");
+  } catch (e) {
+    setStatus("Could not reach the kiosk", true);
+    console.error(e);
+  }
+}
+
+load();
+</script>
+</body>
+</html>
