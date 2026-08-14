@@ -26,9 +26,50 @@ class DashboardScreen extends StatelessWidget {
       body: Container(
         decoration: theme.backgroundDecoration,
         child: SafeArea(
-          child: settings.widgets.isEmpty
-              ? _Empty(theme: theme, address: dashboard.editorAddress)
-              : _Grid(settings: settings, theme: theme),
+          child: Stack(
+            children: [
+              settings.widgets.isEmpty
+                  ? _Empty(theme: theme, address: dashboard.editorAddress)
+                  : _Grid(settings: settings, theme: theme),
+              // The panel has no keyboard and no window chrome, so without
+              // this there is no way off the dashboard at all. Drawn in the
+              // theme's own colours so it belongs to the dashboard rather
+              // than sitting on top of it.
+              Positioned(
+                left: 12,
+                bottom: 12,
+                child: _BackButton(theme: theme),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Back to whatever the kiosk was showing before the dashboard.
+class _BackButton extends StatelessWidget {
+  const _BackButton({required this.theme});
+
+  final DashboardTheme theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      // Never fully transparent, even under a theme whose tiles are: a
+      // control you cannot see is a control you cannot find.
+      color: Color.alphaBlend(
+          theme.surface, theme.background.first.withValues(alpha: 1)),
+      shape: CircleBorder(
+          side: BorderSide(color: theme.textSecondary.withValues(alpha: 0.4))),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(context).maybePop(),
+        child: SizedBox(
+          width: 76,
+          height: 76,
+          child: Icon(Icons.arrow_back, color: theme.textPrimary, size: 38),
         ),
       ),
     );
