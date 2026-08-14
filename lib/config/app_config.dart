@@ -370,6 +370,43 @@ class CameraSettings {
       };
 }
 
+/// A Hisense VIDAA television, driven over its MQTT control protocol.
+///
+/// The defaults are the set this was built against. Only one client may hold
+/// a session — the MQTT client id is derived from the UUID — so if you also
+/// run the standalone remote app, give one of them a different UUID or they
+/// will displace each other.
+class TvSettings {
+  bool enabled;
+
+  /// The television's address on the network.
+  String host;
+
+  /// Identifies this controller to the set. Pairing is per UUID: change it
+  /// and the television will ask for a PIN again.
+  String uuid;
+
+  TvSettings({
+    this.enabled = false,
+    this.host = '192.168.1.156',
+    this.uuid = '7a:8d:88:86:27:93',
+  });
+
+  bool get isConfigured => enabled && host.isNotEmpty && uuid.isNotEmpty;
+
+  factory TvSettings.fromJson(Map<String, dynamic> j) => TvSettings(
+        enabled: j['enabled'] as bool? ?? false,
+        host: j['host'] as String? ?? '192.168.1.156',
+        uuid: j['uuid'] as String? ?? '7a:8d:88:86:27:93',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        'host': host,
+        'uuid': uuid,
+      };
+}
+
 /// Turning the panel off by itself when there's nothing worth showing.
 ///
 /// The screen is switched via the same host-side `screen_control.py` service
@@ -484,6 +521,7 @@ class AppConfig {
   ScreenSettings screen;
   CameraSettings camera;
   DashboardSettings dashboard;
+  TvSettings tv;
 
   /// Video player volume (0-100) and mute, remembered between videos.
   double videoVolume;
@@ -503,6 +541,7 @@ class AppConfig {
     ScreenSettings? screen,
     CameraSettings? camera,
     DashboardSettings? dashboard,
+    TvSettings? tv,
     this.videoVolume = 100,
     this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
@@ -513,7 +552,8 @@ class AppConfig {
         shareInbox = shareInbox ?? ShareInboxSettings(),
         screen = screen ?? ScreenSettings(),
         camera = camera ?? CameraSettings(),
-        dashboard = dashboard ?? DashboardSettings();
+        dashboard = dashboard ?? DashboardSettings(),
+        tv = tv ?? TvSettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -609,6 +649,9 @@ class AppConfig {
       dashboard: j['dashboard'] is Map<String, dynamic>
           ? DashboardSettings.fromJson(j['dashboard'] as Map<String, dynamic>)
           : DashboardSettings(),
+      tv: j['tv'] is Map<String, dynamic>
+          ? TvSettings.fromJson(j['tv'] as Map<String, dynamic>)
+          : TvSettings(),
       videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
       videoMuted: j['videoMuted'] as bool? ?? false,
     );
@@ -628,6 +671,7 @@ class AppConfig {
         'screen': screen.toJson(),
         'camera': camera.toJson(),
         'dashboard': dashboard.toJson(),
+        'tv': tv.toJson(),
         'videoVolume': videoVolume,
         'videoMuted': videoMuted,
       };

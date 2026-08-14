@@ -42,6 +42,9 @@ dependencies:
   # RSS/Atom parsing for the dashboard's news widget
   xml: ^6.6.1
 
+  # Hisense VIDAA televisions are controlled over MQTT
+  mqtt_client: ^10.11.11
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -55,6 +58,10 @@ flutter:
     # Also listed as assets so the browser editor can be served the same
     # files, and its preview shows the typeface the panel will actually use.
     - assets/fonts/
+    # Client certificate the television's MQTT broker requires. Extracted
+    # from the vendor's own app and public in the pyvidaa/hisense-tv
+    # community — not a secret of this installation.
+    - assets/certs/
 
   fonts:
     - family: Inter

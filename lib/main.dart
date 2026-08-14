@@ -21,6 +21,7 @@ import 'services/now_playing_service.dart';
 import 'services/screen_idle_service.dart';
 import 'services/share_inbox_service.dart';
 import 'services/spotify_service.dart';
+import 'services/tv_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
 import 'screens/album_screen.dart';
@@ -113,6 +114,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => CameraService(config)),
         ChangeNotifierProvider.value(value: feeds),
         ChangeNotifierProvider.value(value: dashboard),
+        ChangeNotifierProvider(create: (_) => TvService(config)),
       ],
       child: const ImmichKioskPiApp(),
     ),

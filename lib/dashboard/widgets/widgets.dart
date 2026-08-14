@@ -3,6 +3,7 @@ import 'calendar_widget.dart';
 import 'clock_widget.dart';
 import 'news_widget.dart';
 import 'spotify_widget.dart';
+import 'tv_widget.dart';
 import 'weather_widget.dart';
 
 /// Every widget type the dashboard ships with.
@@ -18,5 +19,6 @@ void registerBuiltInWidgets() {
     spotifyWidgetType,
     calendarWidgetType,
     newsWidgetType,
+    tvWidgetType,
   ]);
 }

@@ -18,6 +18,7 @@ import '../services/now_playing_service.dart';
 import '../services/screen_idle_service.dart';
 import '../services/share_inbox_service.dart';
 import '../services/spotify_service.dart';
+import '../services/tv_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/weather_overlay.dart';
 import 'about_screen.dart';
@@ -143,6 +144,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 32),
           _section('Screen'),
           const _ScreenSettingsTile(),
+
+          const Divider(height: 32),
+          _section('Television'),
+          const _TvSettingsTile(),
 
           const Divider(height: 32),
           _section('Dashboard'),
@@ -1479,6 +1484,116 @@ class _DashboardSettingsTile extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// A Hisense VIDAA television, driven by the dashboard's TV widget.
+class _TvSettingsTile extends StatelessWidget {
+  const _TvSettingsTile();
+
+  Future<void> _edit(BuildContext context) async {
+    final service = context.read<ConfigService>();
+    final s = service.config.tv;
+    final host = TextEditingController(text: s.host);
+    final uuid = TextEditingController(text: s.uuid);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Television'),
+        content: SizedBox(
+          width: 600,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'The set must be on the same network. Only one controller may '
+                'hold a session at a time — the connection identity comes from '
+                'this UUID, so two controllers sharing one will displace each '
+                'other. Changing the UUID means pairing again.',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: host,
+                style: const TextStyle(fontSize: 18),
+                decoration: const InputDecoration(
+                  labelText: 'Address',
+                  hintText: '192.168.1.156',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: uuid,
+                style: const TextStyle(fontSize: 18),
+                decoration: const InputDecoration(
+                  labelText: 'Controller UUID',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    s.host = host.text.trim();
+    s.uuid = uuid.text.trim();
+    await service.save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final service = context.watch<ConfigService>();
+    final s = service.config.tv;
+    final tv = context.watch<TvService>();
+
+    final status = switch (tv.conn) {
+      ConnState.connected => 'Connected to ${s.host}',
+      ConnState.connecting => 'Connecting to ${s.host}…',
+      ConnState.needsPairing => 'Needs pairing — open the TV widget',
+      ConnState.error => tv.lastError ?? 'Could not reach ${s.host}',
+      ConnState.disconnected => 'Connects when the TV widget is on screen',
+    };
+
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.tv),
+          title: const Text('Television remote'),
+          subtitle: const Text(
+              'Adds a TV remote to the dashboard widgets — power, volume and '
+              'a direction pad for a Hisense VIDAA set.'),
+          isThreeLine: true,
+          value: s.enabled,
+          onChanged: (v) {
+            s.enabled = v;
+            service.save();
+          },
+        ),
+        if (s.enabled)
+          ListTile(
+            leading: Icon(Icons.settings_remote,
+                color: tv.conn == ConnState.connected ? Colors.greenAccent : null),
+            title: const Text('Address and pairing'),
+            subtitle: Text(status),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _edit(context),
+          ),
       ],
     );
   }

@@ -17,3 +17,9 @@ systemctl --user restart immich_kiosk_pi.service
 # dead, which silently breaks both the idle screen-off and Alexa.
 systemctl --user restart librespot.service
 systemctl --user restart screen-control.service
+
+# The standalone VIDAA remote is deliberately NOT started here. The
+# television allows one control session per UUID, and the kiosk's own TV
+# widget now holds it — running both makes them displace each other in a
+# reconnect loop. Start it by hand if you want the full-screen remote, and
+# expect the widget to lose the set while it is up.
