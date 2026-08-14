@@ -9,6 +9,7 @@ import '../../services/playback_source.dart';
 import '../../services/spotify_service.dart';
 import '../dashboard_theme.dart';
 import '../widget_registry.dart';
+import 'scrolling_text.dart';
 
 /// What's playing, with transport controls.
 ///
@@ -217,11 +218,13 @@ class _Details extends StatelessWidget {
       crossAxisAlignment:
           centred ? CrossAxisAlignment.center : CrossAxisAlignment.start,
       children: [
-        Text(
+        // Track names are frequently longer than the tile — anything with a
+        // "- From ... Soundtrack Version" on the end — and truncating them
+        // hides the part that says which version it is. Scrolls only when it
+        // has to; a title that fits sits still.
+        ScrollingText(
           now.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: centred ? TextAlign.center : TextAlign.start,
+          align: centred ? TextAlign.center : TextAlign.start,
           style: TextStyle(
             color: t.textPrimary,
             fontSize: 20,
