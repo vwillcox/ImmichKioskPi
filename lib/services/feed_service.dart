@@ -77,10 +77,15 @@ class FeedService extends ChangeNotifier {
   /// Items for [url], fetching them if they aren't cached yet. Returns
   /// whatever is known now — possibly nothing on the very first call, with a
   /// rebuild to follow once the fetch lands.
-  List<FeedItem> feed(String url) {
+  ///
+  /// [maxAge] lets a widget ask for fresher content than the default: a news
+  /// tile watching a wire service wants minutes, one showing a weekly blog
+  /// does not, and there is no reason for either to impose its choice on the
+  /// other.
+  List<FeedItem> feed(String url, {Duration? maxAge}) {
     if (url.isEmpty) return const [];
     final cached = _feeds[url];
-    if (cached == null || _isStale(cached.fetchedAt)) _fetchFeed(url);
+    if (cached == null || _isStale(cached.fetchedAt, maxAge)) _fetchFeed(url);
     return cached?.items ?? const [];
   }
 
@@ -94,8 +99,8 @@ class FeedService extends ChangeNotifier {
   String? errorFor(String url) =>
       _feeds[url]?.error ?? _calendars[url]?.error;
 
-  bool _isStale(DateTime at) =>
-      DateTime.now().difference(at) > _refreshInterval;
+  bool _isStale(DateTime at, [Duration? maxAge]) =>
+      DateTime.now().difference(at) > (maxAge ?? _refreshInterval);
 
   void refreshAll() {
     for (final url in _feeds.keys.toList()) {
@@ -149,6 +154,60 @@ class FeedService extends ChangeNotifier {
     } finally {
       _inFlight.remove(url);
     }
+  }
+
+  /// Blend several feeds into one list.
+  ///
+  /// Not simply "newest first": a wire service posting every few minutes
+  /// would bury a slower feed entirely, and the point of adding a second
+  /// source is to see it. So each item is scored on how recent it is *and*
+  /// on how many items that feed has already contributed, which lets a
+  /// genuinely fresh story from a busy feed still win while a quiet feed's
+  /// best item is never crowded out.
+  ///
+  /// Undated items are treated as a day old — old enough not to lead, recent
+  /// enough not to vanish.
+  static List<FeedItem> mix(
+    List<List<FeedItem>> feeds, {
+    required int max,
+    DateTime? now,
+    double perFeedPenalty = 0.65,
+  }) {
+    final at = now ?? DateTime.now();
+    final scored = <({FeedItem item, double score})>[];
+
+    for (final feed in feeds) {
+      final sorted = [...feed]..sort((a, b) {
+          final x = a.published, y = b.published;
+          if (x == null && y == null) return 0;
+          if (x == null) return 1;
+          if (y == null) return -1;
+          return y.compareTo(x);
+        });
+      for (var i = 0; i < sorted.length; i++) {
+        final published = sorted[i].published ?? at.subtract(const Duration(days: 1));
+        final hours = at.difference(published).inMinutes / 60.0;
+        // Halves roughly every six hours, so today's news leads and
+        // yesterday's is still present rather than gone.
+        final recency = 1 / (1 + (hours < 0 ? 0 : hours) / 6);
+        final fairness = 1 / (1 + i * perFeedPenalty);
+        scored.add((item: sorted[i], score: recency * fairness));
+      }
+    }
+
+    scored.sort((a, b) => b.score.compareTo(a.score));
+
+    // The same story often appears in two feeds, and twice in one feed is
+    // not unheard of either.
+    final seen = <String>{};
+    final out = <FeedItem>[];
+    for (final s in scored) {
+      final key = s.item.title.toLowerCase().trim();
+      if (!seen.add(key)) continue;
+      out.add(s.item);
+      if (out.length >= max) break;
+    }
+    return out;
   }
 
   /// RSS 2.0 and Atom, which differ enough in element names to be worth

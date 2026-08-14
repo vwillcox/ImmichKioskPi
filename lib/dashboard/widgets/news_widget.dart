@@ -14,11 +14,11 @@ class DashboardNewsWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = w.theme;
-    final url = w.option('url', '');
-    if (url.isEmpty) {
+    final urls = feedUrls(w);
+    if (urls.isEmpty) {
       return Center(
         child: Text(
-          'Paste a feed address in this widget’s settings.',
+          'Add a feed address in this widget’s settings.',
           textAlign: TextAlign.center,
           style: TextStyle(color: t.textSecondary, fontSize: 15),
         ),
@@ -26,8 +26,16 @@ class DashboardNewsWidget extends StatelessWidget {
     }
 
     final feeds = context.watch<FeedService>();
-    final items = feeds.feed(url);
-    final error = feeds.errorFor(url);
+    final maxAge = Duration(minutes: refreshMinutes(w));
+    final lists = [for (final u in urls) feeds.feed(u, maxAge: maxAge)];
+    final error = urls.map(feeds.errorFor).whereType<String>().firstOrNull;
+
+    final maxItems = w.option('maxItems', 5);
+    // One feed needs no blending, and going through the mixer would only
+    // reorder it away from the order the publisher chose.
+    final items = lists.length == 1
+        ? lists.first.take(maxItems).toList()
+        : FeedService.mix(lists, max: maxItems);
 
     if (items.isEmpty) {
       return Center(
@@ -40,7 +48,7 @@ class DashboardNewsWidget extends StatelessWidget {
 
     final showSummary = w.option('showSummary', false);
     final showTime = w.option('showTime', true);
-    final shown = items.take(w.option('maxItems', 5)).toList();
+    final shown = items;
 
     return ListView.separated(
       padding: EdgeInsets.zero,
@@ -160,6 +168,24 @@ class DashboardNewsWidget extends StatelessWidget {
   }
 
   /// Also used to build the editor's live preview.
+  /// Every configured feed, falling back to the single `url` this widget
+  /// originally took so a dashboard built before it accepted several keeps
+  /// working untouched.
+  static List<String> feedUrls(DashboardWidgetContext w) {
+    final rows = w.rows('sources');
+    final urls = [
+      for (final r in rows)
+        if ('${r['url'] ?? ''}'.trim().isNotEmpty) '${r['url']}'.trim(),
+    ];
+    if (urls.isNotEmpty) return urls;
+    final legacy = w.option('url', '').trim();
+    return legacy.isEmpty ? const [] : [legacy];
+  }
+
+  static int refreshMinutes(DashboardWidgetContext w) =>
+      (int.tryParse('${w.config.options['refreshMinutes'] ?? 15}') ?? 15)
+          .clamp(1, 1440);
+
   static String ago(DateTime when) {
     final d = DateTime.now().difference(when);
     if (d.inMinutes < 1) return 'just now';
@@ -180,11 +206,39 @@ final newsWidgetType = DashboardWidgetType(
   minHeight: 2,
   options: const [
     WidgetOption(
-      key: 'url',
-      label: 'Feed address',
-      kind: OptionKind.text,
-      defaultValue: '',
-      help: 'For example https://feeds.bbci.co.uk/news/rss.xml',
+      key: 'sources',
+      label: 'Feeds',
+      kind: OptionKind.list,
+      addLabel: 'Add a feed',
+      help: 'RSS or Atom. With more than one, headlines are blended: each is '
+          'ranked on how recent it is and on how much that feed has already '
+          'contributed, so a busy wire service can’t bury a quieter source.',
+      fields: [
+        WidgetOption(key: 'name', label: 'Name', defaultValue: ''),
+        WidgetOption(
+          key: 'url',
+          label: 'Address',
+          defaultValue: '',
+          help: 'For example https://feeds.bbci.co.uk/news/rss.xml',
+        ),
+      ],
+    ),
+    WidgetOption(
+      key: 'refreshMinutes',
+      label: 'Check for new items every (minutes)',
+      kind: OptionKind.choice,
+      defaultValue: '15',
+      choices: {
+        '2': 'Every 2 minutes',
+        '5': 'Every 5 minutes',
+        '15': 'Every 15 minutes',
+        '30': 'Every 30 minutes',
+        '60': 'Hourly',
+        '180': 'Every 3 hours',
+        '720': 'Twice a day',
+      },
+      help: 'Little point checking a weekly blog every two minutes, or a wire '
+          'service twice a day.',
     ),
     WidgetOption(
       key: 'maxItems',
@@ -220,13 +274,27 @@ final newsWidgetType = DashboardWidgetType(
     PreviewLine('4h ago', scale: 0.09, muted: true),
   ],
   live: (config, data) {
-    final url = '${config.options['url'] ?? ''}';
-    if (url.isEmpty || data.feeds == null) return const [];
-    final items = data.feeds!.feed(url);
+    if (data.feeds == null) return const [];
+    final urls = <String>[
+      for (final r in (config.options['sources'] as List?) ?? const [])
+        if (r is Map && '${r['url'] ?? ''}'.trim().isNotEmpty)
+          '${r['url']}'.trim(),
+    ];
+    if (urls.isEmpty && '${config.options['url'] ?? ''}'.trim().isNotEmpty) {
+      urls.add('${config.options['url']}'.trim());
+    }
+    if (urls.isEmpty) return const [];
+
+    final shown = (config.options['maxItems'] as num?)?.toInt() ?? 5;
+    final lists = [for (final u in urls) data.feeds!.feed(u)];
+    // Blended exactly as the panel blends them, so the preview is not a
+    // different selection of headlines from the one on the wall.
+    final items = lists.length == 1
+        ? lists.first.take(shown).toList()
+        : FeedService.mix(lists, max: shown);
     if (items.isEmpty) return const [];
-    final max = (config.options['maxItems'] as num?)?.toInt() ?? 5;
     return [
-      for (final item in items.take(max)) ...[
+      for (final item in items) ...[
         PreviewLine(item.title, scale: 0.13),
         if (config.options['showTime'] != false && item.published != null)
           PreviewLine(DashboardNewsWidget.ago(item.published!),
