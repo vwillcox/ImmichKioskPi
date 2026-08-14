@@ -1,10 +1,13 @@
+import 'dart:ui';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/now_playing_service.dart';
 import '../../services/playback_source.dart';
 import '../../services/spotify_service.dart';
-import '../../widgets/remote_image.dart';
+import '../dashboard_theme.dart';
 import '../widget_registry.dart';
 
 /// What's playing, with transport controls.
@@ -33,96 +36,140 @@ class DashboardSpotifyWidget extends StatelessWidget {
       );
     }
 
-    final now = source.now;
     final art = source.artUrl;
     final showArt = w.option('showArtwork', true);
     final showControls = w.option('showControls', true);
+    final backdrop = w.option('artworkBackdrop', true);
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return LayoutBuilder(
+      builder: (context, c) {
+        // The artwork goes wherever there is room for it: beside the text on
+        // a wide tile, above it on a square or tall one. Judged from the
+        // tile's proportions rather than its cell count, so it still holds on
+        // a panel of a different shape.
+        final ratio = c.maxWidth / c.maxHeight;
+        final layout = !showArt || art == null
+            ? _Layout.textOnly
+            : ratio > 2.0
+                ? _Layout.beside
+                : ratio > 1.15
+                    ? _Layout.besideLarge
+                    : _Layout.above;
+
+        final content = switch (layout) {
+          _Layout.textOnly => _Details(
+              w: w, source: source, showControls: showControls, centred: true),
+          _Layout.beside || _Layout.besideLarge => Row(
+              children: [
+                _Art(
+                  url: art!,
+                  side: c.maxHeight *
+                      (layout == _Layout.besideLarge ? 0.9 : 0.78),
+                  radius: t.cornerRadius * 0.5,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child:
+                      _Details(w: w, source: source, showControls: showControls),
+                ),
+              ],
+            ),
+          _Layout.above => Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: _Art(
+                      url: art!,
+                      side: c.maxWidth * 0.66,
+                      radius: t.cornerRadius * 0.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _Details(
+                    w: w,
+                    source: source,
+                    showControls: showControls,
+                    centred: true),
+              ],
+            ),
+        };
+
+        if (!backdrop || art == null) return content;
+
+        // The same treatment as the kiosk's own now-playing panel: the cover
+        // blurred behind, veiled towards the bottom so the text stays legible
+        // over whatever the artwork happens to be.
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            _Backdrop(url: art, theme: t),
+            content,
+          ],
+        );
+      },
+    );
+  }
+}
+
+enum _Layout { beside, besideLarge, above, textOnly }
+
+class _Art extends StatelessWidget {
+  const _Art({required this.url, required this.side, required this.radius});
+
+  final String url;
+  final double side;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: CachedNetworkImage(
+        imageUrl: url,
+        width: side,
+        height: side,
+        fit: BoxFit.cover,
+        errorWidget: (_, _, _) => SizedBox(width: side, height: side),
+      ),
+    );
+  }
+}
+
+class _Backdrop extends StatelessWidget {
+  const _Backdrop({required this.url, required this.theme});
+
+  final String url;
+  final DashboardTheme theme;
+
+  @override
+  Widget build(BuildContext context) {
+    // Darkened on dark themes, lightened on light ones, so the same effect
+    // keeps the text readable either way rather than only against black.
+    final darkText = theme.textPrimary.computeLuminance() < 0.5;
+    final veil = darkText ? Colors.white : Colors.black;
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        if (showArt && art != null) ...[
-          LayoutBuilder(
-            builder: (context, c) {
-              final side = c.maxHeight.clamp(0.0, 160.0);
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(t.cornerRadius * 0.5),
-                child: SizedBox(
-                  width: side,
-                  height: side,
-                  child: RemoteImage(
-                    url: art,
-                    headers: const {},
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              );
-            },
+        ImageFiltered(
+          imageFilter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.cover,
+            errorWidget: (_, _, _) => const SizedBox.shrink(),
           ),
-          const SizedBox(width: 14),
-        ],
-        Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                now.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: t.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                now.artist,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: t.textSecondary, fontSize: 15),
-              ),
-              if (now.duration > Duration.zero) ...[
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: LinearProgressIndicator(
-                    value: (now.position.inMilliseconds /
-                            now.duration.inMilliseconds)
-                        .clamp(0.0, 1.0),
-                    minHeight: 4,
-                    backgroundColor: t.textSecondary.withValues(alpha: 0.25),
-                    valueColor: AlwaysStoppedAnimation(t.accent),
-                  ),
-                ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                veil.withValues(alpha: 0.35),
+                veil.withValues(alpha: 0.92),
               ],
-              if (showControls) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _Button(
-                      icon: Icons.skip_previous,
-                      colour: t.textSecondary,
-                      onPressed: source.previous,
-                    ),
-                    _Button(
-                      icon: now.status == 'playing'
-                          ? Icons.pause_circle
-                          : Icons.play_circle,
-                      colour: t.accent,
-                      size: 38,
-                      onPressed: source.playPause,
-                    ),
-                    _Button(
-                      icon: Icons.skip_next,
-                      colour: t.textSecondary,
-                      onPressed: source.next,
-                    ),
-                  ],
-                ),
-              ],
-            ],
+              stops: const [0.0, 0.9],
+            ),
           ),
         ),
       ],
@@ -130,27 +177,129 @@ class DashboardSpotifyWidget extends StatelessWidget {
   }
 }
 
+class _Details extends StatelessWidget {
+  const _Details({
+    required this.w,
+    required this.source,
+    required this.showControls,
+    this.centred = false,
+  });
+
+  final DashboardWidgetContext w;
+  final PlaybackSource source;
+  final bool showControls;
+  final bool centred;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = w.theme;
+    final now = source.now;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: centred ? MainAxisSize.min : MainAxisSize.max,
+      crossAxisAlignment:
+          centred ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      children: [
+        Text(
+          now.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: centred ? TextAlign.center : TextAlign.start,
+          style: TextStyle(
+            color: t.textPrimary,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          now.artist,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: centred ? TextAlign.center : TextAlign.start,
+          style: TextStyle(color: t.textSecondary, fontSize: 15),
+        ),
+        if (now.duration > Duration.zero) ...[
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: (now.position.inMilliseconds / now.duration.inMilliseconds)
+                  .clamp(0.0, 1.0),
+              minHeight: 5,
+              backgroundColor: t.textSecondary.withValues(alpha: 0.25),
+              valueColor: AlwaysStoppedAnimation(t.accent),
+            ),
+          ),
+        ],
+        if (showControls) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment:
+                centred ? MainAxisAlignment.center : MainAxisAlignment.start,
+            children: [
+              _Button(
+                icon: Icons.skip_previous,
+                colour: t.textPrimary,
+                onPressed: source.previous,
+              ),
+              _Button(
+                icon: now.status == 'playing'
+                    ? Icons.pause_circle_filled
+                    : Icons.play_circle_filled,
+                colour: t.accent,
+                big: true,
+                onPressed: source.playPause,
+              ),
+              _Button(
+                icon: Icons.skip_next,
+                colour: t.textPrimary,
+                onPressed: source.next,
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A control sized for a finger rather than a cursor.
+///
+/// The tap target is 64 (80 for play/pause) whatever the glyph inside it —
+/// comfortably past the 48 Material asks for. This is a panel on a wall,
+/// usually reached for in passing, and a skip button that needs aiming at is
+/// one that gets pressed twice.
 class _Button extends StatelessWidget {
   const _Button({
     required this.icon,
     required this.colour,
     required this.onPressed,
-    this.size = 30,
+    this.big = false,
   });
 
   final IconData icon;
   final Color colour;
   final VoidCallback onPressed;
-  final double size;
+  final bool big;
 
   @override
-  Widget build(BuildContext context) => IconButton(
-        onPressed: onPressed,
-        icon: Icon(icon, color: colour, size: size),
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        constraints: const BoxConstraints(),
-        visualDensity: VisualDensity.compact,
-      );
+  Widget build(BuildContext context) {
+    final target = big ? 80.0 : 64.0;
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPressed,
+        child: SizedBox(
+          width: target,
+          height: target,
+          child: Icon(icon, color: colour, size: big ? 54 : 38),
+        ),
+      ),
+    );
+  }
 }
 
 final spotifyWidgetType = DashboardWidgetType(
@@ -158,7 +307,8 @@ final spotifyWidgetType = DashboardWidgetType(
   name: 'Now playing',
   description:
       'The current track with transport controls. Shows Spotify when it is '
-      'active, otherwise the phone over Bluetooth.',
+      'active, otherwise the phone over Bluetooth. The artwork moves to suit '
+      'the tile’s shape.',
   glyph: '🎵',
   defaultWidth: 5,
   defaultHeight: 2,
@@ -172,12 +322,25 @@ final spotifyWidgetType = DashboardWidgetType(
       defaultValue: true,
     ),
     WidgetOption(
+      key: 'artworkBackdrop',
+      label: 'Blur the artwork behind the tile',
+      kind: OptionKind.boolean,
+      defaultValue: true,
+      help: 'The same look as the kiosk’s own now-playing panel.',
+    ),
+    WidgetOption(
       key: 'showControls',
       label: 'Show transport controls',
       kind: OptionKind.boolean,
       defaultValue: true,
       help: 'Turn off for a display-only panel nobody can skip tracks on.',
     ),
+  ],
+  preview: const [
+    PreviewLine('Fake Plastic Trees', scale: 0.16),
+    PreviewLine('Radiohead', scale: 0.11, muted: true),
+    PreviewLine('▬▬▬▬▬▭▭▭▭', scale: 0.08, accent: true),
+    PreviewLine('⏮   ⏯   ⏭', scale: 0.15, accent: true),
   ],
   build: (context, w) => DashboardSpotifyWidget(w: w),
 );

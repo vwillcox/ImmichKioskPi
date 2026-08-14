@@ -30,51 +30,64 @@ class DashboardWeatherWidget extends StatelessWidget {
       );
     }
 
-    final days = w.option('forecastDays', 3).clamp(0, 7);
+    // Stored as a choice, so it arrives as a string from the editor and as a
+    // number from a config written before it became one.
+    final days =
+        (int.tryParse('${w.config.options['forecastDays'] ?? 3}') ?? 3)
+            .clamp(0, 7);
     final showFeels = w.option('showFeelsLike', true);
+    final showHighLow = w.option('showHighLow', true);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: Row(
-            children: [
-              Icon(
-                weatherIcon(weather.weatherCode, weather.isDay),
-                color: t.accent,
-                size: 46,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
+          // Centred rather than ranged left: on a tile of its own the reading
+          // is the whole point, and off to one side it reads as a caption for
+          // empty space.
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        weatherIcon(weather.weatherCode, weather.isDay),
+                        color: t.accent,
+                        size: 46,
+                      ),
+                      const SizedBox(width: 14),
+                      Text(
                         '${weather.temperature.round()}${weather.unit}',
                         style: TextStyle(
                           color: t.textPrimary,
-                          fontSize: 46,
+                          fontSize: 52,
                           height: 1.0,
                           fontWeight: FontWeight.w300,
                         ),
                       ),
-                    ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    showFeels
+                        ? '${weather.description} · feels ${weather.feelsLike.round()}${weather.unit}'
+                        : weather.description,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: t.textSecondary, fontSize: 15),
+                  ),
+                  if (showHighLow)
                     Text(
-                      showFeels
-                          ? '${weather.description} · feels ${weather.feelsLike.round()}${weather.unit}'
-                          : weather.description,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: t.textSecondary, fontSize: 15),
+                      '${weather.tempMax.round()}° / ${weather.tempMin.round()}°',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: t.textSecondary, fontSize: 14),
                     ),
-                  ],
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
         if (days > 0 && weather.daily.isNotEmpty) ...[
@@ -136,10 +149,16 @@ final weatherWidgetType = DashboardWidgetType(
   options: const [
     WidgetOption(
       key: 'forecastDays',
-      label: 'Forecast days',
-      kind: OptionKind.number,
-      defaultValue: 3,
-      help: 'Zero shows only the current conditions.',
+      label: 'Forecast',
+      kind: OptionKind.choice,
+      defaultValue: '3',
+      choices: {
+        '0': 'Current conditions only',
+        '3': '3 day',
+        '5': '5 day',
+        '7': '7 day',
+      },
+      help: 'A wider tile suits the longer forecasts.',
     ),
     WidgetOption(
       key: 'showFeelsLike',
@@ -147,6 +166,17 @@ final weatherWidgetType = DashboardWidgetType(
       kind: OptionKind.boolean,
       defaultValue: true,
     ),
+    WidgetOption(
+      key: 'showHighLow',
+      label: 'Show today’s high and low',
+      kind: OptionKind.boolean,
+      defaultValue: true,
+    ),
+  ],
+  preview: const [
+    PreviewLine('☁ 14°C', scale: 0.3, accent: true),
+    PreviewLine('Light cloud · feels 12°C', scale: 0.1, muted: true),
+    PreviewLine('Today 16°  Tue 15°  Wed 13°', scale: 0.1, muted: true),
   ],
   build: (context, w) => DashboardWeatherWidget(w: w),
 );

@@ -4,7 +4,13 @@ import 'dashboard_model.dart';
 import 'dashboard_theme.dart';
 
 /// The kind of control the web editor should offer for an option.
-enum OptionKind { text, number, boolean, choice, multiline }
+///
+/// [list] is a repeating group: the option holds a list of records, each with
+/// the fields named in [WidgetOption.fields], and the editor gives it a plus
+/// to add a row and a cross to remove one. Generic rather than specific to
+/// the calendar's several feeds, so the next widget that needs a repeating
+/// setting gets one for free.
+enum OptionKind { text, number, boolean, choice, multiline, colour, list }
 
 /// One setting a widget type accepts.
 ///
@@ -23,6 +29,12 @@ class WidgetOption {
   /// Shown under the field. Say what the setting is for, not what it is.
   final String? help;
 
+  /// For [OptionKind.list]: the fields of one row.
+  final List<WidgetOption> fields;
+
+  /// For [OptionKind.list]: what to call a row on the button that adds one.
+  final String addLabel;
+
   const WidgetOption({
     required this.key,
     required this.label,
@@ -30,6 +42,8 @@ class WidgetOption {
     this.defaultValue,
     this.choices = const {},
     this.help,
+    this.fields = const [],
+    this.addLabel = 'Add',
   });
 
   Map<String, dynamic> toJson() => {
@@ -39,6 +53,8 @@ class WidgetOption {
         'default': defaultValue,
         'choices': choices,
         'help': help,
+        'fields': fields.map((f) => f.toJson()).toList(),
+        'addLabel': addLabel,
       };
 }
 
@@ -61,6 +77,44 @@ class DashboardWidgetContext {
     if (T == int && v is num) return v.toInt() as T;
     return fallback;
   }
+
+  /// Rows of an [OptionKind.list] option.
+  List<Map<String, dynamic>> rows(String key) =>
+      (config.options[key] as List?)
+          ?.whereType<Map>()
+          .map((r) => r.cast<String, dynamic>())
+          .toList() ??
+      const [];
+}
+
+/// A line of stand-in content for the browser editor's preview.
+///
+/// Declared by the widget type rather than drawn by the editor, so a new
+/// widget previews itself without the editor learning anything about it.
+/// [scale] is relative to the tile's height, which is what keeps a preview
+/// honest as the tile is resized.
+///
+/// `{time}` and `{date}` are substituted with the real ones, so a clock
+/// preview shows the actual time rather than a fixed 09:41.
+class PreviewLine {
+  final String text;
+  final double scale;
+  final bool muted;
+  final bool accent;
+
+  const PreviewLine(
+    this.text, {
+    this.scale = 0.14,
+    this.muted = false,
+    this.accent = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'scale': scale,
+        'muted': muted,
+        'accent': accent,
+      };
 }
 
 /// A widget type the dashboard can show.
@@ -82,6 +136,9 @@ class DashboardWidgetType {
 
   final List<WidgetOption> options;
 
+  /// Stand-in content for the editor's preview.
+  final List<PreviewLine> preview;
+
   final Widget Function(BuildContext context, DashboardWidgetContext w) build;
 
   const DashboardWidgetType({
@@ -95,6 +152,7 @@ class DashboardWidgetType {
     this.minWidth = 1,
     this.minHeight = 1,
     this.options = const [],
+    this.preview = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -107,6 +165,7 @@ class DashboardWidgetType {
         'minWidth': minWidth,
         'minHeight': minHeight,
         'options': options.map((o) => o.toJson()).toList(),
+        'preview': preview.map((p) => p.toJson()).toList(),
       };
 }
 

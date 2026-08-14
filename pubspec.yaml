@@ -52,3 +52,46 @@ flutter:
   assets:
     - assets/sounds/incoming.wav
     - assets/dashboard/editor.html
+    # Also listed as assets so the browser editor can be served the same
+    # files, and its preview shows the typeface the panel will actually use.
+    - assets/fonts/
+
+  fonts:
+    - family: Inter
+      fonts: [{ asset: assets/fonts/Inter.ttf }]
+    - family: SourceSans3
+      fonts: [{ asset: assets/fonts/SourceSans3.ttf }]
+    - family: Lora
+      fonts: [{ asset: assets/fonts/Lora.ttf }]
+    - family: JetBrainsMono
+      fonts: [{ asset: assets/fonts/JetBrainsMono.ttf }]
+    - family: Oswald
+      fonts: [{ asset: assets/fonts/Oswald.ttf }]
+    - family: Quicksand
+      fonts: [{ asset: assets/fonts/Quicksand.ttf }]
+    - family: Comfortaa
+      fonts: [{ asset: assets/fonts/Comfortaa.ttf }]
+    - family: Nunito
+      fonts: [{ asset: assets/fonts/Nunito.ttf }]
+    - family: Fredoka
+      fonts: [{ asset: assets/fonts/Fredoka.ttf }]
+    - family: ComicNeue
+      fonts: [{ asset: assets/fonts/ComicNeue.ttf }]
+    - family: PatrickHand
+      fonts: [{ asset: assets/fonts/PatrickHand.ttf }]
+    - family: Orbitron
+      fonts: [{ asset: assets/fonts/Orbitron.ttf }]
+    - family: ChakraPetch
+      fonts: [{ asset: assets/fonts/ChakraPetch.ttf }]
+    - family: ShareTechMono
+      fonts: [{ asset: assets/fonts/ShareTechMono.ttf }]
+    - family: SpaceMono
+      fonts: [{ asset: assets/fonts/SpaceMono.ttf }]
+    - family: VT323
+      fonts: [{ asset: assets/fonts/VT323.ttf }]
+    - family: PressStart2P
+      fonts: [{ asset: assets/fonts/PressStart2P.ttf }]
+    - family: BebasNeue
+      fonts: [{ asset: assets/fonts/BebasNeue.ttf }]
+    - family: Bangers
+      fonts: [{ asset: assets/fonts/Bangers.ttf }]

@@ -37,27 +37,56 @@
 
   /* The canvas mirrors the kiosk's 1920x1200 panel. */
   #canvasWrap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+  /* The canvas is a real preview: the selected theme's own background,
+     tiles and colours, at the panel's proportions. */
   #canvas {
     position: relative; width: 100%; aspect-ratio: 1920 / 1200;
-    background:
-      linear-gradient(to right, rgba(255,255,255,.06) 1px, transparent 1px) 0 0 / calc(100%/12) 100%,
-      linear-gradient(to bottom, rgba(255,255,255,.06) 1px, transparent 1px) 0 0 / 100% calc(100%/8),
-      #0b0d13;
+    background: var(--t-bg, #0b0d13);
     border-radius: 8px; overflow: hidden; touch-action: none;
+    container-type: size;
+  }
+  #gridlines {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+      linear-gradient(to right, rgba(128,128,128,.16) 1px, transparent 1px) 0 0 / calc(100%/12) 100%,
+      linear-gradient(to bottom, rgba(128,128,128,.16) 1px, transparent 1px) 0 0 / 100% calc(100%/8);
   }
   .tile {
-    position: absolute; background: #1d2331; border: 1px solid #313a4d;
-    border-radius: 10px; padding: 8px; overflow: hidden; cursor: grab;
+    position: absolute;
+    background: var(--t-surface, #1d2331);
+    border: 1px solid var(--t-border, #313a4d);
+    border-radius: var(--t-radius, 10px);
+    box-shadow: var(--t-shadow, none);
+    padding: 8px; overflow: hidden; cursor: grab;
     display: flex; flex-direction: column; gap: 2px; user-select: none;
   }
-  .tile.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(125,211,252,.35); }
-  .tile.clash { border-color: var(--danger); }
+  .tile.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tile.clash { outline: 2px solid var(--danger); outline-offset: 2px; }
   .tile .glyph { font-size: 18px; line-height: 1; }
-  .tile .name { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .name {
+    font-size: 12px; color: var(--t-muted, var(--muted));
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Stand-in content, so a tile shows what it will look like rather than
+     what it is called. */
+  .tile .body {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    justify-content: center; gap: .18em; overflow: hidden;
+  }
+  .tile .line {
+    line-height: 1.1; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; color: var(--t-text);
+  }
+  .tile .line.muted { color: var(--t-muted); }
+  .tile .line.accent { color: var(--t-accent); }
+  .tile .badge {
+    position: absolute; top: 4px; left: 6px; font-size: 11px; opacity: .55;
+    pointer-events: none;
+  }
   .tile .handle {
     position: absolute; right: 0; bottom: 0; width: 26px; height: 26px; cursor: nwse-resize;
-    background: linear-gradient(135deg, transparent 50%, var(--accent) 50%); opacity: .65;
-    border-bottom-right-radius: 9px;
+    background: linear-gradient(135deg, transparent 50%, var(--t-accent, var(--accent)) 50%);
+    opacity: .8; border-bottom-right-radius: 9px;
   }
 
   aside { display: flex; flex-direction: column; gap: 14px; }
@@ -91,7 +120,7 @@
 
 <main>
   <div id="canvasWrap">
-    <div id="canvas"></div>
+    <div id="canvas"><div id="gridlines"></div></div>
     <div id="clashWarning" class="warn" hidden>Two widgets overlap — drag one clear.</div>
   </div>
 
@@ -158,28 +187,119 @@ function overlaps(a, b) {
          a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
+/* Flutter writes colours as #aarrggbb; CSS reads 8-digit hex as #rrggbbaa.
+   Converting rather than reordering at the source keeps the saved theme
+   files in the one format the app itself uses. */
+function cssColour(v) {
+  if (typeof v !== "string") return "transparent";
+  const hex = v.replace("#", "");
+  if (hex.length === 6) return "#" + hex;
+  if (hex.length !== 8) return v;
+  const a = parseInt(hex.slice(0, 2), 16) / 255;
+  const r = parseInt(hex.slice(2, 4), 16);
+  const g = parseInt(hex.slice(4, 6), 16);
+  const b = parseInt(hex.slice(6, 8), 16);
+  return "rgba(" + r + "," + g + "," + b + "," + a.toFixed(3) + ")";
+}
+
+function currentTheme() {
+  return state.schema.themes.find(t => t.id === state.dashboard.themeId)
+      || state.schema.themes[0];
+}
+
+function applyTheme() {
+  const t = currentTheme();
+  if (!t) return;
+  const bg = (t.background || []).map(cssColour);
+  const s = canvas.style;
+  s.setProperty("--t-bg", bg.length > 1
+    ? "linear-gradient(135deg, " + bg.join(", ") + ")"
+    : (bg[0] || "#0b0d13"));
+  s.setProperty("--t-surface", cssColour(t.surface));
+  s.setProperty("--t-border", cssColour(t.border));
+  s.setProperty("--t-text", cssColour(t.textPrimary));
+  s.setProperty("--t-muted", cssColour(t.textSecondary));
+  s.setProperty("--t-accent", cssColour(t.accent));
+  // Scaled from the panel's width to the canvas's, so a corner looks as
+  // round here as it will on the wall.
+  s.setProperty("--t-radius", ((t.cornerRadius || 0) / 1920 * 100) + "cqw");
+  s.setProperty("--t-shadow", t.shadow ? "0 6px 18px rgba(0,0,0,.25)" : "none");
+  canvas.style.color = cssColour(t.textPrimary);
+}
+
+function previewBody(w, t, el) {
+  const lines = (t && t.preview && t.preview.length)
+    ? t.preview
+    : [{ text: t ? t.name : w.type, scale: 0.14, muted: true, accent: false }];
+
+  // Heights are a fraction of the tile, and the tile is a fraction of the
+  // canvas, so a preview stays honest as either is resized. Container query
+  // units do that arithmetic in CSS rather than here.
+  const canvasRows = state.schema.grid.rows;
+  const scale = (w.fontScale || 1);
+  let html = '<div class="body">';
+  for (const line of lines) {
+    const size = (line.scale * (w.height / canvasRows) * 100 * scale);
+    html += '<div class="line' + (line.muted ? " muted" : "") +
+      (line.accent ? " accent" : "") + '" style="font-size:' + size + 'cqh">' +
+      escapeHtml(substitute(line.text)) + "</div>";
+  }
+  return html + "</div>";
+}
+
+function substitute(text) {
+  const now = new Date();
+  const two = (n) => String(n).padStart(2, "0");
+  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const months = ["January","February","March","April","May","June","July",
+                  "August","September","October","November","December"];
+  return text
+    .replace("{time}", two(now.getHours()) + ":" + two(now.getMinutes()))
+    .replace("{date}", days[now.getDay()] + " " + now.getDate() + " " + months[now.getMonth()]);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+
 function render() {
   const { columns, rows } = state.schema.grid;
-  canvas.innerHTML = "";
+  const t = currentTheme();
+  // Exactly the arithmetic the kiosk lays out with, so what you drag here is
+  // where it lands — including the gap between tiles and around the edges.
+  const gapX = (t && t.gap ? t.gap : 14) / 1920 * 100;
+  const gapY = (t && t.gap ? t.gap : 14) / 1200 * 100;
+  const cellW = (100 - gapX * (columns + 1)) / columns;
+  const cellH = (100 - gapY * (rows + 1)) / rows;
+
+  applyTheme();
+  for (const el of [...canvas.querySelectorAll(".tile")]) el.remove();
   let anyClash = false;
 
   for (const w of state.dashboard.widgets) {
     const t = typeOf(w.type);
     const el = document.createElement("div");
     el.className = "tile" + (w.id === state.selectedId ? " selected" : "");
-    el.style.left = (w.x / columns * 100) + "%";
-    el.style.top = (w.y / rows * 100) + "%";
-    el.style.width = (w.width / columns * 100) + "%";
-    el.style.height = (w.height / rows * 100) + "%";
+    el.style.left = (gapX + w.x * (cellW + gapX)) + "%";
+    el.style.top = (gapY + w.y * (cellH + gapY)) + "%";
+    el.style.width = (w.width * cellW + (w.width - 1) * gapX) + "%";
+    el.style.height = (w.height * cellH + (w.height - 1) * gapY) + "%";
     el.dataset.id = w.id;
 
     const clash = state.dashboard.widgets.some(o => o.id !== w.id && overlaps(w, o));
     if (clash) { el.classList.add("clash"); anyClash = true; }
 
     el.innerHTML =
-      '<div class="glyph">' + (t ? t.glyph : "❓") + "</div>" +
-      '<div class="name">' + (t ? t.name : w.type) + "</div>" +
+      '<div class="badge">' + (t ? t.glyph : "❓") + "</div>" +
+      previewBody(w, t, el) +
       '<div class="handle"></div>';
+    // The font and size chosen for this widget, so the preview is the thing
+    // itself rather than a label for it.
+    el.style.fontFamily = w.fontFamily
+      ? ('"' + w.fontFamily + '", system-ui, sans-serif')
+      : "system-ui, sans-serif";
 
     canvas.appendChild(el);
   }
@@ -282,6 +402,7 @@ function addWidget(t) {
     id, type: t.type,
     x: slot.x, y: slot.y,
     width: t.defaultWidth, height: t.defaultHeight,
+    fontFamily: "", fontScale: 1,
     options,
   });
   state.selectedId = id;
@@ -324,6 +445,58 @@ function renderSettings() {
     host.appendChild(p);
   }
 
+  // Appearance is offered for every widget by the frame that draws it, so a
+  // new widget gets these without asking and can't forget to honour them.
+  const rule = document.createElement("hr");
+  rule.style.cssText = "border:none;border-top:1px solid var(--line);margin:16px 0 4px";
+  host.appendChild(rule);
+
+  const fontLabel = document.createElement("label");
+  fontLabel.textContent = "Font";
+  host.appendChild(fontLabel);
+  const fontSel = document.createElement("select");
+  // Grouped, because twenty in one list is a scroll rather than a choice.
+  const groups = new Map();
+  for (const f of state.schema.fonts || []) {
+    const key = f.groupLabel || "Other";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(f);
+  }
+  for (const [label, fonts] of groups) {
+    const group = document.createElement("optgroup");
+    group.label = label;
+    for (const f of fonts) {
+      const o = document.createElement("option");
+      o.value = f.family; o.textContent = f.name;
+      o.title = f.description;
+      // Each name shown in its own face, so the list is the sample.
+      if (f.family) o.style.fontFamily = '"' + f.family + '", system-ui';
+      group.appendChild(o);
+    }
+    fontSel.appendChild(group);
+  }
+  fontSel.value = w.fontFamily || "";
+  fontSel.onchange = () => { w.fontFamily = fontSel.value; markDirty(); render(); };
+  host.appendChild(fontSel);
+  const fontHelp = document.createElement("p");
+  fontHelp.className = "help";
+  const chosen = (state.schema.fonts || []).find(f => f.family === (w.fontFamily || ""));
+  fontHelp.textContent = chosen ? chosen.description : "";
+  host.appendChild(fontHelp);
+
+  const sizeLabel = document.createElement("label");
+  sizeLabel.textContent = "Text size";
+  host.appendChild(sizeLabel);
+  const sizeSel = document.createElement("select");
+  for (const [name, value] of Object.entries(state.schema.fontScales || { Normal: 1 })) {
+    const o = document.createElement("option");
+    o.value = String(value); o.textContent = name;
+    sizeSel.appendChild(o);
+  }
+  sizeSel.value = String(w.fontScale != null ? w.fontScale : 1);
+  sizeSel.onchange = () => { w.fontScale = Number(sizeSel.value); markDirty(); render(); };
+  host.appendChild(sizeSel);
+
   const size = document.createElement("p");
   size.className = "help";
   size.textContent = "Position " + (w.x + 1) + "," + (w.y + 1) + " · " + w.width + "x" + w.height + " cells";
@@ -340,6 +513,80 @@ function renderSettings() {
     render();
   };
   host.appendChild(del);
+}
+
+/* A colour input insists on #rrggbb, where a theme or an older config may
+   have written #aarrggbb. */
+function normaliseColour(v) {
+  const hex = String(v).replace("#", "");
+  if (hex.length === 8) return "#" + hex.slice(2);
+  if (hex.length === 6) return "#" + hex;
+  return "#7dd3fc";
+}
+
+/* A repeating group: rows of fields, a plus to add one, a cross to remove.
+   Driven entirely by the option's declared fields, so any widget can have a
+   list of anything without the editor knowing what it is. */
+function listField(w, o) {
+  const host = document.createElement("div");
+  const rows = Array.isArray(w.options[o.key]) ? w.options[o.key] : [];
+  w.options[o.key] = rows;
+
+  rows.forEach((row, index) => {
+    const card = document.createElement("div");
+    card.style.cssText =
+      "border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;position:relative";
+
+    for (const f of o.fields || []) {
+      const label = document.createElement("label");
+      label.textContent = f.label;
+      label.style.marginTop = "6px";
+      card.appendChild(label);
+
+      const input = document.createElement("input");
+      if (f.kind === "colour") {
+        input.type = "color";
+        input.style.height = "40px";
+        input.value = normaliseColour(row[f.key] != null ? row[f.key] : f.default);
+      } else {
+        input.type = f.kind === "number" ? "number" : "text";
+        input.value = row[f.key] != null ? String(row[f.key]) : "";
+      }
+      input.oninput = () => {
+        row[f.key] = f.kind === "number" ? Number(input.value) : input.value;
+        markDirty();
+        render();
+      };
+      card.appendChild(input);
+    }
+
+    const remove = document.createElement("button");
+    remove.className = "danger";
+    remove.textContent = "Remove";
+    remove.style.marginTop = "10px";
+    remove.onclick = () => {
+      rows.splice(index, 1);
+      markDirty();
+      render();
+    };
+    card.appendChild(remove);
+    host.appendChild(card);
+  });
+
+  const add = document.createElement("button");
+  add.textContent = "＋ " + (o.addLabel || "Add");
+  add.style.marginTop = "10px";
+  add.onclick = () => {
+    const row = {};
+    for (const f of o.fields || []) {
+      if (f.default !== null && f.default !== undefined) row[f.key] = f.default;
+    }
+    rows.push(row);
+    markDirty();
+    render();
+  };
+  host.appendChild(add);
+  return host;
 }
 
 function field(w, o) {
@@ -364,7 +611,22 @@ function field(w, o) {
     wrap.appendChild(label);
 
     let input;
-    if (o.kind === "choice") {
+    if (o.kind === "list") {
+      wrap.appendChild(listField(w, o));
+      if (o.help) {
+        const help = document.createElement("p");
+        help.className = "help";
+        help.textContent = o.help;
+        wrap.appendChild(help);
+      }
+      return wrap;
+    } else if (o.kind === "colour") {
+      input = document.createElement("input");
+      input.type = "color";
+      input.style.height = "42px";
+      input.value = normaliseColour(value != null ? String(value) : "#7dd3fc");
+      input.oninput = () => { w.options[o.key] = input.value; markDirty(); render(); };
+    } else if (o.kind === "choice") {
       input = document.createElement("select");
       for (const [k, name] of Object.entries(o.choices || {})) {
         const opt = document.createElement("option");
@@ -372,7 +634,7 @@ function field(w, o) {
         input.appendChild(opt);
       }
       input.value = value != null ? String(value) : "";
-      input.onchange = () => { w.options[o.key] = input.value; markDirty(); };
+      input.onchange = () => { w.options[o.key] = input.value; markDirty(); render(); };
     } else if (o.kind === "multiline") {
       input = document.createElement("textarea");
       input.value = value != null ? String(value) : "";
@@ -402,6 +664,19 @@ function field(w, o) {
 
 /* ---------- themes, save, load ---------- */
 
+/// Loads the same font files the panel uses, served by the kiosk itself, so
+/// the preview shows the real typeface rather than a browser substitute.
+function installFonts() {
+  const css = (state.schema.fonts || [])
+    .filter(f => f.file)
+    .map(f => '@font-face{font-family:"' + f.family +
+      '";src:url("/fonts/' + f.file + '") format("truetype");font-display:swap;}')
+    .join("\n");
+  const style = document.createElement("style");
+  style.textContent = css;
+  document.head.appendChild(style);
+}
+
 function renderThemes() {
   const sel = document.getElementById("theme");
   sel.innerHTML = "";
@@ -411,7 +686,13 @@ function renderThemes() {
     sel.appendChild(o);
   }
   sel.value = state.dashboard.themeId;
-  sel.onchange = () => { state.dashboard.themeId = sel.value; markDirty(); };
+  sel.onchange = () => {
+    state.dashboard.themeId = sel.value;
+    markDirty();
+    // Repaint straight away rather than waiting for a save, so picking a
+    // theme shows you the theme.
+    render();
+  };
 }
 
 document.getElementById("save").onclick = async () => {
@@ -447,6 +728,7 @@ async function load(quiet) {
     state.dashboard = dashboard;
     state.selectedId = null;
     state.dirty = false;
+    installFonts();
     renderPalette();
     renderThemes();
     render();

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../dashboard/dashboard_fonts.dart';
 import '../dashboard/dashboard_model.dart';
 import '../dashboard/dashboard_theme.dart';
 import '../dashboard/widget_registry.dart';
@@ -73,19 +74,31 @@ class DashboardService extends ChangeNotifier {
     }
   }
 
-  /// The address of whichever interface would be used to reach the network,
-  /// which on this device is the WiFi one.
+  /// Interfaces that exist but are no use to a browser on the sofa. This Pi
+  /// runs Docker, whose bridge answers first and would otherwise be shown on
+  /// screen as the address to type.
+  static final RegExp _virtualInterface =
+      RegExp(r'^(docker|br-|veth|virbr|tun|tap|vmnet|zt)');
+
+  /// The address to type into a browser on the same network.
   static Future<String> _localAddress() async {
     try {
       final interfaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
         includeLoopback: false,
       );
-      for (final i in interfaces) {
-        for (final a in i.addresses) {
-          if (!a.isLoopback) return a.address;
-        }
-      }
+      final real = interfaces
+          .where((i) => !_virtualInterface.hasMatch(i.name))
+          .expand((i) => i.addresses)
+          .where((a) => !a.isLoopback)
+          .toList();
+      // A home network address before anything else — a container or VPN
+      // subnet may be perfectly real and still unreachable from the sofa.
+      final home = real.firstWhere(
+        (a) => a.address.startsWith('192.168.') || a.address.startsWith('10.'),
+        orElse: () => real.isEmpty ? InternetAddress.anyIPv4 : real.first,
+      );
+      if (home != InternetAddress.anyIPv4) return home.address;
     } catch (e) {
       debugPrint('Dashboard: could not resolve local address: $e');
     }
@@ -124,6 +137,8 @@ class DashboardService extends ChangeNotifier {
           'themes': themes.all
               .map((t) => {'id': t.id, 'name': t.name, ...t.toJson()})
               .toList(),
+          'fonts': kDashboardFonts.map((f) => f.toJson()).toList(),
+          'fontScales': kFontScales,
         });
       }
       if (path == '/api/dashboard' && request.method == 'GET') {
@@ -131,6 +146,10 @@ class DashboardService extends ChangeNotifier {
       }
       if (path == '/api/dashboard' && request.method == 'PUT') {
         return await _save(request);
+      }
+
+      if (path.startsWith('/fonts/') && request.method == 'GET') {
+        return await _serveFont(request, path.substring('/fonts/'.length));
       }
 
       request.response.statusCode = HttpStatus.notFound;
@@ -149,6 +168,25 @@ class DashboardService extends ChangeNotifier {
     request.response
       ..headers.contentType = ContentType.html
       ..write(_editorHtml);
+    await request.response.close();
+  }
+
+  /// The same font files the panel draws with, so the editor's preview shows
+  /// the typeface you are actually choosing rather than an approximation of
+  /// it. Only the bundled ones — the name is checked against the catalogue
+  /// rather than used to reach into the asset bundle.
+  Future<void> _serveFont(HttpRequest request, String file) async {
+    final known = kDashboardFonts.any((f) => f.file == file && file.isNotEmpty);
+    if (!known) {
+      request.response.statusCode = HttpStatus.notFound;
+      await request.response.close();
+      return;
+    }
+    final bytes = await rootBundle.load('assets/fonts/$file');
+    request.response
+      ..headers.contentType = ContentType('font', 'ttf')
+      ..headers.set('Cache-Control', 'public, max-age=86400')
+      ..add(bytes.buffer.asUint8List());
     await request.response.close();
   }
 

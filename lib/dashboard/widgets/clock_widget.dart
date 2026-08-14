@@ -151,5 +151,9 @@ final clockWidgetType = DashboardWidgetType(
       defaultValue: true,
     ),
   ],
+  preview: const [
+    PreviewLine('{time}', scale: 0.42),
+    PreviewLine('{date}', scale: 0.11, muted: true),
+  ],
   build: (context, w) => ClockWidget(w: w),
 );

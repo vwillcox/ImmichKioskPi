@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../screens/link_viewer_screen.dart';
 import '../../services/feed_service.dart';
 import '../widget_registry.dart';
 
@@ -52,7 +53,12 @@ class DashboardNewsWidget extends StatelessWidget {
       ),
       itemBuilder: (context, i) {
         final item = shown[i];
-        return Column(
+        final tappable = w.option('openOnTap', true) &&
+            (item.link != null || item.summary != null);
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: tappable ? () => _open(context, item) : null,
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
@@ -89,9 +95,68 @@ class DashboardNewsWidget extends StatelessWidget {
                 ),
               ),
           ],
+        ),
         );
       },
     );
+  }
+
+  /// Show whatever the feed gave us, and offer the page itself.
+  ///
+  /// Most feeds carry a paragraph of summary, which on a wall panel is often
+  /// all anyone wants — so that comes first and costs nothing, with the full
+  /// article a deliberate second tap rather than the only option.
+  void _open(BuildContext context, FeedItem item) {
+    if (item.summary == null || item.summary!.isEmpty) {
+      if (item.link != null) _openPage(context, item);
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(item.title, style: const TextStyle(fontSize: 24)),
+        content: SizedBox(
+          width: 720,
+          child: SingleChildScrollView(
+            child: Text(
+              item.summary!,
+              style: const TextStyle(fontSize: 18, height: 1.4),
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        actions: [
+          if (item.link != null)
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _openPage(context, item);
+              },
+              icon: const Icon(Icons.open_in_browser, size: 26),
+              label: const Text('Read the page',
+                  style: TextStyle(fontSize: 20)),
+              style: FilledButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 26, vertical: 18),
+              ),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: TextButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 26, vertical: 18),
+            ),
+            child: const Text('Close', style: TextStyle(fontSize: 20)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openPage(BuildContext context, FeedItem item) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => LinkViewerScreen(url: item.link!, title: item.title),
+    ));
   }
 
   static String _ago(DateTime when) {
@@ -138,6 +203,20 @@ final newsWidgetType = DashboardWidgetType(
       kind: OptionKind.boolean,
       defaultValue: true,
     ),
+    WidgetOption(
+      key: 'openOnTap',
+      label: 'Open a headline when tapped',
+      kind: OptionKind.boolean,
+      defaultValue: true,
+      help: 'Shows the feed’s own summary, with the full page a tap further. '
+          'Turn off for a panel nobody should be browsing from.',
+    ),
+  ],
+  preview: const [
+    PreviewLine('Council approves new cycle route', scale: 0.13),
+    PreviewLine('2h ago', scale: 0.09, muted: true),
+    PreviewLine('Storm expected to clear by Thursday', scale: 0.13),
+    PreviewLine('4h ago', scale: 0.09, muted: true),
   ],
   build: (context, w) => DashboardNewsWidget(w: w),
 );

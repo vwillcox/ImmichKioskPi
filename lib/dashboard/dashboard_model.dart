@@ -38,6 +38,14 @@ class DashboardWidgetConfig {
   /// string, which fields to show. Opaque here.
   Map<String, dynamic> options;
 
+  /// Appearance, handled for every widget by the frame that draws it rather
+  /// than by the widgets themselves — so a new widget gets a font and a size
+  /// control without asking for them, and can't forget to honour them.
+  ///
+  /// Empty family means the theme decides.
+  String fontFamily;
+  double fontScale;
+
   DashboardWidgetConfig({
     required this.id,
     required this.type,
@@ -45,6 +53,8 @@ class DashboardWidgetConfig {
     required this.y,
     required this.width,
     required this.height,
+    this.fontFamily = '',
+    this.fontScale = 1.0,
     Map<String, dynamic>? options,
   }) : options = options ?? <String, dynamic>{};
 
@@ -62,6 +72,10 @@ class DashboardWidgetConfig {
       y: ((j['y'] as num?)?.toInt() ?? 0).clamp(0, DashboardGrid.rows - height),
       width: width,
       height: height,
+      fontFamily: j['fontFamily'] as String? ?? '',
+      // Clamped so a hand-edited config can't produce text too small to read
+      // or so large the tile shows one letter.
+      fontScale: ((j['fontScale'] as num?)?.toDouble() ?? 1.0).clamp(0.5, 2.5),
       options: (j['options'] as Map?)?.cast<String, dynamic>() ?? {},
     );
   }
@@ -73,6 +87,8 @@ class DashboardWidgetConfig {
         'y': y,
         'width': width,
         'height': height,
+        'fontFamily': fontFamily,
+        'fontScale': fontScale,
         'options': options,
       };
 

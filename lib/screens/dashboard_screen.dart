@@ -100,16 +100,30 @@ class _Tile extends StatelessWidget {
             ),
           );
 
-    return DefaultTextStyle(
-      style: TextStyle(
-        color: theme.textPrimary,
-        fontFamily: theme.fontFamily,
+    // Font and size are applied here, for every widget, rather than in each
+    // one. The family rides on the default text style, which Text merges into
+    // its own; the scale goes through the text scaler, which is the only
+    // thing that also reaches the explicit font sizes widgets set on
+    // themselves.
+    final media = MediaQuery.of(context);
+    return MediaQuery(
+      data: media.copyWith(
+        textScaler: TextScaler.linear(
+          media.textScaler.scale(1) * config.fontScale,
+        ),
       ),
-      child: Container(
-        decoration: theme.tileDecoration,
-        padding: const EdgeInsets.all(16),
-        clipBehavior: Clip.antiAlias,
-        child: child,
+      child: DefaultTextStyle(
+        style: TextStyle(
+          color: theme.textPrimary,
+          fontFamily:
+              config.fontFamily.isEmpty ? theme.fontFamily : config.fontFamily,
+        ),
+        child: Container(
+          decoration: theme.tileDecoration,
+          padding: const EdgeInsets.all(16),
+          clipBehavior: Clip.antiAlias,
+          child: child,
+        ),
       ),
     );
   }
