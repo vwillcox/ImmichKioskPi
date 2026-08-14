@@ -117,11 +117,16 @@ class DashboardTheme {
         color: background.length == 1 ? background.first : null,
       );
 
-  BoxDecoration get tileDecoration => BoxDecoration(
+  BoxDecoration get tileDecoration => tileDecorationWith();
+
+  /// The tile's look, with the dashboard's own overrides applied over the
+  /// theme's preferences.
+  BoxDecoration tileDecorationWith({double? radius, bool? withShadow}) =>
+      BoxDecoration(
         color: surface,
-        borderRadius: BorderRadius.circular(cornerRadius),
+        borderRadius: BorderRadius.circular(radius ?? cornerRadius),
         border: Border.all(color: border),
-        boxShadow: shadow
+        boxShadow: (withShadow ?? shadow)
             ? [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.25),

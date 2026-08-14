@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import '../dashboard/dashboard_fonts.dart';
 import '../dashboard/dashboard_model.dart';
 import '../dashboard/dashboard_theme.dart';
+import '../dashboard/live_preview.dart';
 import '../dashboard/widget_registry.dart';
 import 'config_service.dart';
 
@@ -22,10 +23,15 @@ import 'config_service.dart';
 /// than written into the page. That is what makes a new widget or theme show
 /// up in the browser without the editor being touched.
 class DashboardService extends ChangeNotifier {
-  DashboardService(this._config)
-      : themes = ThemeRepository(ThemeRepository.defaultDirectory());
+  DashboardService(this._config, {PreviewData Function()? previewData})
+      : _previewData = previewData,
+        themes = ThemeRepository(ThemeRepository.defaultDirectory());
 
   final ConfigService _config;
+
+  /// Read fresh each time rather than held, so the editor's preview shows the
+  /// weather and the track as they are now, not as they were at startup.
+  final PreviewData Function()? _previewData;
   final ThemeRepository themes;
 
   HttpServer? _server;
@@ -141,6 +147,9 @@ class DashboardService extends ChangeNotifier {
           'fontScales': kFontScales,
         });
       }
+      if (path == '/api/preview' && request.method == 'GET') {
+        return await _json(request, _previewLines());
+      }
       if (path == '/api/dashboard' && request.method == 'GET') {
         return await _json(request, settings.toJson());
       }
@@ -161,6 +170,30 @@ class DashboardService extends ChangeNotifier {
         await request.response.close();
       } catch (_) {}
     }
+  }
+
+  /// What each widget would be showing right now, keyed by widget id.
+  ///
+  /// A type without a live callback, or one whose service has nothing yet, is
+  /// simply absent — the editor falls back to that type's stand-in lines
+  /// rather than showing an empty tile.
+  Map<String, dynamic> _previewLines() {
+    final data = _previewData?.call() ?? const PreviewData();
+    final out = <String, dynamic>{};
+    for (final w in settings.widgets) {
+      final type = WidgetRegistry.find(w.type);
+      final live = type?.live;
+      if (live == null) continue;
+      try {
+        final lines = live(w, data);
+        if (lines.isNotEmpty) {
+          out[w.id] = lines.map((l) => l.toJson()).toList();
+        }
+      } catch (e) {
+        debugPrint('Dashboard: live preview for ${w.type} failed: $e');
+      }
+    }
+    return out;
   }
 
   Future<void> _serveEditor(HttpRequest request) async {
@@ -212,6 +245,8 @@ class DashboardService extends ChangeNotifier {
     // whether the mode exists or which port it is served on, both of which
     // belong to the kiosk's own settings screen.
     current.themeId = incoming.themeId;
+    current.roundedCorners = incoming.roundedCorners;
+    current.tileShadows = incoming.tileShadows;
     current.widgets = incoming.widgets;
     await _config.save();
     notifyListeners();

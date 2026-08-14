@@ -479,5 +479,30 @@ final calendarWidgetType = DashboardWidgetType(
     PreviewLine('Bin day', scale: 0.14),
     PreviewLine('Tomorrow · all day', scale: 0.1, muted: true),
   ],
+  live: (config, data) {
+    final feeds = data.feeds;
+    if (feeds == null) return const [];
+    final urls = <String>[
+      for (final r in (config.options['sources'] as List?) ?? const [])
+        if (r is Map && '${r['url'] ?? ''}'.isNotEmpty) '${r['url']}',
+    ];
+    if (urls.isEmpty && '${config.options['url'] ?? ''}'.isNotEmpty) {
+      urls.add('${config.options['url']}');
+    }
+    if (urls.isEmpty) return const [];
+
+    final events = [for (final u in urls) ...feeds.calendar(u)]
+      ..sort((a, b) => a.start.compareTo(b.start));
+    final from = DateTime.now().subtract(const Duration(hours: 12));
+    final upcoming =
+        events.where((e) => e.start.isAfter(from)).take(4).toList();
+    if (upcoming.isEmpty) return const [];
+    return [
+      for (final e in upcoming) ...[
+        PreviewLine(e.title, scale: 0.14),
+        PreviewLine(_ScheduleView._when(e), scale: 0.1, muted: true),
+      ],
+    ];
+  },
   build: (context, w) => DashboardCalendarWidget(w: w),
 );

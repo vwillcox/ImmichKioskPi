@@ -63,7 +63,7 @@ class _Grid extends StatelessWidget {
                 top: gap + w.y * (cellHeight + gap),
                 width: w.width * cellWidth + (w.width - 1) * gap,
                 height: w.height * cellHeight + (w.height - 1) * gap,
-                child: _Tile(config: w, theme: theme),
+                child: _Tile(config: w, theme: theme, settings: settings),
               ),
           ],
         );
@@ -73,10 +73,15 @@ class _Grid extends StatelessWidget {
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.config, required this.theme});
+  const _Tile({
+    required this.config,
+    required this.theme,
+    required this.settings,
+  });
 
   final DashboardWidgetConfig config;
   final DashboardTheme theme;
+  final DashboardSettings settings;
 
   @override
   Widget build(BuildContext context) {
@@ -119,7 +124,10 @@ class _Tile extends StatelessWidget {
               config.fontFamily.isEmpty ? theme.fontFamily : config.fontFamily,
         ),
         child: Container(
-          decoration: theme.tileDecoration,
+          decoration: theme.tileDecorationWith(
+            radius: settings.radiusOver(theme.cornerRadius),
+            withShadow: settings.shadowOver(theme.shadow),
+          ),
           padding: const EdgeInsets.all(16),
           clipBehavior: Clip.antiAlias,
           child: child,

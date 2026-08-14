@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
 import 'models/immich_models.dart';
+import 'dashboard/live_preview.dart';
 import 'dashboard/widgets/widgets.dart';
 import 'services/camera_service.dart';
 import 'services/config_service.dart';
@@ -76,7 +77,16 @@ void main() async {
   // widgets on the same feed cost one fetch.
   final feeds = FeedService()..start();
 
-  final dashboard = DashboardService(config);
+  final dashboard = DashboardService(
+    config,
+    // Resolved on each request so the editor's preview reflects the moment
+    // it was asked for.
+    previewData: () => PreviewData(
+      weather: weather,
+      feeds: feeds,
+      playback: spotify.available ? spotify : nowPlaying,
+    ),
+  );
   unawaited(dashboard.start());
 
   // Switches the panel off by itself when nothing's playing and no

@@ -31,6 +31,12 @@
   button.danger { color: var(--danger); }
   button:disabled { opacity: .5; cursor: default; }
   #status { color: var(--muted); font-size: 13px; min-width: 8ch; }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    background: #212734; border: 1px solid var(--line); border-radius: 9px;
+    padding: 0 14px; min-height: 40px; font-size: 14px; white-space: nowrap;
+  }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
 
   main { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; padding: 18px; align-items: start; }
   @media (max-width: 900px) { main { grid-template-columns: minmax(0,1fr); } }
@@ -114,6 +120,8 @@
   <h1>Kiosk dashboard</h1>
   <span id="status">Loading…</span>
   <select id="theme" title="Theme"></select>
+  <label class="toggle"><input type="checkbox" id="roundedCorners"> Rounded corners</label>
+  <label class="toggle"><input type="checkbox" id="tileShadows"> Shadows</label>
   <button id="revert">Revert</button>
   <button id="save" class="primary">Save</button>
 </header>
@@ -144,6 +152,8 @@ const state = {
   dashboard: null,
   selectedId: null,
   dirty: false,
+  // What each widget is showing on the panel right now, keyed by widget id.
+  live: {},
 };
 
 const canvas = document.getElementById("canvas");
@@ -220,17 +230,28 @@ function applyTheme() {
   s.setProperty("--t-text", cssColour(t.textPrimary));
   s.setProperty("--t-muted", cssColour(t.textSecondary));
   s.setProperty("--t-accent", cssColour(t.accent));
+  // The dashboard's own overrides sit on top of whatever the theme asked
+  // for — the same precedence the panel applies, so the preview agrees.
+  const themeRadius = t.cornerRadius || 0;
+  const radius = state.dashboard.roundedCorners
+    ? (themeRadius > 0 ? themeRadius : 20)
+    : 0;
+  const shadow = !!state.dashboard.tileShadows;
+
   // Scaled from the panel's width to the canvas's, so a corner looks as
   // round here as it will on the wall.
-  s.setProperty("--t-radius", ((t.cornerRadius || 0) / 1920 * 100) + "cqw");
-  s.setProperty("--t-shadow", t.shadow ? "0 6px 18px rgba(0,0,0,.25)" : "none");
+  s.setProperty("--t-radius", (radius / 1920 * 100) + "cqw");
+  s.setProperty("--t-shadow", shadow ? "0 6px 18px rgba(0,0,0,.25)" : "none");
   canvas.style.color = cssColour(t.textPrimary);
 }
 
 function previewBody(w, t, el) {
-  const lines = (t && t.preview && t.preview.length)
-    ? t.preview
-    : [{ text: t ? t.name : w.type, scale: 0.14, muted: true, accent: false }];
+  // The real thing where the kiosk could tell us what this widget is
+  // showing, its stand-in content where it could not — a feed with no
+  // address yet, or a service with nothing to report.
+  const lines = state.live[w.id]
+    || (t && t.preview && t.preview.length ? t.preview : null)
+    || [{ text: t ? t.name : w.type, scale: 0.14, muted: true, accent: false }];
 
   // Heights are a fraction of the tile, and the tile is a fraction of the
   // canvas, so a preview stays honest as either is resized. Container query
@@ -241,7 +262,8 @@ function previewBody(w, t, el) {
   for (const line of lines) {
     const size = (line.scale * (w.height / canvasRows) * 100 * scale);
     html += '<div class="line' + (line.muted ? " muted" : "") +
-      (line.accent ? " accent" : "") + '" style="font-size:' + size + 'cqh">' +
+      (line.accent ? " accent" : "") + '" style="font-size:' + size +
+      "cqh;text-align:" + (line.centre ? "center" : "left") + '">' +
       escapeHtml(substitute(line.text)) + "</div>";
   }
   return html + "</div>";
@@ -677,6 +699,18 @@ function installFonts() {
   document.head.appendChild(style);
 }
 
+function renderOverrides() {
+  for (const key of ["roundedCorners", "tileShadows"]) {
+    const box = document.getElementById(key);
+    box.checked = state.dashboard[key] !== false;
+    box.onchange = () => {
+      state.dashboard[key] = box.checked;
+      markDirty();
+      render();
+    };
+  }
+}
+
 function renderThemes() {
   const sel = document.getElementById("theme");
   sel.innerHTML = "";
@@ -731,6 +765,7 @@ async function load(quiet) {
     installFonts();
     renderPalette();
     renderThemes();
+    renderOverrides();
     render();
     setStatus("Ready");
   } catch (e) {
@@ -739,7 +774,19 @@ async function load(quiet) {
   }
 }
 
-load();
+/* The panel's current content. Refreshed on a timer so a clock ticks and a
+   headline changes here as it does on the wall. */
+async function refreshLive() {
+  try {
+    state.live = await api.get("/api/preview");
+    if (state.schema) render();
+  } catch (e) {
+    // A preview that can't be fetched isn't worth interrupting editing for.
+  }
+}
+
+load().then(refreshLive);
+setInterval(refreshLive, 20000);
 </script>
 </body>
 </html>

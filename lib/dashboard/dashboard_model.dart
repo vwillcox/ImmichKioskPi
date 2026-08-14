@@ -118,6 +118,15 @@ class DashboardSettings {
   /// can be exposed beyond the LAN without the other.
   int editorPort;
 
+  /// Applied over whatever the theme says, so a look can be settled once and
+  /// kept while trying themes out rather than re-chosen every time one is
+  /// swapped.
+  ///
+  /// Rounded corners keep each theme's own radius — they differ on purpose —
+  /// and fall back to a sensible one for a theme that is square by design.
+  bool roundedCorners;
+  bool tileShadows;
+
   List<DashboardWidgetConfig> widgets;
 
   DashboardSettings({
@@ -125,6 +134,8 @@ class DashboardSettings {
     this.themeId = 'midnight',
     this.showOnLaunch = false,
     this.editorPort = 8090,
+    this.roundedCorners = true,
+    this.tileShadows = true,
     List<DashboardWidgetConfig>? widgets,
   }) : widgets = widgets ?? [];
 
@@ -134,6 +145,11 @@ class DashboardSettings {
         themeId: j['themeId'] as String? ?? 'midnight',
         showOnLaunch: j['showOnLaunch'] as bool? ?? false,
         editorPort: (j['editorPort'] as num?)?.toInt() ?? 8090,
+        // Migrated from the three-way settings these replaced.
+        roundedCorners: j['roundedCorners'] as bool? ??
+            (j['corners'] == null ? true : j['corners'] != 'square'),
+        tileShadows: j['tileShadows'] as bool? ??
+            (j['shadows'] == null ? true : j['shadows'] != 'off'),
         widgets: ((j['widgets'] as List?) ?? const [])
             .whereType<Map<String, dynamic>>()
             .map(DashboardWidgetConfig.fromJson)
@@ -146,8 +162,18 @@ class DashboardSettings {
         'themeId': themeId,
         'showOnLaunch': showOnLaunch,
         'editorPort': editorPort,
+        'roundedCorners': roundedCorners,
+        'tileShadows': tileShadows,
         'widgets': widgets.map((w) => w.toJson()).toList(),
       };
+
+  /// The corner radius to draw with, given what the theme asked for.
+  double radiusOver(double themeRadius) =>
+      roundedCorners ? (themeRadius > 0 ? themeRadius : 20) : 0;
+
+  /// Whether to draw a shadow. The theme's own preference is a starting
+  /// point, not a veto — this is the switch that decides.
+  bool shadowOver(bool themeShadow) => tileShadows;
 
   /// The first free rectangle of [width]x[height] cells, scanning left to
   /// right then top to bottom, or null when the grid is full. Used to place a

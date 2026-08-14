@@ -56,9 +56,17 @@ class DashboardSpotifyWidget extends StatelessWidget {
                     ? _Layout.besideLarge
                     : _Layout.above;
 
+        // Sized from the tile so a big panel gets big controls, with a floor
+        // that keeps them thumb-sized on the smallest tile this widget allows.
+        final controlSize = (c.maxHeight * 0.30).clamp(80.0, 160.0);
+
         final content = switch (layout) {
           _Layout.textOnly => _Details(
-              w: w, source: source, showControls: showControls, centred: true),
+              w: w,
+              source: source,
+              showControls: showControls,
+              controlSize: controlSize,
+              centred: true),
           _Layout.beside || _Layout.besideLarge => Row(
               children: [
                 _Art(
@@ -69,8 +77,12 @@ class DashboardSpotifyWidget extends StatelessWidget {
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child:
-                      _Details(w: w, source: source, showControls: showControls),
+                  child: _Details(
+                    w: w,
+                    source: source,
+                    showControls: showControls,
+                    controlSize: controlSize,
+                  ),
                 ),
               ],
             ),
@@ -90,6 +102,7 @@ class DashboardSpotifyWidget extends StatelessWidget {
                     w: w,
                     source: source,
                     showControls: showControls,
+                    controlSize: controlSize,
                     centred: true),
               ],
             ),
@@ -182,12 +195,16 @@ class _Details extends StatelessWidget {
     required this.w,
     required this.source,
     required this.showControls,
+    required this.controlSize,
     this.centred = false,
   });
 
   final DashboardWidgetContext w;
   final PlaybackSource source;
   final bool showControls;
+
+  /// Tap-target size for the skip buttons, from the tile.
+  final double controlSize;
   final bool centred;
 
   @override
@@ -241,6 +258,7 @@ class _Details extends StatelessWidget {
               _Button(
                 icon: Icons.skip_previous,
                 colour: t.textPrimary,
+                target: controlSize,
                 onPressed: source.previous,
               ),
               _Button(
@@ -248,12 +266,13 @@ class _Details extends StatelessWidget {
                     ? Icons.pause_circle_filled
                     : Icons.play_circle_filled,
                 colour: t.accent,
-                big: true,
+                target: controlSize * 1.3,
                 onPressed: source.playPause,
               ),
               _Button(
                 icon: Icons.skip_next,
                 colour: t.textPrimary,
+                target: controlSize,
                 onPressed: source.next,
               ),
             ],
@@ -266,26 +285,25 @@ class _Details extends StatelessWidget {
 
 /// A control sized for a finger rather than a cursor.
 ///
-/// The tap target is 64 (80 for play/pause) whatever the glyph inside it —
-/// comfortably past the 48 Material asks for. This is a panel on a wall,
-/// usually reached for in passing, and a skip button that needs aiming at is
-/// one that gets pressed twice.
+/// Grows with the tile and never drops below 80 (104 for play/pause), which
+/// is well past the 48 Material asks for. This is a panel on a wall, usually
+/// reached for in passing, and a skip button that needs aiming at is one that
+/// gets pressed twice.
 class _Button extends StatelessWidget {
   const _Button({
     required this.icon,
     required this.colour,
     required this.onPressed,
-    this.big = false,
+    required this.target,
   });
 
   final IconData icon;
   final Color colour;
   final VoidCallback onPressed;
-  final bool big;
+  final double target;
 
   @override
   Widget build(BuildContext context) {
-    final target = big ? 80.0 : 64.0;
     return Material(
       color: Colors.transparent,
       shape: const CircleBorder(),
@@ -295,7 +313,7 @@ class _Button extends StatelessWidget {
         child: SizedBox(
           width: target,
           height: target,
-          child: Icon(icon, color: colour, size: big ? 54 : 38),
+          child: Icon(icon, color: colour, size: target * 0.62),
         ),
       ),
     );
@@ -342,5 +360,18 @@ final spotifyWidgetType = DashboardWidgetType(
     PreviewLine('▬▬▬▬▬▭▭▭▭', scale: 0.08, accent: true),
     PreviewLine('⏮   ⏯   ⏭', scale: 0.15, accent: true),
   ],
+  live: (config, data) {
+    final source = data.playback;
+    if (source == null || !source.available || !source.now.hasTrack) {
+      return const [PreviewLine('Nothing playing', scale: 0.13, muted: true, centre: true)];
+    }
+    final now = source.now;
+    return [
+      PreviewLine(now.title, scale: 0.16),
+      PreviewLine(now.artist, scale: 0.11, muted: true),
+      if (config.options['showControls'] != false)
+        const PreviewLine('⏮   ⏯   ⏭', scale: 0.16, accent: true),
+    ];
+  },
   build: (context, w) => DashboardSpotifyWidget(w: w),
 );

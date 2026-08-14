@@ -73,7 +73,7 @@ class _ClockWidgetState extends State<ClockWidget> {
             .clamp(24.0, c.maxHeight * (showDate ? 0.62 : 0.9));
         return Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             FittedBox(
               fit: BoxFit.scaleDown,
@@ -152,8 +152,30 @@ final clockWidgetType = DashboardWidgetType(
     ),
   ],
   preview: const [
-    PreviewLine('{time}', scale: 0.42),
-    PreviewLine('{date}', scale: 0.11, muted: true),
+    PreviewLine('{time}', scale: 0.42, centre: true),
+    PreviewLine('{date}', scale: 0.11, muted: true, centre: true),
   ],
+  live: (config, data) {
+    final now = DateTime.now();
+    final twentyFour = config.options['twentyFourHour'] != false;
+    final seconds = config.options['seconds'] == true;
+    var hour = now.hour;
+    var suffix = '';
+    if (!twentyFour) {
+      suffix = hour < 12 ? ' am' : ' pm';
+      hour = hour % 12;
+      if (hour == 0) hour = 12;
+    }
+    final hh = twentyFour ? _ClockWidgetState._two(hour) : '$hour';
+    final time = seconds
+        ? '$hh:${_ClockWidgetState._two(now.minute)}:${_ClockWidgetState._two(now.second)}$suffix'
+        : '$hh:${_ClockWidgetState._two(now.minute)}$suffix';
+    return [
+      PreviewLine(time, scale: 0.42, centre: true),
+      if (config.options['showDate'] != false)
+        PreviewLine(_ClockWidgetState._dateLine(now),
+            scale: 0.11, muted: true, centre: true),
+    ];
+  },
   build: (context, w) => ClockWidget(w: w),
 );

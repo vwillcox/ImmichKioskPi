@@ -87,7 +87,7 @@ class DashboardNewsWidget extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
-                  _ago(item.published!),
+                  ago(item.published!),
                   style: TextStyle(
                     color: t.textSecondary.withValues(alpha: 0.8),
                     fontSize: 12,
@@ -159,7 +159,8 @@ class DashboardNewsWidget extends StatelessWidget {
     ));
   }
 
-  static String _ago(DateTime when) {
+  /// Also used to build the editor's live preview.
+  static String ago(DateTime when) {
     final d = DateTime.now().difference(when);
     if (d.inMinutes < 1) return 'just now';
     if (d.inMinutes < 60) return '${d.inMinutes}m ago';
@@ -218,5 +219,20 @@ final newsWidgetType = DashboardWidgetType(
     PreviewLine('Storm expected to clear by Thursday', scale: 0.13),
     PreviewLine('4h ago', scale: 0.09, muted: true),
   ],
+  live: (config, data) {
+    final url = '${config.options['url'] ?? ''}';
+    if (url.isEmpty || data.feeds == null) return const [];
+    final items = data.feeds!.feed(url);
+    if (items.isEmpty) return const [];
+    final max = (config.options['maxItems'] as num?)?.toInt() ?? 5;
+    return [
+      for (final item in items.take(max)) ...[
+        PreviewLine(item.title, scale: 0.13),
+        if (config.options['showTime'] != false && item.published != null)
+          PreviewLine(DashboardNewsWidget.ago(item.published!),
+              scale: 0.09, muted: true),
+      ],
+    ];
+  },
   build: (context, w) => DashboardNewsWidget(w: w),
 );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'dashboard_model.dart';
+import 'live_preview.dart';
 import 'dashboard_theme.dart';
 
 /// The kind of control the web editor should offer for an option.
@@ -102,11 +103,16 @@ class PreviewLine {
   final bool muted;
   final bool accent;
 
+  /// Centred rather than ranged left, matching how the widget itself lays the
+  /// line out.
+  final bool centre;
+
   const PreviewLine(
     this.text, {
     this.scale = 0.14,
     this.muted = false,
     this.accent = false,
+    this.centre = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -114,6 +120,7 @@ class PreviewLine {
         'scale': scale,
         'muted': muted,
         'accent': accent,
+        'centre': centre,
       };
 }
 
@@ -136,8 +143,14 @@ class DashboardWidgetType {
 
   final List<WidgetOption> options;
 
-  /// Stand-in content for the editor's preview.
+  /// Stand-in content for the editor's preview, used when [live] is absent
+  /// or has nothing yet.
   final List<PreviewLine> preview;
+
+  /// The real thing, for the editor's preview: what this widget would be
+  /// showing right now. Returning an empty list falls back to [preview].
+  final List<PreviewLine> Function(
+      DashboardWidgetConfig config, PreviewData data)? live;
 
   final Widget Function(BuildContext context, DashboardWidgetContext w) build;
 
@@ -153,6 +166,7 @@ class DashboardWidgetType {
     this.minHeight = 1,
     this.options = const [],
     this.preview = const [],
+    this.live,
   });
 
   Map<String, dynamic> toJson() => {
