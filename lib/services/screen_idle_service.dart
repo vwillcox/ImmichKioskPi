@@ -41,6 +41,7 @@ class ScreenIdleService {
   Timer? _timer;
   DateTime _lastInteraction = DateTime.now();
   bool _slideshowRunning = false;
+  bool _dashboardShowing = false;
   bool _musicWasPlaying = false;
 
   /// Only ever undone by us. If the screen was switched off some other way
@@ -89,6 +90,17 @@ class ScreenIdleService {
     if (running) noteInteraction();
   }
 
+  /// Set by [DashboardScreen] while it's on screen.
+  ///
+  /// The same reasoning as a slideshow, for the opposite reason: a dashboard
+  /// is read from across the room and deliberately not touched, so counting
+  /// "nobody has touched it" as idle would switch the panel off exactly when
+  /// it is being useful. Turning it off is left to the user.
+  set dashboardShowing(bool showing) {
+    _dashboardShowing = showing;
+    if (showing) noteInteraction();
+  }
+
   bool get _musicPlaying =>
       _sources.any((s) => s.available && s.now.isPlaying);
 
@@ -102,18 +114,41 @@ class ScreenIdleService {
       return;
     }
 
-    if (!_settings.autoOffEnabled || _offByUs) return;
+    if (_offByUs) return;
 
-    // Anything actually being displayed or listened to keeps it awake.
-    if (playing || _slideshowRunning) {
+    // Anything actually being displayed or listened to also counts as use, so
+    // the countdown starts from when it stops rather than from the last touch.
+    if (playing || _slideshowRunning || _dashboardShowing) {
       _lastInteraction = DateTime.now();
-      return;
     }
 
-    final idleFor = DateTime.now().difference(_lastInteraction);
-    if (idleFor >= Duration(minutes: _settings.idleMinutes)) {
+    if (shouldSwitchOff(
+      settings: _settings,
+      idleFor: DateTime.now().difference(_lastInteraction),
+      playing: playing,
+      slideshowRunning: _slideshowRunning,
+      dashboardShowing: _dashboardShowing,
+    )) {
       await _setScreen(on: false);
     }
+  }
+
+  /// Whether the panel should switch itself off, given what is on it.
+  ///
+  /// Pulled out as a pure function so the rule can be tested without a real
+  /// clock, a real config or the HTTP call to `screen_control.py`.
+  static bool shouldSwitchOff({
+    required ScreenSettings settings,
+    required Duration idleFor,
+    required bool playing,
+    required bool slideshowRunning,
+    required bool dashboardShowing,
+  }) {
+    if (!settings.autoOffEnabled) return false;
+    // A dashboard is read from across the room and deliberately not touched,
+    // so "nobody has touched it" is precisely when it is doing its job.
+    if (playing || slideshowRunning || dashboardShowing) return false;
+    return idleFor >= Duration(minutes: settings.idleMinutes);
   }
 
   Future<void> _setScreen({required bool on}) async {

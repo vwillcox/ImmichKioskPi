@@ -61,11 +61,14 @@ class TvService extends ChangeNotifier {
   /// Loads the client certificate and key the television's MQTT interface
   /// requires.
   ///
-  /// The key is deliberately not in the repository — it is a private key, and
-  /// one was published here once already. Supply your own (see the TV Remote
-  /// section of moreinfo.md); without it this throws [TvCredentialsMissing],
-  /// which the caller turns into a clear message rather than the mbedTLS
-  /// handshake error an empty key produces four steps later.
+  /// These are the manufacturer's own credentials — the set accepts no other —
+  /// so they cannot be generated or rotated. They are still kept out of the
+  /// repository (`assets/certs/*.key` is git-ignored); supply a copy at that
+  /// path, as the TV Remote section of moreinfo.md describes.
+  ///
+  /// Without it this throws [TvCredentialsMissing], which the caller turns
+  /// into a clear message rather than the mbedTLS handshake error an empty key
+  /// produces four steps later.
   Future<void> _loadAssets() async {
     _certBytes ??= await _loadCert('assets/certs/vidaa_client.pem');
     _keyBytes ??= await _loadCert('assets/certs/vidaa_client.key');
@@ -161,8 +164,20 @@ class TvService extends ChangeNotifier {
   void _finishConnected() {
     _client!.getState();
     _client!.getVolume();
+    // Asked for once here and not again. The set runs its authentication
+    // check whenever it is asked for the source list, which puts the pairing
+    // code up on the television — so polling it, however cheap it looks,
+    // interrupts whatever is being watched.
+    _client!.getSourceList();
     _setConn(ConnState.connected);
   }
+
+  /// The television's inputs, empty until it has answered.
+  List<TvSource> get sources => state.sources;
+
+  /// Re-reads the inputs. Only for an explicit user action — see the note in
+  /// [_finishConnected] about what asking costs.
+  void refreshSources() => _client?.getSourceList();
 
   /// Connect with a saved/refreshed token if possible, else fall to pairing.
   Future<void> connect() async {

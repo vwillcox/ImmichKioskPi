@@ -6,6 +6,7 @@ import '../dashboard/dashboard_theme.dart';
 import '../dashboard/widget_registry.dart';
 import '../services/config_service.dart';
 import '../services/dashboard_service.dart';
+import '../services/screen_idle_service.dart';
 
 /// The dashboard: widgets laid out on a grid, drawn in the chosen theme.
 ///
@@ -13,8 +14,36 @@ import '../services/dashboard_service.dart';
 /// a browser rather than here — this screen only draws it. Editing on a
 /// wall-mounted touchscreen with no keyboard is miserable, and a phone is
 /// already in your hand.
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  ScreenIdleService? _screenIdle;
+
+  @override
+  void initState() {
+    super.initState();
+    // A dashboard is a thing you glance at from across the room without
+    // touching it, so the idle timer would switch the panel off precisely
+    // when it is doing its job. Held awake for as long as it is on screen;
+    // switching it off is left to the user, or to Alexa.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _screenIdle = context.read<ScreenIdleService>()..dashboardShowing = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    // Releasing it here rather than on the way in to the next screen means
+    // the timer restarts from now, not from whenever the dashboard opened.
+    _screenIdle?.dashboardShowing = false;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
