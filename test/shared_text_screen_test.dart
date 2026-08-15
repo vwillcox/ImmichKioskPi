@@ -6,7 +6,7 @@ import 'package:immich_kiosk_pi/screens/shared_text_screen.dart';
 void main() {
   group('a shared note is sized to be read across the room', () {
     test('a short note gets the largest type', () {
-      expect(SharedTextScreen.fontSizeFor('Back in 10'), 88);
+      expect(SharedTextScreen.fontSizeFor('Back in 10'), 132);
     });
 
     test('type shrinks as the note grows, but never below a floor', () {
@@ -18,7 +18,7 @@ void main() {
       expect(medium, greaterThan(long));
       // The floor is the point: a very long note stays legible and scrolls
       // rather than being shrunk until it fits.
-      expect(long, greaterThanOrEqualTo(38));
+      expect(long, greaterThanOrEqualTo(50));
       expect(SharedTextScreen.fontSizeFor('a' * 100000), long);
     });
 
@@ -36,6 +36,32 @@ void main() {
             reason: 'a $n-character note should be bigger than the old size');
       }
     });
+  });
+
+  testWidgets('a short note sits in the middle of the screen', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1200)
+      ..devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(const MaterialApp(
+      home: SharedTextScreen(text: 'Dinner is ready', sender: 'Jo Fluff'),
+    ));
+    await tester.pumpAndSettle();
+
+    final note = tester.getRect(find.text('Dinner is ready'));
+    final from = tester.getRect(find.text('From Jo Fluff'));
+    final screen = tester.getRect(find.byType(Scaffold));
+
+    expect(note.center.dx, moreOrLessEquals(screen.center.dx, epsilon: 0.5));
+
+    // The note and its attribution are one block, so it is the block that
+    // straddles the middle. Asserted exactly rather than within a range: the
+    // layout this replaced centred the text in the space left over between
+    // two controls of different heights, which lands close to the middle but
+    // never on it — a loose bound would have passed for both.
+    expect((note.top + from.bottom) / 2,
+        moreOrLessEquals(screen.center.dy, epsilon: 0.5));
   });
 
   testWidgets('there is a large OK button that dismisses the note',

@@ -27,10 +27,10 @@ class SharedTextScreen extends StatelessWidget {
   /// right behaviour is to stay readable and scroll.
   static double fontSizeFor(String text) {
     final length = text.trim().length;
-    if (length <= 40) return 88;
-    if (length <= 120) return 64;
-    if (length <= 320) return 48;
-    return 38;
+    if (length <= 40) return 132;
+    if (length <= 120) return 96;
+    if (length <= 320) return 68;
+    return 50;
   }
 
   @override
@@ -40,52 +40,73 @@ class SharedTextScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF101828),
       body: SafeArea(
-        child: Column(
+        // A Stack rather than a Column so the note is centred on the *screen*
+        // rather than in whatever is left after the two rows of controls.
+        // In a Column the back button above and the OK button below are
+        // different heights, so the leftover space has a different centre
+        // from the screen and a short note sits visibly high.
+        child: Stack(
           children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: BigBackButton(),
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 64),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      text,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: size,
-                        // Long notes need the extra leading to stay legible
-                        // at a distance; short ones look loose with it.
-                        height: size > 60 ? 1.18 : 1.34,
-                        fontWeight: FontWeight.w500,
-                      ),
+            LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                // Vertical padding is symmetric and clears the taller of the
+                // two controls, which is what keeps the true centre of the
+                // screen the centre of the text: pad only where a control
+                // happens to be and the offset comes straight back.
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 56, vertical: _controlGutter),
+                child: ConstrainedBox(
+                  // Without a floor the scroll view's child is free to be as
+                  // short as it likes and pins itself to the top; giving it
+                  // the full viewport height is what lets Center have room
+                  // to work in. Anything taller still scrolls as before.
+                  constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - _controlGutter * 2),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          text,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: size,
+                            // Long notes need the extra leading to stay
+                            // legible at a distance; short ones look loose
+                            // with it.
+                            height: size > 80 ? 1.14 : 1.3,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        Text(
+                          'From $sender',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 26,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 28),
-                    Text(
-                      'From $sender',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 24,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-            // Its own row at the bottom rather than floating over the note:
-            // a wide message can run underneath a floating button, and the
-            // one control that makes the screen go away should never be the
-            // thing obscured by what it is dismissing.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+            const Positioned(
+              left: 16,
+              top: 16,
+              child: BigBackButton(),
+            ),
+            // Pinned rather than scrolling with the note: the control that
+            // makes the screen go away should be in the same place whatever
+            // the message is, and reachable without scrolling to the end of
+            // a long one.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 28,
               child: _DismissButton(
                 onTap: () => Navigator.of(context).maybePop(),
               ),
@@ -95,6 +116,10 @@ class SharedTextScreen extends StatelessWidget {
       ),
     );
   }
+
+  /// Space kept clear at the top and bottom for the back and OK buttons.
+  /// Applied to both ends equally — see the note in [build].
+  static const double _controlGutter = 116;
 }
 
 /// A large, obvious "I have read this" button.
