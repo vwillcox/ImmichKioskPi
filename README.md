@@ -1,180 +1,20 @@
 # ImmichKioskPi
 
-A touchscreen photo frame and media browser for your own [Immich](https://immich.app)
-server, built for a Raspberry Pi with a DSI touch display.
+A touchscreen photo frame, media browser and wall dashboard for your own
+[Immich](https://immich.app) server, built for a Raspberry Pi with a DSI touch
+display.
 
 It boots straight into a fullscreen kiosk — no desktop, no mouse, no keyboard.
-Browse your albums, pinch to zoom photos, play videos with speed control, run a
-slideshow with transitions, and see the local weather forecast.
+Browse your albums, pinch to zoom photos, play videos, run a slideshow, and see
+the local weather. It doubles as a speaker (Bluetooth or Spotify Connect), takes
+photos and notes shared from a phone, and can switch to a widget dashboard of
+clock, weather, calendar, news and music that you arrange from a browser.
 
-It also doubles as a speaker: pair a phone over Bluetooth and the Pi becomes
-its audio output with a now-playing panel over the slideshow, or connect
-Spotify directly — either by controlling whatever's already playing on the
-account, or by picking the Pi itself as a **Spotify Connect** device named
-"Kiosk".
+Built with Flutter as a native Linux app, so it stays smooth on a Pi.
 
-Built with Flutter (native Linux), so it stays smooth on a Pi.
-
----
-
-## What's new on this branch
-
-Work in progress on `pullMessages`, not yet merged to `main`.
-
-**A phone as a wireless camera**
-- An old Android phone running [IP Webcam](https://play.google.com/store/apps/details?id=com.pas.webcam)
-  becomes a camera for the kiosk. A button in the top bar opens a small window
-  in a corner; tapping that opens it full screen, where pinching zooms the
-  phone's sensor rather than enlarging the picture here.
-- The picture comes over RTSP (H.264). IP Webcam tags the stream with the
-  sensor's rotation, so it arrives the right way up whichever way the phone is
-  lying, and its MJPEG alternative costs an absurd 180 Mbit/s by comparison.
-- Zoom, lens, torch and stream size are driven over IP Webcam's HTTP API. The
-  stream is only open while the window is, so the phone isn't encoding around
-  the clock.
-- Settings → Camera holds the address, credentials, stream size and position.
-
-**Share Inbox**
-- A companion Android app shares photos, GIFs, videos, links and notes straight
-  to the kiosk, with a popup, a chime and per-person tokens. See
-  [Share Inbox](#share-inbox).
-
-**Spotify**
-- Device switcher, queue view, and browse panels for playlists, recently played
-  and top tracks.
-- A local librespot patch fixing transfers *off* the kiosk landing on the wrong
-  track — see [`patches/`](patches/).
-- Rate limiting now honours Spotify's `Retry-After` per endpoint instead of
-  hammering through 429s.
-
-**Screen**
-- Turns itself off when nothing is playing, no slideshow is running and nobody
-  has touched it; a touch or music brings it back. See
-  [Turning the screen off by itself](#turning-the-screen-off-by-itself).
-
-**Overlay positions**
-- Weather, now playing and the camera window each pick a corner, and two can
-  never end up in the same one — moving a panel onto an occupied corner swaps
-  the pair.
-
----
-
-## Known issues
-
-**Camera**
-- The Pi 5 has no hardware H.264 decoder, so the stream is decoded in software
-  — roughly half a core at 1080p25. Occasional block corruption has been seen;
-  frame dropping and mpv's latency hacks are now off, which should stop it, but
-  it hasn't been observed over a long run yet. Dropping the phone to 720p in
-  Settings → Camera roughly halves the decode cost if it recurs.
-- **IP Webcam has no login by default** — set one in its settings, or the
-  stream is open to anything on your network.
-- **Enable "start server on boot" in IP Webcam.** Nothing serves after the
-  phone reboots otherwise, and the kiosk will simply wait.
-- Zoom is a sensor crop, not optical. On phones with a periscope lens that lens
-  is not reachable by any third-party app, so zooming in gains framing, not
-  detail.
-- If the phone's app is force-stopped abruptly enough times it leaks its client
-  slots, after which it accepts connections and sends nothing. Force-stopping
-  and reopening it clears that.
-
-**Spotify**
-- A Development Mode app can't use the batch endpoints, browse/categories, or
-  artist top-tracks, and search is capped at 10 results. Extended Quota Mode
-  lifts these.
-- Spotify Connect can't carry lossless, so the kiosk device is capped at
-  320 kbps — a Spotify-side limit, not a librespot one.
-- The librespot fix lives in [`patches/`](patches/) and is applied to a local
-  build; it isn't upstream.
-
-**Deployment**
-- `deploy/labwc-autostart` doesn't start `vidaa_remote.service`, which a
-  live install may rely on. Merge rather than overwrite if you use the TV
-  remote.
-- Nothing on the Pi keeps a journal for user units, so the app's output is
-  discarded unless a `StandardOutput=` drop-in is added — see
-  [Development](#development).
-
----
-
-## Features
-
-**Photos & video**
-- Browse all your Immich albums with cover thumbnails
-- Full-screen viewer with pinch-zoom, double-tap zoom and swipe
-- Video playback via libmpv with a **playback-speed selector** (0.25×–2×),
-  scrub, zoom, and a vertical **volume slider with mute** — the level and mute
-  state carry over to the next video
-- Handles portrait and landscape media without cropping
-
-**Slideshow**
-- Fade, slide, **Ken Burns**, or **page turn** transitions
-- Configurable interval, shuffle, and a blurred backdrop behind letterboxed shots
-- **Multi-select albums** and play them all as one combined slideshow
-- Images are fully decoded before they animate, so slides never flicker in
-
-**Private content**
-- Opens Immich's server-side **Locked Folder** with your PIN, and re-locks when
-  you leave
-
-**Indoor sensor**
-- Reads a **Govee H510x** Bluetooth thermometer/hygrometer passively from its
-  BLE broadcasts — no pairing, no account, no cloud
-- Indoor temperature and humidity appear on the weather panel, with a **line
-  chart of recent readings** in the expanded view, and a low-battery warning
-
-**Weather overlay**
-- Corner panel showing current conditions, tap to expand into a full-screen
-  **7-day forecast** with colour-coded icons
-- Uses [Open-Meteo](https://open-meteo.com) — **no API key needed**
-- Choose the location (UK postcode or place name), the screen corner, and °C/°F
-
-**Bluetooth speaker + now playing from your phone**
-- Pair a phone once and the Pi becomes its **A2DP audio sink** — music plays
-  through the Pi's own output, not the phone's
-- Shows the track that's playing, with album artwork, in a corner of the
-  slideshow
-- Tap it to expand into a full player with **play/pause, next, previous, repeat,
-  shuffle, and a volume slider with mute** — the controls drive the phone
-- Works with any app on the phone (Spotify, YouTube Music, podcasts) because it
-  reads Bluetooth AVRCP rather than any one service's API
-- Optionally **leave the audio on the phone** (headphones) and use the kiosk
-  purely as a remote control
-- Tidies itself away: the panel hides after a minute of nothing playing and
-  reappears the moment playback resumes
-
-**Built-in Spotify support**
-- **Spotify Connect device**: the Pi shows up as **"Kiosk"** in Spotify's own
-  device picker on any phone, desktop or other Spotify app — pick it and audio
-  streams straight to the Pi's speaker, no Bluetooth pairing involved
-- **With Spotify Premium**, the same now-playing panel can also control
-  whatever's active on the account directly over the Spotify Web API — real
-  seek, **like/save the current track**, and **add it to a playlist** — shown
-  in preference to the generic AVRCP source whenever Spotify has something
-  active, falling back to AVRCP the rest of the time
-
-**Share Inbox**
-- A companion Android app (in this repo) lets anyone share a photo, GIF,
-  video, web link or note to the kiosk from any other app's share sheet —
-  from anywhere, not just the home network
-- Pops up with a chime and shows in the most appropriate viewer: the photo
-  zoomer, the video player, or Chromium full-screen for links
-- Each person gets their own named token from Settings, so shares show up
-  attributed; a **Do Not Disturb** switch in the top bar mutes the chime
-  without touching Settings
-
-**Built for a kiosk**
-- On-screen panels **drift slowly** by a few pixels so nothing sits on the same
-  pixels for long — guards an always-on display against image retention
-- Optionally **turns its own screen off** once nothing is playing, no
-  slideshow is running and nobody has touched it — a touch (or music
-  starting) brings it back
-- Starts on boot, restarts automatically if it crashes
-- Restart / power-off buttons in Settings
-- Aggressive on-disk caching so it's fast and works well on a slow network
-- An **About** screen listing every library, licence and credit
-- Optional **TV Remote** button that switches to a companion remote-control app
-  when one is running (see below)
+**📖 [moreinfo.md](moreinfo.md) has the full setup guide, every optional
+feature, the troubleshooting notes and the technical detail.** This page is the
+short version.
 
 ---
 
@@ -188,7 +28,32 @@ Work in progress on `pullMessages`, not yet merged to `main`.
 | Photo viewer | Slideshow with weather |
 |---|---|
 | ![Photo viewer](docs/screenshots/03-photo-viewer.jpg) | ![Slideshow with weather overlay](docs/screenshots/04-slideshow-weather.jpg) |
-| Full-screen viewer — pinch, double-tap or the +/− buttons to zoom. | Photo-frame mode: the whole image fits, edges filled with a blur, and the weather panel in the corner. |
+| Pinch, double-tap or the +/− buttons to zoom. | Photo-frame mode: the whole image fits, edges filled with a blur, weather in the corner. |
+
+### The widget dashboard
+
+Clock, weather, news, calendar and music on one screen — laid out on a 12×8
+grid from a browser on your own network, no keyboard at the panel:
+
+![Widget dashboard](docs/screenshots/08-dashboard.jpg)
+
+### Now playing
+
+When music is playing and no slideshow is running, the player takes over
+full-screen with a blurred album-art backdrop and large, quick-to-tap controls:
+
+| Full-screen player | Controls close-up |
+|---|---|
+| ![Now-playing player, full screen](docs/screenshots/06-nowplaying-player.jpg) | ![Now-playing controls close-up](docs/screenshots/07-nowplaying-controls.jpg) |
+| Tap to shrink to a corner card and pick an album — it pops back up on its own if nothing came of it. | Transport, repeat, shuffle, like and add-to-playlist, all sized for a quick tap. |
+
+### Shared links open in Firefox
+
+A link shared from a phone opens with the browser's own furniture hidden, and a
+close button the kiosk draws itself — because neither browser gives one you can
+reliably hit with a thumb:
+
+![A shared link open in Firefox](docs/screenshots/10-firefox-article.jpg)
 
 ### Slideshow in motion
 
@@ -196,26 +61,56 @@ Ken Burns pan with a cross-fade between slides:
 
 ![Slideshow animation](docs/screenshots/05-slideshow-animation.gif)
 
-### Now playing
-
-When music is playing and no slideshow is running, the player takes over
-full-screen with a blurred album-art backdrop and large, quick-to-tap
-controls:
-
-| Full-screen player | Controls close-up |
-|---|---|
-| ![Now-playing player, full screen](docs/screenshots/06-nowplaying-player.jpg) | ![Now-playing controls close-up](docs/screenshots/07-nowplaying-controls.jpg) |
-| Tap it to shrink to a corner card and pick an album — it pops back up on its own after a few seconds if nothing came of it. | Transport, repeat, shuffle, like and add-to-playlist all sized for a quick tap rather than precision. |
-
-> Album artwork shown here is © its respective rights holder (in this
-> screenshot, DreamWorks Animation / the "How to Train Your Dragon"
-> soundtrack) — fetched live from Spotify to demonstrate the UI. This
-> project claims no ownership of it.
-
 *(Also available as [MP4](docs/screenshots/05-slideshow-animation.mp4) at higher quality.)*
 
-> Screenshots use albums without people in them. On the albums grid every
-> thumbnail is deliberately pixelated, since that page shows personal photos.
+> Screenshots use albums without people in them, and every thumbnail on the
+> albums grid is deliberately pixelated. Album artwork shown is © its
+> respective rights holder, fetched live to demonstrate the UI; this project
+> claims no ownership of it.
+
+---
+
+## Features
+
+**Photos & video** — browse every Immich album; full-screen viewer with
+pinch-zoom, double-tap zoom and swipe; video via libmpv with a playback-speed
+selector, scrub, zoom and volume; portrait and landscape without cropping.
+
+**Slideshow** — fade, slide, Ken Burns or page-turn transitions, configurable
+interval, shuffle, a blurred backdrop behind letterboxed shots, and multi-select
+albums played as one.
+
+**Widget dashboard** — clock, weather, calendar, RSS news, Spotify and a TV
+remote on a 12×8 grid, arranged from a browser with a live preview. Five themes
+plus a JSON template for your own, twenty fonts, per-widget sizing.
+
+**Weather** — corner panel, tap to expand into a 7-day forecast. Uses
+[Open-Meteo](https://open-meteo.com), no API key.
+
+**Indoor sensor** — reads a Govee H510x Bluetooth thermometer via Home
+Assistant, with a 24-hour chart in the expanded panel.
+
+**Music** — pair a phone over Bluetooth and the Pi becomes its speaker with a
+now-playing panel, or use Spotify directly: the Pi appears as a Connect device
+named "Kiosk", and with Premium the panel controls the account over the Web API
+(seek, like, add to playlist).
+
+**Share Inbox** — a companion Android app (in this repo) shares photos, GIFs,
+videos, links and notes to the kiosk from any app's share sheet, from anywhere.
+Per-person tokens, a chime, and a Do Not Disturb switch. Everything is
+**end-to-end encrypted** with a fresh key per message.
+
+**A phone as a wireless camera** — an old Android phone running IP Webcam
+becomes a camera in a corner window; tap to expand, pinch to drive the phone's
+own sensor zoom.
+
+**Private content** — opens Immich's server-side Locked Folder with your PIN,
+and re-locks when you leave.
+
+**Built for a kiosk** — panels drift slowly to guard against burn-in; the screen
+turns itself off when idle and wakes on touch; starts on boot and restarts if it
+crashes; aggressive on-disk caching; an About screen listing every library and
+licence.
 
 ---
 
@@ -232,80 +127,43 @@ controls:
 
 ## Quick start
 
-### 1. Install the toolchain on the Pi
-
-SSH into the Pi and run:
+**1. Install the toolchain on the Pi**
 
 ```bash
 bash scripts/pi-setup.sh
 ```
 
-This installs Flutter, the Linux build dependencies and libmpv. It needs `sudo`
-and downloads a few hundred MB, so give it a few minutes.
+Installs Flutter, the Linux build dependencies and libmpv. Needs `sudo` and
+downloads a few hundred MB.
 
-```bash
-nano ~/.config/labwc/rc.xml
-```
+**2. Set up the touchscreen** — merge [`deploy/labwc-rc.xml`](deploy/labwc-rc.xml)
+into `~/.config/labwc/rc.xml`, changing `deviceName` to yours (find it with
+`libinput list-devices`) and `mapToOutput` to your panel. `mouseEmulation="no"`
+is the important part — it delivers real touch events rather than synthetic
+mouse ones.
 
-Edit that file 
-
-```xml
-<touch deviceName="<your touch device>" mapToOutput="DSI-1" mouseEmulation="no"/>
-```
-
-Find the device name via libinput list-devices (or let Screen Configuration write the entry, then edit it). Reboot after. CNX Software tested exactly this and got all 10 points tracking correctly afterwards
-
-### 2. Point the helper scripts at your Pi
-
-On the machine you're building from:
+**3. Point the helper scripts at your Pi**
 
 ```bash
 cp scripts/local.env.example scripts/local.env
 ```
 
-Edit it with your Pi's SSH details:
+Edit it with your Pi's SSH details. It's git-ignored, so your hostname stays out
+of the repo.
 
-```sh
-PI_HOST=pi@immich_kiosk_pi.local
-PI_DIR=/home/pi/immich_kiosk_pi
-```
+**4. Add your Immich details** — create `~/.config/immich_kiosk_pi/config.json`
+on the Pi (see [`config.example.json`](config.example.json)) with your server URL
+and an API key from **Account Settings → API Keys**, then `chmod 600` it.
 
-This file is git-ignored, so your username and hostname stay out of the repo.
-
-### 3. Add your Immich details
-
-Create `~/.config/immich_kiosk_pi/config.json` **on the Pi** (see
-[`config.example.json`](config.example.json)):
-
-```json
-{
-  "immichUrl": "https://immich.example.com",
-  "apiKey": "YOUR_IMMICH_API_KEY"
-}
-```
-
-Generate the API key in Immich under **Account Settings → API Keys**. Keep the
-file private:
-
-```bash
-chmod 600 ~/.config/immich_kiosk_pi/config.json
-```
-
-You can also enter these on first run, though a keyboard is easier than the
-on-screen fields.
-
-### 4. Build and run
+**5. Build and run**
 
 ```bash
 scripts/run.sh
 ```
 
-This syncs the source to the Pi, builds a release binary there, and launches it
-on the display.
+Syncs the source to the Pi, builds a release binary there, and launches it.
 
-### 5. Start it on boot
-
-On the Pi:
+**6. Start it on boot**
 
 ```bash
 mkdir -p ~/.config/systemd/user ~/.config/labwc
@@ -316,647 +174,30 @@ systemctl --user daemon-reload
 systemctl --user enable --now immich_kiosk_pi
 ```
 
-The service file uses systemd's `%h` and `%U` specifiers, so it works whatever
-your username is.
-
----
-
-## Optional setup
-
-### Power-off button
-
-To let the in-app **Restart** and **Power off** buttons work without a password
-prompt, run once on the Pi:
-
-```bash
-sudo bash deploy/enable-poweroff.sh
-```
-
-### Now playing from your phone
-
-The now-playing panel reads Bluetooth **AVRCP**, so it works with whatever app
-your phone is using — no accounts or API keys.
-
-Pair the phone with the Pi once:
-
-```bash
-bluetoothctl
-# then, at the prompt:
-#   power on
-#   agent NoInputNoOutput
-#   default-agent
-#   pairable on
-#   discoverable on
-# accept the passkey on both the phone and here, then:
-#   trust <PHONE_MAC>
-```
-
-Play something on the phone with **media audio** routed to the Pi. The panel
-appears in the slideshow; tap it to expand, tap again to shrink.
-
-> **Trade-off worth knowing:** AVRCP metadata rides along with the Bluetooth
-> audio stream, so the phone's audio plays through the **Pi**, not the phone.
-> That's inherent to this approach, not a choice of implementation.
-
-#### Using headphones on the phone
-
-If you'd rather the music kept playing on the phone — Bluetooth headphones, its
-own speaker — turn **Settings → Now playing → "Play the audio on this device"**
-off. The Pi then stops acting as an audio sink, but the panel keeps showing the
-track and the controls still work: this display becomes a pure remote.
-
-That works because AVRCP's control channel is independent of the A2DP audio
-stream, so `org.bluez.MediaPlayer1` survives with the audio profile switched
-off. The setting is re-applied whenever the phone reconnects, since PipeWire
-turns the audio profile back on by itself.
-
-With the setting on, PipeWire routes the incoming stream to whatever output is
-active — a USB speaker, for example. Check the link with:
-
-```bash
-pw-link -l | grep bluez
-```
-
-(Note `pactl` may not be installed on Raspberry Pi OS; `pw-link` and `wpctl`
-are the PipeWire tools that are.)
-
-Two things that look like faults but aren't: those links only exist while audio
-is **actively streaming**, so a paused track shows none; and `wpctl inspect`
-can report a stale `bluez5.profile`. Neither is a reliable way to tell whether
-audio routing is enabled — the setting itself is the source of truth.
-
-The volume slider sets **AVRCP absolute volume**, i.e. the level the phone is
-sending — the same control as the phone's own volume buttons. It is not a
-local mixer level for the Pi's output.
-
-Album artwork isn't part of AVRCP, so it's looked up from the free
-[iTunes Search API](https://performance-partners.apple.com/search-api) using the
-artist and track name. Searching by track is markedly more reliable than by
-album, because AVRCP album strings often carry suffixes like
-`(Deluxe Version) [Explicit]`.
-
-### Spotify
-
-There are two independent Spotify features — set up either or both.
-
-#### Web API control (like, playlists, and controlling whatever's already playing)
-
-If you have Spotify Premium, the now-playing panel can control Spotify
-directly over the **Spotify Web API** instead of the generic AVRCP path —
-proper seek, shuffle, repeat, volume, **like/unlike the current track**, and
-**add it to a playlist**, on whichever Spotify Connect device is actually
-active (the phone, a speaker, the Pi itself if you've also set up the Connect
-device below) — not just what BlueZ happens to expose. It's shown in
-preference to the AVRCP source whenever Spotify has something active, and
-falls back to AVRCP the rest of the time — for a podcast app, YouTube Music,
-anything Spotify's API doesn't know about.
-
-This part is a control layer only — it doesn't make the Pi an audio output by
-itself. Audio comes from wherever Spotify is already playing, unless that's
-also the Pi (see the Connect device below).
-
-**Setup**, in Settings → Spotify:
-
-1. Create a free app at the
-   [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. On that app, add `http://127.0.0.1:8909/callback` as a Redirect URI.
-3. In the kiosk, paste the app's **Client ID** and tap **Connect**. A browser
-   window opens on the Pi's own screen (Chromium and Firefox are both present)
-   for the one-time Spotify login; a small local server catches the redirect
-   and finishes the connection automatically.
-
-No client secret is needed or stored — the login uses OAuth Authorization
-Code with PKCE, so only the Client ID (not confidential) and a refresh token
-are kept, in the same config file as everything else. If you connected before
-liking/playlists existed, tap **Reconnect** once to re-authorise with the
-extra permissions (`user-library-read`, `user-library-modify`,
-`playlist-read-private`, `playlist-modify-public`, `playlist-modify-private`)
-— an existing refresh token doesn't gain scopes it wasn't originally granted.
-
-> Spotify replaced several library/playlist endpoints in February 2026 (the
-> old per-type `/me/tracks` and `/playlists/{id}/tracks` now 403 silently);
-> this integration uses the current `/me/library` and `/playlists/{id}/items`
-> endpoints.
-
-#### Spotify Connect device (play audio directly on the Pi)
-
-Separately from the Web API control layer, the Pi can show up as its own
-selectable device — named **"Kiosk"** — in Spotify's Connect picker on any
-phone, desktop app, or other Spotify client. Picking it streams audio
-straight to the Pi over the network; no Bluetooth pairing, no OAuth login for
-this part.
-
-This is powered by [librespot](https://github.com/librespot-org/librespot), an
-open-source Spotify Connect client, run as a background service. The easiest
-way to get the binary is the [raspotify](https://github.com/dtcooper/raspotify)
-package, but its own systemd service runs as root against ALSA directly —
-which fights with PipeWire and doesn't share your audio output. Use it only
-for the binary, then run librespot yourself as a **user** service so it talks
-to the same PipeWire sink as everything else:
-
-```bash
-# Install librespot's binary via the raspotify package...
-sudo apt-get -y install curl
-curl -sL https://dtcooper.github.io/raspotify/install.sh | sudo sh
-
-# ...then disable raspotify's own root-level service — we run librespot
-# ourselves, below.
-sudo systemctl disable --now raspotify
-
-# Install and start the user-level unit instead.
-mkdir -p ~/.config/systemd/user ~/.cache/librespot
-cp ~/immich_kiosk_pi/deploy/librespot.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now librespot.service
-```
-
-"Kiosk" should now appear in Spotify's Connect device list within a few
-seconds. Requires Spotify Premium, same as librespot itself does.
-
-**On transferring playback away from the kiosk:** stock librespot restarts
-the track from the beginning when you move playback from "Kiosk" to a phone
-or desktop, if you're playing from a large context like Liked Songs — an
-[upstream bug](https://github.com/librespot-org/librespot/issues/1459) open
-since January 2025. [`patches/`](patches/) carries a fix for it, along with
-the cause and how to build it.
-
-**On audio quality:** the unit passes `--bitrate 320`, the highest Ogg Vorbis
-quality Spotify Connect carries ("Very High" in Spotify's own app) — the
-default is 160 if that flag is left off. True **lossless** (24-bit/44.1kHz
-FLAC) isn't reachable here or on any other Connect device: Spotify's Lossless
-tier only streams inside its own official apps, over a different pipeline
-than Connect entirely, so this is a Spotify-side limitation rather than
-something librespot or this setup can work around.
-
-### Indoor temperature sensor
-
-The indoor reading comes from a Govee H510x (H5101/H5102/H5104/H5177), which
-broadcasts temperature and humidity in its Bluetooth LE advertisements.
-
-**The kiosk doesn't scan for it.** Home Assistant already watches the same
-sensor full-time via its `govee_ble` integration, so the kiosk reads the value
-from Home Assistant's REST API instead. Two things scanning the same air gained
-nothing, and BLE scanning on the Pi's built-in radio makes Bluetooth audio
-stutter, because that radio shares one antenna with A2DP.
-
-Configure it under **Settings → Home Assistant**: server URL, a long-lived
-access token and the entity IDs. Without a token the indoor reading is simply
-hidden.
-
-Tokens are long and awkward to type on a touchscreen, so there's a helper that
-takes one on the Pi and checks it works before saving:
-
-```bash
-bash ~/immich_kiosk_pi/scripts/set-ha-token.sh
-```
-
-Create the token in Home Assistant under your user name → Security → Long-lived
-access tokens.
-
-The 24-hour chart in the expanded weather panel comes from Home Assistant's
-history API, thinned to roughly one point per ten minutes so the chart doesn't
-try to draw thousands of segments.
-
-**If you want Bluetooth audio and BLE sensing at once, use two radios.** A USB
-BLE dongle costs very little and removes the contention entirely: leave the
-built-in `hci0` for audio and give Home Assistant the dongle. In Home
-Assistant, disable the Bluetooth config entry for the built-in adapter —
-it auto-discovers every adapter it finds, so otherwise it will scan on both.
-BlueZ only powers extra controllers at boot when `AutoEnable=true` is set in
-`/etc/bluetooth/main.conf`.
-
-### Turning the screen off with Alexa
-
-The panel can be switched off by voice, with no cloud account, no Amazon
-developer account and nothing exposed to the internet. Three pieces:
-
-1. **`deploy/screen_control.py`** — a small HTTP service on the host. Home
-   Assistant runs in a container and can't reach the host's Wayland session, so
-   it can't call `wlopm` itself. This runs as the user who owns that session and
-   binds to localhost only:
-
-   ```
-   /screen                 state as JSON
-   /screen/on              /screen/off      /screen/toggle
-   /screen/brightness?value=0-100
-   ```
-
-   Install it alongside the kiosk unit:
-
-   ```bash
-   cp deploy/screen-control.service ~/.config/systemd/user/
-   systemctl --user enable --now screen-control.service
-   ```
-
-2. **A `command_line` switch in Home Assistant** that curls it. Home Assistant
-   uses host networking, so `127.0.0.1:8765` reaches the host service.
-
-3. **`emulated_hue`**, which presents that one switch to Alexa as a Philips Hue
-   V1 bridge. Alexa has native Hue support, so nothing else is needed. Say
-   *"Alexa, discover devices"*, then *"Alexa, turn off the kiosk screen"*.
-
-Both YAML blocks are in `deploy/homeassistant.yaml`, ready to append to Home
-Assistant's `configuration.yaml`.
-
-Name the device in the Alexa app carefully: if the name collides with an Echo,
-a speaker or a group, Alexa matches that instead and the light is never
-reached — the app button keeps working, so it looks like a voice problem when
-it isn't. "Kiosk" alone collided here; "Kiosk screen" was fine.
-
-Two constraints worth knowing, both from Alexa rather than this project:
-
-- **It must listen on port 80.** Amazon stopped talking to other ports in the
-  August 2019 Echo firmware.
-- **The Pi needs a fixed address.** Alexa caches the bridge by IP, so a DHCP
-  lease change silently breaks it. A reservation on the router is the tidiest
-  way; `emulated_hue`'s `host_ip` must match.
-
-### Turning the screen off by itself
-
-**Settings → Screen → "Turn the screen off when idle"** does the same thing
-on a timer: once nothing is playing, no slideshow is running and nobody has
-touched the panel for the chosen interval, the kiosk asks the same
-`screen_control.py` service to dim it. A touch brings it straight back,
-exactly as it does after an Alexa command — the wake is handled entirely by
-that service watching the touchscreen, not by the app.
-
-Optionally it also wakes when music starts. That only ever undoes a
-switch-off this setting made: if you turned the screen off by voice, it
-stays off, rather than the two fighting each other.
-
-**Touch wakes it again — which is why "off" dims rather than powers down.**
-Cutting the DSI output also cuts power to the touch controller, so the panel
-stops reporting touches altogether and nothing in software can wake it. Measured
-on this display: 13 touch events with the output on, none at all with it off.
-
-So `/screen/off` sets the backlight to zero and leaves the output powered, and
-`screen_control.py` watches the touchscreen to turn it back up. `/screen/off?deep=1`
-still powers the output right down, for when the extra saving matters more than
-being able to wake it by hand.
-
-Devices to watch come from `/proc/bus/input/devices` — anything with a `mouse`
-handler, which is the touch panel and any real mouse. Keyboard-style devices are
-deliberately excluded: the paired phone's AVRCP media keys appear as one, and a
-track change shouldn't wake the screen. Reading the touchscreen needs membership
-of the `input` group.
-
-Power changes and wakes are recorded in `~/.cache/immich_kiosk_pi/screen_control.log`,
-which is the quickest way to tell whether a touch was seen at all.
-
-### TV Remote button
-
-If you run a companion remote-control app on the same Pi, a **TV Remote** icon
-appears in the home screen's toolbar and switches to it with one tap. The
-button only appears while that app is actually running, so it stays out of the
-way otherwise.
-
-It shells out to [`wlrctl`](https://git.sr.ht/~brocellous/wlrctl) to spot the
-window and focus it:
-
-```bash
-sudo apt-get install -y wlrctl
-```
-
-The app is matched by Wayland `app_id`, set by `_remoteAppId` in
-`lib/screens/home_screen.dart` (currently `com.vwillcox.vidaa_remote`) — change
-it there to point at your own app. Without `wlrctl`, or without that app
-running, the button simply never appears and nothing else is affected.
-
-### Locked Folder
-
-Immich's Locked Folder is protected by a login **session**, which an API key
-can't unlock. To use it, the app needs your Immich account login. Run on the Pi:
-
-```bash
-bash deploy/set-immich-login.sh
-```
-
-It prompts for your email and password (hidden) and stores them in
-`~/.config/immich_kiosk_pi/config.json`. A padlock icon then appears in the
-home screen's toolbar; tap it and enter your PIN.
-
-> Your password is stored in plain text in that file, readable only by your
-> user. If you'd rather not do that, simply skip this step — everything else
-> works without it.
-
-### Share Inbox
-
-Anyone with the companion Android app (`companion_app/` in this repo) can
-share a photo, GIF, video, web link or note to the kiosk from any other
-app's share sheet — Photos, Chrome, whatever — and it pops up on the kiosk
-to view.
-
-There's no relay: the kiosk runs its own small HTTP listener directly (the
-same technique the Spotify login already uses for its OAuth loopback, just
-long-lived and reachable rather than one-shot on loopback). Getting that
-listener reachable from wherever the companion app is — the same Wi-Fi, or
-the whole internet — is entirely your own networking concern: a port
-forward, a reverse proxy, whatever you already run. The kiosk only needs to
-know which local port to bind, set in Settings.
-
-**Setup**, in Settings → Share Inbox:
-
-1. Set the listen port (defaults to 8081) and point your router/reverse
-   proxy at it.
-2. Add a name for each person you want to be able to share to the kiosk —
-   this generates a token. Hand that token to them (however you'd share a
-   Wi-Fi password) to enter in their copy of the companion app, alongside
-   the kiosk's address.
-3. That's it — shares from anyone with a valid token show up attributed
-   ("From: Mum's phone"), with a chime and a corner notification. Tap it to
-   view: photos and GIFs open in the same pinch-zoom viewer as the photo
-   gallery, videos in the same player, and web links open full-screen in
-   Chromium (there's no Linux build of Flutter's WebView), returning focus
-   to the kiosk on their own after a minute since there's no keyboard here
-   to close a browser window with otherwise.
-
-The chime plays through its own player, so its volume (also in Settings) is
-independent of whatever music or video is currently playing. A **Do Not
-Disturb** switch lives in the home screen's top bar, next to the other
-quick-access icons, for muting it without a trip to Settings.
-
-Whoever's allowed to share is entirely this kiosk's own concern too — the
-list of names and tokens lives in its own `config.json`, exactly like every
-other credential in this app.
-
----
-
-## Gestures
-
-| Where | Gesture | Action |
-|---|---|---|
-| Albums | long-press | start multi-select |
-| Albums | tap (while selecting) | add / remove album |
-| Photo | pinch or double-tap | zoom in and out |
-| Photo | drag (zoomed) | pan |
-| Photo | swipe left / right | previous / next |
-| Photo | swipe down | close |
-| Photo | tap | hide / show controls |
-| Slideshow | swipe left / right | previous / next (pauses) |
-| Slideshow | swipe down | exit |
-| Slideshow | tap | hide / show controls |
-| Video | double-tap left / right | skip back / forward 10s |
-| Video | double-tap centre | play / pause |
-| Video | drag horizontally | scrub |
-| Video | drag vertically | volume |
-| Video | tap the speaker icon | mute / unmute |
-| Video | drag the right-edge slider | volume |
-| Video | swipe down | close |
-| Weather panel | tap | expand / collapse the forecast |
-| Now playing panel | tap | expand / collapse the player |
-
-On-screen +/− zoom buttons are also provided as a fallback.
-
----
-
-## Settings
-
-Tap the gear icon on the home screen:
-
-- **Connection** — Immich server URL and API key
-- **Locked Folder** — whether the account login is configured
-- **Weather** — on/off, location, screen corner, °C/°F
-- **Now playing** — show what the paired phone is playing, and which corner
-  (the expanded player also carries volume and mute)
-- **Slideshow** — seconds per photo, transition style, shuffle
-- **Storage** — how much the photo cache is using, with a Clear button
-- **Device** — Restart and Power off
-- **About** — version, the open-source libraries used with their licences and
-  links, and credits for code adapted from elsewhere
-
----
-
-## Development
-
-The project is built on the Pi (it's an arm64 Linux target), but you can keep
-the source on another machine and sync it over:
-
-```bash
-scripts/sync.sh        # copy source to the Pi
-scripts/run.sh         # sync, build release, restart the kiosk
-scripts/run.sh debug   # sync, then flutter run with hot reload
-scripts/shot.sh        # screenshot the Pi's display to a PNG
-```
-
-Everything is configured through `scripts/local.env` (see step 2), or you can
-override `PI_HOST` / `PI_DIR` as environment variables.
-
-Handy service commands on the Pi:
-
-```bash
-systemctl --user restart immich_kiosk_pi
-```
-
-**Getting logs.** A Pi OS install typically keeps no journal for *user* units —
-`journalctl --user` reports "No journal files were found" — so everything the
-app prints goes nowhere. Redirect it to a file instead:
-
-```bash
-mkdir -p ~/.config/systemd/user/immich_kiosk_pi.service.d
-printf '[Service]\nStandardOutput=append:/tmp/kiosk.log\nStandardError=append:/tmp/kiosk.log\n' \
-  > ~/.config/systemd/user/immich_kiosk_pi.service.d/log.conf
-systemctl --user daemon-reload && systemctl --user restart immich_kiosk_pi
-tail -f /tmp/kiosk.log
-```
-
-That catches `debugPrint`, unhandled async errors, and libmpv's own log — the
-last of which is the only way to see why a camera stream opens without
-complaint and then shows nothing.
-
-The window is fullscreen and borderless by default. Set `IMMICH_KIOSK_WINDOWED=1`
-to run it in a normal window while debugging.
-
-#### Debug launch hooks
-
-Environment variables that boot straight into one screen — handy for capturing
-screenshots or testing a screen in isolation. They're inert unless set.
-
-| Variable | Opens |
-|---|---|
-| `IMMICH_KIOSK_TEST_ALBUMGRID=<albumId>` | an album's asset grid (`IMMICH_KIOSK_TEST_ALBUMNAME` sets its title) |
-| `IMMICH_KIOSK_TEST_GALLERY=<albumId>` | the photo viewer (`IMMICH_KIOSK_TEST_GALLERY_INDEX` picks the photo) |
-| `IMMICH_KIOSK_TEST_SLIDESHOW=<albumId>` | the slideshow |
-| `IMMICH_KIOSK_TEST_VIDEO=<assetId>` | the video player |
-| `IMMICH_KIOSK_TEST_LOCKED=<pin>` | the Locked Folder, unlocked |
-| `IMMICH_KIOSK_TEST_LOCKED_VIDEO=<pin>` | the first locked video |
-| `IMMICH_KIOSK_TEST_ABOUT=1` | the About screen |
-| `IMMICH_KIOSK_TEST_NOWPLAYING=1` | the now-playing panel on a blank background |
-
-### Screen burn-in
-
-The weather and now-playing panels are the only things that stay put on an
-always-on display, so they drift continuously within a 24px radius, tracing a
-slow Lissajous path (17- and 23-minute periods on the two axes, recomputed
-every 20 seconds — about two pixels a step, below the threshold of notice).
-
-The panels' margin is deliberately larger than the drift amplitude: if a panel
-clamped against a screen edge it would sit still there, which is the problem
-this is meant to solve. See `lib/widgets/burn_in_drift.dart`.
-
-### Project layout
-
-```
-lib/
-  main.dart                    # app entry, providers, root routing
-  theme.dart                   # dark, touch-first theme
-  config/app_config.dart       # settings model
-  models/immich_models.dart    # Album, Asset
-  services/
-    config_service.dart        # reads/writes config.json
-    immich_service.dart        # Immich REST client + response caching
-    locked_folder_service.dart # session login, PIN unlock, re-lock
-    media_source.dart          # API-key vs session-token media access
-    media_cache.dart           # on-disk image cache + memory tuning
-    api_cache.dart             # cached API responses
-    weather_service.dart       # Open-Meteo forecast and geocoding
-    now_playing_service.dart   # BlueZ AVRCP over D-Bus + artwork lookup
-  config/credits.dart          # attribution data shown on the About screen
-  screens/                     # home, album, gallery, video, slideshow,
-                               # locked folder, settings, setup, PIN pad,
-                               # about
-  widgets/                     # cached image, back button, weather overlay
-```
-
-### How it talks to Immich
-
-Immich v3 REST API, authenticated with the `x-api-key` header:
-
-| Purpose | Endpoint |
-|---|---|
-| Album list | `GET /api/albums` |
-| Album contents | `POST /api/search/metadata` with `albumIds` |
-| Thumbnail / preview | `GET /api/assets/{id}/thumbnail?size=thumbnail\|preview` |
-| Full image | `GET /api/assets/{id}/original` |
-| Video stream | `GET /api/assets/{id}/video/playback` |
-
-The Locked Folder additionally uses `POST /api/auth/login`,
-`POST /api/auth/session/unlock`, then `POST /api/search/metadata` with
-`visibility: locked`, and `POST /api/auth/session/lock` on exit — these need a
-session token rather than an API key.
-
-### Caching
-
-Images and API responses are cached under `~/.cache/immich_kiosk_pi` — deliberately
-**not** in `/tmp`, which on Raspberry Pi OS is a RAM-backed tmpfs. The cache
-holds up to 20,000 files for a year, so restarts are near-instant. Clear it any
-time from **Settings → Storage**.
-
----
-
-## Troubleshooting
-
-**Nothing appears on screen**
-Check the service is running: `systemctl --user status immich_kiosk_pi`. It needs the
-labwc Wayland session to already be up — that's why it's started from
-`~/.config/labwc/autostart`.
-
-**Some thumbnails don't load**
-The app retries with backoff and falls back to the full-size image. If it
-persists, the asset may not have a thumbnail generated in Immich yet.
-
-**Videos play as a blank blue frame**
-Hardware video decoding can produce an unsampleable surface on this GL path, so
-the player forces software decoding. If you've changed that, change it back in
-`lib/screens/video_player_screen.dart`.
-
-**Text fields are hard to fill in**
-There's no on-screen keyboard, so the server URL, API key and login are easiest
-to set by editing `~/.config/immich_kiosk_pi/config.json` over SSH. The numeric PIN pad
-is custom-built and works fine by touch.
-
-**Harmless log noise**
-`Failed to create AudioController: Unable to find mixer control: Master` is an
-ALSA probe from media_kit; audio still works.
+> Start units from labwc's `autostart`, not from `graphical-session.target` —
+> labwc never activates it, so anything bound to it silently never runs. This
+> caused three separate "worked until I rebooted" faults.
+
+**Everything else** — Bluetooth, Spotify, the camera, the dashboard, the share
+inbox, voice control, the Locked Folder — is in
+**[moreinfo.md](moreinfo.md)**.
 
 ---
 
 ## Privacy
 
-ImmichKioskPi talks only to your own Immich server and to Open-Meteo for the weather.
-There's no analytics and no third-party service. Your credentials live in
-`~/.config/immich_kiosk_pi/config.json` on the device and are never committed — that
-file is git-ignored.
-
----
-
-## Third-party libraries
-
-The same list is available on the device under **Settings → About**, so
-attribution travels with the app rather than living only here.
-
-Built with [Flutter](https://flutter.dev) (BSD-3-Clause,
-[source](https://github.com/flutter/flutter)).
-
-### Dart packages
-
-| Package | Used for | Licence |
-|---|---|---|
-| [provider](https://pub.dev/packages/provider) · [src](https://github.com/rrousselGit/provider) | State management / dependency injection | MIT |
-| [dio](https://pub.dev/packages/dio) · [src](https://github.com/cfug/dio) | HTTP client for the Immich and weather APIs | MIT |
-| [cached_network_image](https://pub.dev/packages/cached_network_image) · [src](https://github.com/Baseflow/flutter_cached_network_image) | Images with auth headers and caching | MIT |
-| [flutter_cache_manager](https://pub.dev/packages/flutter_cache_manager) · [src](https://github.com/Baseflow/flutter_cache_manager) | On-disk cache, relocated to the NVMe | MIT |
-| [file](https://pub.dev/packages/file) · [src](https://github.com/google/file.dart) | Filesystem abstraction for the custom cache | MIT |
-| [media_kit](https://pub.dev/packages/media_kit) · [src](https://github.com/media-kit/media-kit) | Video playback and speed control | MIT |
-| [media_kit_video](https://pub.dev/packages/media_kit_video) | Video render surface | MIT |
-| [media_kit_libs_video](https://pub.dev/packages/media_kit_libs_video) | Native video dependencies | MIT |
-| [dbus](https://pub.dev/packages/dbus) · [src](https://github.com/canonical/dbus.dart) | Talks to BlueZ for phone media metadata | MPL-2.0 |
-| [crypto](https://pub.dev/packages/crypto) · [src](https://github.com/dart-lang/tools) | SHA-256 for the Spotify OAuth PKCE code challenge | BSD-3-Clause |
-| [path](https://pub.dev/packages/path) · [src](https://github.com/dart-lang/path) | Path joining for cache locations | BSD-3-Clause |
-| [flutter_lints](https://pub.dev/packages/flutter_lints) (dev) | Lint rules | BSD-3-Clause |
-
-### System libraries
-
-| Library | Used for | Licence |
-|---|---|---|
-| [mpv / libmpv](https://mpv.io) · [source](https://github.com/mpv-player/mpv) | Video decoding behind media_kit | LGPL-2.1+ ([details](https://github.com/mpv-player/mpv/blob/master/Copyright)) |
-| [BlueZ](http://www.bluez.org) · [source](https://github.com/bluez/bluez) | Bluetooth stack — AVRCP metadata and control | GPL-2.0+ / LGPL-2.1+ |
-| [librespot](https://github.com/librespot-org/librespot) | Spotify Connect device ("Kiosk") — plays audio directly, run as its own systemd service | MIT |
-| [GTK 3](https://www.gtk.org) | Flutter's Linux embedder window | LGPL-2.1+ |
-
-### Services
-
-| Service | Used for | Terms |
-|---|---|---|
-| [Immich](https://immich.app) · [src](https://github.com/immich-app/immich) | Your own photo server (the whole point) | AGPL-3.0 |
-| [Open-Meteo](https://open-meteo.com) | Weather forecast — no API key required | Free for non-commercial use, [CC BY 4.0](https://open-meteo.com/en/license) |
-| [iTunes Search API](https://performance-partners.apple.com/search-api) | Album artwork lookup | Free, no key · Apple terms |
-| [Spotify Web API](https://developer.spotify.com/documentation/web-api) | Playback control, liked songs and playlists when Spotify is connected | Requires your own free Spotify Developer app + Premium account |
-| [postcodes.io](https://postcodes.io) · [src](https://github.com/ideal-postcodes/postcodes.io) | UK postcode → coordinates | MIT, data under [OGL](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) |
-
----
-
-## Credits and sources
-
-Almost all of the code here was written for this project, but these parts come
-from, or are adapted from, elsewhere:
-
-- **Flutter project scaffolding** — `linux/runner/*`, `.metadata`,
-  `analysis_options.yaml` and the initial `main.dart` were generated by
-  `flutter create` and then modified (notably `my_application.cc`, changed to
-  start fullscreen and borderless). Flutter SDK, BSD-3-Clause.
-- **`_NvmeFileSystem`** in `lib/services/media_cache.dart` is modelled on
-  [`IOFileSystem`](https://github.com/Baseflow/flutter_cache_manager/blob/develop/lib/src/storage/file_system/file_system_io.dart)
-  from flutter_cache_manager (MIT), changed to store files under a fixed
-  directory instead of the system temp directory.
-- **Weather code descriptions and icon mapping** in
-  `lib/services/weather_service.dart` and `lib/widgets/weather_overlay.dart`
-  follow the WMO weather-code table as published in the
-  [Open-Meteo API docs](https://open-meteo.com/en/docs).
-- **Immich API usage** was derived from the
-  [Immich API documentation](https://immich.app/docs/api) together with probing
-  a live v3 server — in particular that album contents come from
-  `POST /api/search/metadata`, and that the Locked Folder needs a session token
-  rather than an API key.
-- **Bluetooth now-playing** uses BlueZ's AVRCP support over D-Bus
-  ([`org.bluez.MediaPlayer1`](https://github.com/bluez/bluez/blob/master/doc/org.bluez.MediaPlayer.rst))
-  for metadata and transport control. Album art is not part of AVRCP, so it is
-  resolved separately from the iTunes Search API by artist + track title.
-- **Material Design icons** ship with Flutter (Apache-2.0).
-
-No code was copied from Stack Overflow, blog posts or other projects.
+ImmichKioskPi talks only to your own Immich server and to Open-Meteo for the
+weather. There's no analytics and no third-party service. Your credentials live
+in `~/.config/immich_kiosk_pi/config.json` on the device and are never committed
+— that file is git-ignored. Shares from the companion app are end-to-end
+encrypted, so even a reverse proxy in the path cannot read them.
 
 ---
 
 ## Licence
 
 [MIT](LICENSE) — do what you like with it, no warranty.
+
+Third-party libraries, their licences and credits for adapted code are listed in
+[moreinfo.md](moreinfo.md#third-party-libraries) and on the device under
+**Settings → About**, so attribution travels with the app.
