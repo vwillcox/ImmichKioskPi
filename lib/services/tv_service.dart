@@ -58,11 +58,32 @@ class TvService extends ChangeNotifier {
 
   Future<File> get _tokenFile async => _tokenFileSync;
 
+  /// Loads the client certificate and key the television's MQTT interface
+  /// requires.
+  ///
+  /// The key is deliberately not in the repository — it is a private key, and
+  /// one was published here once already. Supply your own (see the TV Remote
+  /// section of moreinfo.md); without it this throws [TvCredentialsMissing],
+  /// which the caller turns into a clear message rather than the mbedTLS
+  /// handshake error an empty key produces four steps later.
   Future<void> _loadAssets() async {
-    _certBytes ??=
-        (await rootBundle.load('assets/certs/vidaa_client.pem')).buffer.asUint8List();
-    _keyBytes ??=
-        (await rootBundle.load('assets/certs/vidaa_client.key')).buffer.asUint8List();
+    _certBytes ??= await _loadCert('assets/certs/vidaa_client.pem');
+    _keyBytes ??= await _loadCert('assets/certs/vidaa_client.key');
+  }
+
+  static Future<List<int>> _loadCert(String asset) async {
+    List<int> bytes;
+    try {
+      bytes = (await rootBundle.load(asset)).buffer.asUint8List();
+    } catch (e) {
+      throw TvCredentialsMissing('$asset is not bundled with this build');
+    }
+    // A blank or placeholder file is the more likely failure than a missing
+    // one, since removing a leaked key tends to leave the path behind.
+    if (bytes.length < 64) {
+      throw TvCredentialsMissing('$asset is empty or a placeholder');
+    }
+    return bytes;
   }
 
   int _accessExpiry = 0; // unix seconds
@@ -146,7 +167,16 @@ class TvService extends ChangeNotifier {
   /// Connect with a saved/refreshed token if possible, else fall to pairing.
   Future<void> connect() async {
     _setConn(ConnState.connecting);
-    await _loadAssets();
+    try {
+      await _loadAssets();
+    } on TvCredentialsMissing catch (e) {
+      // Stops here rather than connecting without them: the handshake would
+      // fail anyway, several layers down, with an error naming TLS instead of
+      // the thing actually missing.
+      _setConn(ConnState.error,
+          err: 'TV client certificate not set up — ${e.message}');
+      return;
+    }
     await _loadToken();
 
     // A) Access token still valid -> use it directly.
@@ -228,4 +258,15 @@ class TvService extends ChangeNotifier {
     _client?.disconnect();
     super.dispose();
   }
+}
+
+/// The TV client certificate or key is absent, empty, or a placeholder.
+///
+/// Its own type so the UI can say "the TV credentials are not set up" rather
+/// than surfacing a TLS handshake failure from several layers down.
+class TvCredentialsMissing implements Exception {
+  TvCredentialsMissing(this.message);
+  final String message;
+  @override
+  String toString() => 'TV credentials missing: $message';
 }

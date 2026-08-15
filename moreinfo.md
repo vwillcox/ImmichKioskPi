@@ -471,6 +471,16 @@ Two separate things share this name.
 local MQTT interface — power, volume, arrows, OK, back, home, and the current
 source. Add it from the dashboard editor and give it the TV's address.
 
+It needs a client certificate and private key at
+`assets/certs/vidaa_client.pem` and `assets/certs/vidaa_client.key`. **The key
+is not in this repository** — `assets/certs/*.key` is git-ignored, because a
+private key belongs on your device and not in a public repo. Supply your own
+before building; without it the widget reports "TV client certificate not set
+up" rather than failing later with a TLS error that names the wrong thing.
+
+> An earlier commit on this branch did publish that key. If you cloned this
+> repo before the history was rewritten, treat that key as compromised.
+
 **The toolbar button** switches to a companion remote-control app running on the
 same Pi, if you have one. It shells out to
 [`wlrctl`](https://git.sr.ht/~brocellous/wlrctl):
