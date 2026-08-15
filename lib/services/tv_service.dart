@@ -61,11 +61,14 @@ class TvService extends ChangeNotifier {
   /// Loads the client certificate and key the television's MQTT interface
   /// requires.
   ///
-  /// The key is deliberately not in the repository — it is a private key, and
-  /// one was published here once already. Supply your own (see the TV Remote
-  /// section of moreinfo.md); without it this throws [TvCredentialsMissing],
-  /// which the caller turns into a clear message rather than the mbedTLS
-  /// handshake error an empty key produces four steps later.
+  /// These are the manufacturer's own credentials — the set accepts no other —
+  /// so they cannot be generated or rotated. They are still kept out of the
+  /// repository (`assets/certs/*.key` is git-ignored); supply a copy at that
+  /// path, as the TV Remote section of moreinfo.md describes.
+  ///
+  /// Without it this throws [TvCredentialsMissing], which the caller turns
+  /// into a clear message rather than the mbedTLS handshake error an empty key
+  /// produces four steps later.
   Future<void> _loadAssets() async {
     _certBytes ??= await _loadCert('assets/certs/vidaa_client.pem');
     _keyBytes ??= await _loadCert('assets/certs/vidaa_client.key');

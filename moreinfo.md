@@ -471,15 +471,23 @@ Two separate things share this name.
 local MQTT interface — power, volume, arrows, OK, back, home, and the current
 source. Add it from the dashboard editor and give it the TV's address.
 
-It needs a client certificate and private key at
-`assets/certs/vidaa_client.pem` and `assets/certs/vidaa_client.key`. **The key
-is not in this repository** — `assets/certs/*.key` is git-ignored, because a
-private key belongs on your device and not in a public repo. Supply your own
-before building; without it the widget reports "TV client certificate not set
-up" rather than failing later with a TLS error that names the wrong thing.
+It needs a client certificate and matching private key at
+`assets/certs/vidaa_client.pem` and `assets/certs/vidaa_client.key`. The
+television will only accept **the manufacturer's own** client certificate, so
+this is not a credential you can generate or rotate — it is the same key on
+every VIDAA set, extracted from Hisense's own app.
 
-> An earlier commit on this branch did publish that key. If you cloned this
-> repo before the history was rewritten, treat that key as compromised.
+**The key is not in this repository.** `assets/certs/*.key` is git-ignored:
+even a key that isn't secret in any real sense shouldn't be published from
+here, and keeping it out means the repo doesn't have to be rewritten again if
+that judgement changes. Put your own copy at that path before building.
+Without it the widget reports "TV client certificate not set up" rather than
+failing later with a TLS handshake error that names the wrong thing.
+
+> Because it can't be rotated, treat it as what it is: a shared manufacturer
+> key that grants control of a television on your own network, and nothing
+> more. It is not a secret of yours, and losing it costs you nothing that
+> keeping it would have protected.
 
 **The toolbar button** switches to a companion remote-control app running on the
 same Pi, if you have one. It shells out to
