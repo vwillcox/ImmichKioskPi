@@ -3,16 +3,19 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../services/kiosk_browser.dart';
+import '../widgets/incoming_share_overlay.dart' show kBrowserCloseGutter;
+
 /// Opens a web page in a browser window on top of the kiosk, with a close
 /// button the kiosk itself owns.
 ///
-/// Flutter has no Linux WebView, so the page is a real Chromium window rather
-/// than something embedded. Chromium's own window controls on this compositor
-/// are a few pixels tall and cannot be scaled — neither
-/// `--force-device-scale-factor`, which only affects page rendering, nor
-/// `GDK_SCALE`, which Ozone bypasses. So the window is deliberately sized
-/// smaller than the screen; labwc centres it, and this route fills the margin
-/// around it with a close button big enough to hit with a thumb.
+/// Flutter has no Linux WebView, so the page is a real browser window rather
+/// than something embedded, and neither browser gives a close control worth
+/// using here: Chromium's app-mode one is a few pixels tall and cannot be
+/// scaled (`--force-device-scale-factor` only affects page rendering, and
+/// Ozone bypasses `GDK_SCALE`), while Firefox's `--kiosk` takes the whole
+/// screen. So the window stops short of the bottom of the screen and this
+/// route fills the strip beneath it with a button big enough for a thumb.
 ///
 /// The same technique the shared-link popup uses, factored out so the news
 /// widget opens articles the same way.
@@ -58,36 +61,31 @@ class _LinkViewerScreenState extends State<LinkViewerScreen> {
 
   Future<void> _open() async {
     final screen = MediaQuery.sizeOf(context);
-    final width = (screen.width * 0.82).round();
-    final height = (screen.height * 0.74).round();
 
-    final chromium = await Process.run('which', ['chromium']);
-    if (chromium.exitCode != 0) {
-      if (mounted) setState(() => _error = 'Chromium isn’t installed.');
+    if (await KioskBrowser.resolve() == null) {
+      if (mounted) {
+        setState(() => _error = 'No browser is installed on this device.');
+      }
       return;
     }
-    try {
-      final home = Platform.environment['HOME'];
-      final proc = await Process.start('chromium', [
-        '--app=${widget.url}',
-        '--ozone-platform=wayland',
-        '--password-store=basic',
-        '--window-size=$width,$height',
-        // Chromium is single-instance per profile: without one of its own it
-        // would hand the URL to whatever window is already open and silently
-        // ignore every flag here, leaving nothing to kill on the way out.
-        if (home != null)
-          '--user-data-dir=$home/.cache/immich_kiosk_pi/chromium-article-viewer',
-      ]);
-      if (!mounted) {
-        proc.kill();
-        return;
-      }
-      setState(() => _browser = proc);
-      _timer = Timer(widget.timeout, _close);
-    } catch (e) {
-      if (mounted) setState(() => _error = 'Could not open the page: $e');
+
+    final proc = await KioskBrowser.open(
+      widget.url,
+      profile: 'article-viewer',
+      screen: screen,
+      bottomGutter: kBrowserCloseGutter,
+      chromeless: true,
+    );
+    if (proc == null) {
+      if (mounted) setState(() => _error = 'Could not open the page.');
+      return;
     }
+    if (!mounted) {
+      proc.kill();
+      return;
+    }
+    setState(() => _browser = proc);
+    _timer = Timer(widget.timeout, _close);
   }
 
   Future<void> _close() async {

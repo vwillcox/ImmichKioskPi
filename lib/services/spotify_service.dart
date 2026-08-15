@@ -10,6 +10,7 @@ import 'package:flutter/material.dart' show Icons, IconData;
 
 import '../config/app_config.dart' show SpotifySettings;
 import 'config_service.dart';
+import 'kiosk_browser.dart';
 import 'now_playing_service.dart' show NowPlaying;
 import 'playback_source.dart';
 
@@ -252,30 +253,18 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   /// Opens a browser for the one-time Spotify login, catches the redirect on
   /// a loopback server, and exchanges the code for tokens. Returns null on
   /// success, or a message to show the user on failure.
-  /// The command to open a URL in a real, visible browser window on this
+  /// Opens the Spotify login page in a real, visible browser window on this
   /// screen — not xdg-open, which on this Pi's bare labwc session (no full
-  /// desktop environment) resolves to Chromium, but with defaults that
-  /// crash it outright: it picks the X11 ozone platform and dies with
-  /// "Missing X server or $DISPLAY", and even forced onto Wayland it blocks
-  /// on a GNOME-Keyring "choose a password" prompt with nothing to do with
-  /// Spotify. Both are suppressed by the flags below. Falls back to
-  /// xdg-open on a machine where Chromium isn't the browser.
-  Future<({String executable, List<String> args})> _browserCommand(
-      String url) async {
-    final chromium = await Process.run('which', ['chromium']);
-    if (chromium.exitCode == 0) {
-      return (
-        executable: 'chromium',
-        args: [
-          '--ozone-platform=wayland',
-          '--password-store=basic',
-          '--new-window',
-          url,
-        ],
-      );
-    }
-    return (executable: 'xdg-open', args: [url]);
-  }
+  /// desktop environment) resolves to a browser with defaults that break it:
+  /// Chromium picks the X11 ozone platform and dies with "Missing X server or
+  /// $DISPLAY", and even forced onto Wayland blocks on a GNOME-Keyring
+  /// "choose a password" prompt with nothing to do with Spotify.
+  ///
+  /// Unlike the page viewers this keeps the browser's own chrome. Logging in
+  /// means typing an address, seeing which site is asking, and sometimes
+  /// going back — none of which work without a toolbar.
+  Future<Process?> _openLoginPage(String url) =>
+      KioskBrowser.open(url, profile: 'spotify-login');
 
   Future<String?> connect(String clientId) async {
     final verifier = _randomUrlSafe(64);
@@ -299,12 +288,9 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
       'state': state,
     });
 
-    try {
-      final browser = await _browserCommand(authUrl.toString());
-      await Process.start(browser.executable, browser.args);
-    } catch (e) {
+    if (await _openLoginPage(authUrl.toString()) == null) {
       await server.close(force: true);
-      return 'Could not open a browser: $e';
+      return 'Could not open a browser to log in with.';
     }
 
     String? code;

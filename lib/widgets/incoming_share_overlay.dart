@@ -9,6 +9,7 @@ import '../models/immich_models.dart';
 import '../screens/shared_image_screen.dart';
 import '../screens/shared_text_screen.dart';
 import '../screens/video_player_screen.dart';
+import '../services/kiosk_browser.dart';
 import '../services/local_file_media_source.dart';
 import '../services/share_inbox_service.dart';
 
@@ -19,8 +20,8 @@ import '../services/share_inbox_service.dart';
 ///
 /// Unlike the now-playing overlay, there's no in-place expanded state:
 /// tapping the card navigates straight to whatever viewer suits the content
-/// (or, for a web link, out to Chromium), since that's a different screen
-/// entirely rather than a bigger version of this one.
+/// (or, for a web link, out to a browser window), since that's a different
+/// screen entirely rather than a bigger version of this one.
 class IncomingShareOverlay extends StatefulWidget {
   /// This overlay sits as a *sibling* of the app's own Navigator — both are
   /// children of the Stack in main.dart's `MaterialApp.builder`, precisely
@@ -40,7 +41,7 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
   static const Size _size = Size(400, 120);
   static const EdgeInsets _margin = EdgeInsets.all(28);
 
-  /// How long a shared web page stays open in Chromium before the kiosk
+  /// How long a shared web page stays open in the browser before the kiosk
   /// takes its own focus back and closes it — a safety net for whenever the
   /// close button below isn't used.
   static const Duration _webViewTimeout = Duration(minutes: 2);
@@ -95,45 +96,31 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
     }
   }
 
-  /// Chromium's own app-mode title bar draws its own close button rather
-  /// than getting one from a window manager — and on this bare Wayland/Ozone
-  /// setup that button turns out not to be resizable at all (neither
-  /// `--force-device-scale-factor`, which only touches Chromium's own page
-  /// rendering, nor `GDK_SCALE`, which Ozone bypasses entirely since it
-  /// isn't going through GTK, has any effect on it). Rather than fight
-  /// that, the window is sized smaller than the screen — labwc centers it,
-  /// leaving the kiosk visible (and tappable) in the margin — and a real,
-  /// large close button lives there instead, part of the kiosk's own UI.
+  /// The browser window is deliberately shorter than the screen, leaving a
+  /// strip along the bottom that belongs to the kiosk — and that is where the
+  /// close button goes.
+  ///
+  /// The browser's own close button is not good enough here. Chromium's
+  /// app-mode one cannot be resized on this Wayland/Ozone setup at all
+  /// (`--force-device-scale-factor` only touches page rendering, and Ozone
+  /// bypasses `GDK_SCALE` entirely), and Firefox's real `--kiosk` mode takes
+  /// the whole screen and would bury this one. So the kiosk draws its own,
+  /// sized for a finger.
   Future<void> _openLink(String url) async {
     // Read before any `await` — using BuildContext after one risks the
     // widget having been unmounted in the meantime.
     final screen = MediaQuery.sizeOf(context);
-    final windowWidth = (screen.width * 0.82).round();
-    final windowHeight = (screen.height * 0.78).round();
 
-    final chromium = await Process.run('which', ['chromium']);
-    if (chromium.exitCode != 0) {
-      debugPrint('IncomingShareOverlay: chromium not found, cannot open $url');
-      return;
-    }
-    Process? proc;
-    try {
-      final home = Platform.environment['HOME'];
-      proc = await Process.start('chromium', [
-        '--app=$url',
-        '--ozone-platform=wayland',
-        '--password-store=basic',
-        '--window-size=$windowWidth,$windowHeight',
-        // Chromium is single-instance per profile: without its own
-        // profile, this would just hand the URL to whatever chromium
-        // window already happens to be open (e.g. the one Spotify login
-        // uses) instead of starting fresh — silently ignoring every flag
-        // here, and leaving nothing to actually kill on close/timeout.
-        if (home != null)
-          '--user-data-dir=$home/.cache/immich_kiosk_pi/chromium-share-viewer',
-      ]);
-    } catch (e) {
-      debugPrint('IncomingShareOverlay: could not open browser: $e');
+    final proc = await KioskBrowser.open(
+      url,
+      profile: 'share-viewer',
+      screen: screen,
+      bottomGutter: kBrowserCloseGutter,
+      chromeless: true,
+    );
+    if (proc == null) return;
+    if (!mounted) {
+      proc.kill();
       return;
     }
     setState(() => _browserProc = proc);
@@ -200,14 +187,14 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
                       ),
                     ),
                   ),
-                // The shared page's own window is sized smaller than the
-                // screen precisely so this stays visible (and tappable)
-                // in the margin around it — see _openLink.
+                // The browser window stops short of the bottom of the screen
+                // precisely so this strip is free — see _openLink.
                 if (linkOpen)
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: 28,
+                    bottom: 0,
+                    height: kBrowserCloseGutter,
                     child: Center(
                       child: _CloseLinkButton(onTap: _closeLinkViewer),
                     ),
@@ -221,10 +208,15 @@ class _IncomingShareOverlayState extends State<IncomingShareOverlay>
   }
 }
 
-/// A large, unmissable "close the shared page" button, shown in the margin
-/// left visible around the intentionally-undersized Chromium window (see
+/// Height of the strip kept clear beneath a browser window for its close
+/// button. Shared with [KioskBrowser.open] so the window and the button
+/// cannot disagree about how much room there is.
+const double kBrowserCloseGutter = 170;
+
+/// A large, unmissable "close the shared page" button, shown in the strip
+/// left free beneath the browser window (see
 /// [_IncomingShareOverlayState._openLink]) — real and reliably tappable,
-/// unlike Chromium's own tiny app-mode close button on this setup.
+/// unlike either browser's own close button on this setup.
 class _CloseLinkButton extends StatelessWidget {
   final VoidCallback onTap;
   const _CloseLinkButton({required this.onTap});
@@ -233,24 +225,27 @@ class _CloseLinkButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: const Color(0xFFB3261E),
-      borderRadius: BorderRadius.circular(32),
-      elevation: 6,
+      borderRadius: BorderRadius.circular(44),
+      elevation: 8,
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(32),
         onTap: onTap,
         child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 32, vertical: 18),
+          // Sized for a finger at arm's length rather than a cursor: this is
+          // the only way back to the kiosk once a page is open, so it is
+          // worth more room than a button normally gets.
+          padding: EdgeInsets.symmetric(horizontal: 48, vertical: 26),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.close, color: Colors.white, size: 28),
-              SizedBox(width: 10),
+              Icon(Icons.close, color: Colors.white, size: 38),
+              SizedBox(width: 16),
               Text(
-                'Close shared page',
+                'Close page',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
