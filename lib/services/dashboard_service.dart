@@ -102,11 +102,14 @@ class DashboardService extends ChangeNotifier {
           .toList();
       // A home network address before anything else — a container or VPN
       // subnet may be perfectly real and still unreachable from the sofa.
-      final home = real.firstWhere(
-        (a) => a.address.startsWith('192.168.') || a.address.startsWith('10.'),
-        orElse: () => real.isEmpty ? InternetAddress.anyIPv4 : real.first,
-      );
-      if (home != InternetAddress.anyIPv4) return home.address;
+      //
+      // Written as two checks rather than firstWhere with a fallback because
+      // newer SDKs narrow this list to InterfaceAddress, and an orElse
+      // returning a plain InternetAddress no longer type-checks there.
+      final home = real.where(
+          (a) => a.address.startsWith('192.168.') || a.address.startsWith('10.'));
+      if (home.isNotEmpty) return home.first.address;
+      if (real.isNotEmpty) return real.first.address;
     } catch (e) {
       debugPrint('Dashboard: could not resolve local address: $e');
     }

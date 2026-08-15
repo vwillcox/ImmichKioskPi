@@ -34,6 +34,19 @@ class SealedSender {
 
   _Recipient? _cached;
 
+  /// The key id of the last message actually sealed, for the app to show.
+  ///
+  /// Read after a send rather than promised before one: it is evidence that
+  /// sealing happened, not a claim that it will.
+  String? lastSealedTo;
+
+  /// Fetches the kiosk's current key id without sending anything.
+  ///
+  /// The app calls this to tell the user encryption is working. It proves
+  /// more than a label would: the id can only be had by reaching the kiosk
+  /// and getting a key of a version this app can seal to.
+  Future<String> keyFingerprint() async => (await _recipient(force: true)).kid;
+
   /// The kiosk's current public key.
   ///
   /// Re-fetched whenever it might have rotated, which is what makes rotation
@@ -88,6 +101,7 @@ class SealedSender {
   Future<http.Response> _post(
       _Recipient recipient, List<int> body, String mime) async {
     final wire = await _seal(recipient, body, mime);
+    lastSealedTo = recipient.kid;
     return http.post(
       Uri.parse('$address/share'),
       headers: {

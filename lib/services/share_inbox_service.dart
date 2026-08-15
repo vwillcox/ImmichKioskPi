@@ -160,6 +160,13 @@ class ShareInboxService extends ChangeNotifier {
         return;
       }
 
+      if (!sealed) {
+        // Said plainly, and only reachable when enforcement is off. Without
+        // it a plaintext share and an encrypted one both look like silence in
+        // the log, so there is no way to tell by reading it which you got.
+        debugPrint('ShareInbox: accepted a PLAINTEXT share from $sender');
+      }
+
       if (sealed) {
         await _handleSealed(request, sender);
       } else if (contentType?.mimeType == 'application/json') {
@@ -238,6 +245,11 @@ class ShareInboxService extends ChangeNotifier {
     );
 
     final open = await header.future;
+    // Naming the key it was sealed to, so rotation can be watched working:
+    // the id here changes when the panel rotates, and a share sealed to the
+    // previous key still opens for one further period.
+    debugPrint('ShareInbox: opened a SEALED share from $sender '
+        '(key ${open.kid}, ${open.mime})');
 
     if (open.mime == 'application/json') {
       final bytes = <int>[];

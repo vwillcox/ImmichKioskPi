@@ -68,8 +68,18 @@ class ShareLogEntry {
   /// Null for the one "share received before setup" placeholder entry —
   /// nothing to resend there.
   final SharedMediaFile? file;
+
+  /// The kiosk key this was actually sealed to, or null if it never got far
+  /// enough to seal. Recorded per entry rather than shown as a global banner
+  /// so the claim is about *this* message and not about the app in general.
+  final String? sealedTo;
+
   ShareLogEntry(
-      {required this.label, required this.ok, this.error, this.file});
+      {required this.label,
+      required this.ok,
+      this.error,
+      this.file,
+      this.sealedTo});
 }
 
 class HomeScreen extends StatefulWidget {
@@ -85,6 +95,10 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<List<SharedMediaFile>>? _sub;
   final List<ShareLogEntry> _log = [];
 
+  /// The kiosk key's fingerprint once confirmed, and why not if it failed.
+  String? _kioskKey;
+  String? _keyError;
+
   @override
   void initState() {
     super.initState();
@@ -98,6 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _settings = settings;
         _loaded = true;
       });
+      unawaited(_checkEncryption());
     }
 
     // Shares that arrive while the app is already running.
@@ -171,6 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ok: ok,
             error: ok ? null : 'HTTP ${resp.statusCode}: ${resp.body}',
             file: f,
+            sealedTo: sender.lastSealedTo,
           )));
     } catch (e) {
       setState(() => _log.insert(
@@ -179,6 +195,97 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _resend(SharedMediaFile f) => _sendOne(f);
+
+  /// Asks the kiosk for its public key and remembers the fingerprint.
+  ///
+  /// Deliberately a real request rather than a hardcoded "Encrypted ✓": a
+  /// label that is always green tells you nothing. This one can only go green
+  /// if the kiosk answered with a key this app knows how to seal to, so a
+  /// panel that is unreachable, unpatched, or speaking a newer version of the
+  /// format all show up as problems rather than as reassurance.
+  Future<void> _checkEncryption() async {
+    if (!_settings.isConfigured) return;
+    setState(() {
+      _kioskKey = null;
+      _keyError = null;
+    });
+    try {
+      final kid = await SealedSender(
+        address: _settings.address,
+        token: _settings.token,
+      ).keyFingerprint();
+      if (mounted) setState(() => _kioskKey = kid);
+    } catch (e) {
+      if (mounted) setState(() => _keyError = '$e');
+    }
+  }
+
+  Widget _encryptionStatus(BuildContext context) {
+    final small = Theme.of(context).textTheme.bodySmall;
+
+    if (_keyError != null) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lock_open, size: 18, color: Colors.redAccent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Could not confirm encryption.\n$_keyError',
+              style: small?.copyWith(color: Colors.redAccent),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Check again',
+            onPressed: _checkEncryption,
+          ),
+        ],
+      );
+    }
+
+    if (_kioskKey == null) {
+      return Row(
+        children: [
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Text('Checking encryption…', style: small),
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.lock, size: 18, color: Colors.green),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('End-to-end encrypted',
+                  style: small?.copyWith(
+                      color: Colors.green, fontWeight: FontWeight.w600)),
+              // The fingerprint is shown so it can be compared against the one
+              // on the panel's own senders page. Matching ids mean the key
+              // this phone seals to is the key that kiosk holds, which is the
+              // part a machine in the middle could otherwise lie about.
+              Text('Kiosk key $_kioskKey', style: small),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Check again',
+          onPressed: _checkEncryption,
+        ),
+      ],
+    );
+  }
 
   String _guessMime(SharedMediaFile f) {
     final ext = f.path.toLowerCase().split('.').last;
@@ -204,7 +311,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final result = await Navigator.of(context).push<KioskSettings>(
       MaterialPageRoute(builder: (_) => SettingsScreen(current: _settings)),
     );
-    if (result != null) setState(() => _settings = result);
+    if (result != null) {
+      setState(() => _settings = result);
+      // A new address or token means a different kiosk, or none: recheck
+      // rather than leaving the old fingerprint sitting there looking valid.
+      unawaited(_checkEncryption());
+    }
   }
 
   Future<void> _compose() async {
@@ -258,6 +370,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               'and token.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
+                    if (_settings.isConfigured) ...[
+                      const Divider(height: 22),
+                      _encryptionStatus(context),
+                    ],
                   ],
                 ),
               ),
@@ -284,8 +400,25 @@ class _HomeScreenState extends State<HomeScreen> {
                           entry.ok ? Icons.check_circle : Icons.error,
                           color: entry.ok ? Colors.green : Colors.redAccent,
                         ),
-                        title: Text(entry.label),
-                        subtitle: entry.error != null ? Text(entry.error!) : null,
+                        title: Row(
+                          children: [
+                            Text(entry.label),
+                            // Per message, and only when one was really
+                            // sealed — an entry without the padlock did not
+                            // get encrypted, whatever the card above says.
+                            if (entry.sealedTo != null) ...[
+                              const SizedBox(width: 6),
+                              const Icon(Icons.lock,
+                                  size: 14, color: Colors.green),
+                            ],
+                          ],
+                        ),
+                        subtitle: Text(
+                          entry.error ??
+                              (entry.sealedTo != null
+                                  ? 'Encrypted to key ${entry.sealedTo}'
+                                  : 'Sent unencrypted'),
+                        ),
                         trailing: entry.file == null
                             ? null
                             : IconButton(
