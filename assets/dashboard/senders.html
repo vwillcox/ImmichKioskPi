@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kiosk senders</title>
+<style>
+  :root {
+    --bg: #0e1016; --panel: #171a22; --line: #262b36;
+    --text: #eef1f6; --muted: #9aa3b2; --accent: #7dd3fc; --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    padding: 16px 18px; border-bottom: 1px solid var(--line);
+    background: var(--panel); position: sticky; top: 0;
+  }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+  main { padding: 18px; max-width: 720px; margin: 0 auto; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px; margin-bottom: 14px;
+  }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+       color: var(--muted); margin: 0 0 10px; }
+  button, input {
+    font: inherit; color: var(--text); background: #212734;
+    border: 1px solid var(--line); border-radius: 9px; padding: 11px 14px;
+    min-height: 44px;
+  }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: #06232e; border-color: transparent; font-weight: 600; }
+  button.danger { color: var(--danger); }
+  input { width: 100%; background: #0f1219; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .sender { border-top: 1px solid var(--line); padding: 12px 0; }
+  .sender:first-of-type { border-top: none; }
+  .name { font-weight: 600; }
+  .token {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px; word-break: break-all; color: var(--muted);
+    background: #0f1219; border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; margin: 6px 0;
+  }
+  .token.hidden { letter-spacing: .18em; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .empty { color: var(--muted); }
+  .note { color: var(--muted); font-size: 13px; }
+  .warn { color: var(--danger); }
+  #status { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Who can share to the kiosk</h1>
+  <p>One token per device, so a single phone can be revoked without disturbing
+     anyone else. This page is served to the local network only.</p>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Add a sender</h2>
+    <div class="row">
+      <input id="name" placeholder="Name — e.g. Jo's phone" autocomplete="off">
+      <button class="primary" id="add">Add</button>
+    </div>
+    <p id="status"></p>
+  </div>
+
+  <div class="card">
+    <h2>Senders</h2>
+    <div id="list"><p class="empty">Loading…</p></div>
+  </div>
+
+  <div class="card">
+    <h2>Setting up a phone</h2>
+    <p class="note">
+      Install Kiosk Share, open its settings, and enter the kiosk address
+      followed by that person's token. The address is
+      <code id="addr">…</code> on this network.
+    </p>
+    <p class="note warn">
+      A token is a password: anyone holding one can put a photo, video or note
+      on the screen. Hand them over in person or over something private, and
+      remove a sender the moment a device is lost or lent on.
+    </p>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+
+function setStatus(text, bad) {
+  $("status").textContent = text || "";
+  $("status").style.color = bad ? "var(--danger)" : "var(--muted)";
+}
+
+async function api(method, path, body) {
+  const r = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) throw new Error(String(r.status));
+  return r.status === 204 ? null : r.json();
+}
+
+let revealed = new Set();
+
+function render(data) {
+  $("addr").textContent = location.hostname + ":" + data.port;
+  const list = $("list");
+  list.innerHTML = "";
+  if (!data.senders.length) {
+    list.innerHTML = '<p class="empty">Nobody yet. Add a sender above.</p>';
+    return;
+  }
+  for (const s of data.senders) {
+    const el = document.createElement("div");
+    el.className = "sender";
+
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = s.name;
+
+    // Hidden until asked for: this page may well be open on a screen with
+    // somebody else in the room.
+    const shown = revealed.has(s.name);
+    const token = document.createElement("div");
+    token.className = "token" + (shown ? "" : " hidden");
+    token.textContent = shown ? s.token : "•".repeat(32);
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const reveal = document.createElement("button");
+    reveal.textContent = shown ? "Hide" : "Show";
+    reveal.onclick = () => {
+      if (shown) revealed.delete(s.name); else revealed.add(s.name);
+      load();
+    };
+
+    const copy = document.createElement("button");
+    copy.textContent = "Copy";
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(s.token);
+        setStatus("Copied " + s.name + "'s token.");
+      } catch {
+        // Clipboard access needs a secure context, which plain http on a LAN
+        // is not. Showing it is the fallback.
+        revealed.add(s.name);
+        load();
+        setStatus("Copying needs https — the token is shown instead.", true);
+      }
+    };
+
+    const remove = document.createElement("button");
+    remove.className = "danger";
+    remove.textContent = "Remove";
+    remove.onclick = async () => {
+      if (!confirm("Remove " + s.name + "? That device can no longer share.")) return;
+      await api("DELETE", "/api/senders?name=" + encodeURIComponent(s.name));
+      setStatus(s.name + " removed.");
+      load();
+    };
+
+    actions.append(reveal, copy, remove);
+    el.append(name, token, actions);
+    list.appendChild(el);
+  }
+}
+
+async function load() {
+  try {
+    render(await api("GET", "/api/senders"));
+  } catch (e) {
+    $("list").innerHTML = '<p class="empty warn">Could not reach the kiosk.</p>';
+  }
+}
+
+$("add").onclick = async () => {
+  const name = $("name").value.trim();
+  if (!name) return setStatus("Give the device a name first.", true);
+  try {
+    const made = await api("POST", "/api/senders", { name });
+    $("name").value = "";
+    revealed.add(made.name);
+    setStatus("Added " + made.name + ". Their token is shown below.");
+    load();
+  } catch (e) {
+    setStatus(e.message === "409"
+      ? "There is already a sender with that name."
+      : "Could not add that sender.", true);
+  }
+};
+
+$("name").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("add").click();
+});
+
+load();
+</script>
+</body>
+</html>

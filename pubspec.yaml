@@ -55,6 +55,7 @@ flutter:
   assets:
     - assets/sounds/incoming.wav
     - assets/dashboard/editor.html
+    - assets/dashboard/senders.html
     # Also listed as assets so the browser editor can be served the same
     # files, and its preview shows the typeface the panel will actually use.
     - assets/fonts/
