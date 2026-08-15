@@ -7,3 +7,19 @@ systemctl --user import-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR GDK_BACKEND 
 
 # Launch (or relaunch) the app.
 systemctl --user restart immich_kiosk_pi.service
+
+# And everything else that hangs off the session.
+#
+# Every one of these units is WantedBy graphical-session.target, but labwc
+# never activates that target, so nothing starts them at boot unless it is
+# done here — enabling the unit is not enough. A reboot otherwise leaves
+# "Kiosk" missing from Spotify's device list, and the screen controller
+# dead, which silently breaks both the idle screen-off and Alexa.
+systemctl --user restart librespot.service
+systemctl --user restart screen-control.service
+
+# The standalone VIDAA remote is deliberately NOT started here. The
+# television allows one control session per UUID, and the kiosk's own TV
+# widget now holds it — running both makes them displace each other in a
+# reconnect loop. Start it by hand if you want the full-screen remote, and
+# expect the widget to lose the set while it is up.

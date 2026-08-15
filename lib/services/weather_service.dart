@@ -252,7 +252,10 @@ class WeatherService extends ChangeNotifier {
           'daily': 'weather_code,temperature_2m_max,temperature_2m_min,'
               'precipitation_probability_max,wind_speed_10m_max,'
               'sunrise,sunset,uv_index_max',
-          'forecast_days': 7,
+          // 14 rather than 7 so the dashboard's longer forecast options have
+          // something to show. Open-Meteo serves up to 16; anything reading
+          // this list takes only as many as it needs.
+          'forecast_days': 14,
           'timezone': 'auto',
           'temperature_unit': unit,
         },

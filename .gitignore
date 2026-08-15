@@ -53,3 +53,7 @@ config.json
 
 # Local machine-specific script settings (host/user)
 scripts/local.env
+
+# Private keys are never committed. The TV client key was published here
+# once; supply your own locally instead (see moreinfo.md).
+assets/certs/*.key

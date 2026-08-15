@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kiosk dashboard</title>
+<style>
+  :root {
+    --bg: #0e1016; --panel: #171a22; --line: #262b36;
+    --text: #eef1f6; --muted: #9aa3b2; --accent: #7dd3fc; --danger: #f87171;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; flex: 1; }
+  button, select {
+    font: inherit; color: var(--text); background: #212734;
+    border: 1px solid var(--line); border-radius: 9px; padding: 9px 14px;
+    cursor: pointer; min-height: 40px;
+  }
+  button.primary { background: var(--accent); color: #06232e; border-color: transparent; font-weight: 600; }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { color: var(--muted); font-size: 13px; min-width: 8ch; }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    background: #212734; border: 1px solid var(--line); border-radius: 9px;
+    padding: 0 14px; min-height: 40px; font-size: 14px; white-space: nowrap;
+  }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+  main { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; padding: 18px; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: minmax(0,1fr); } }
+
+  /* The canvas mirrors the kiosk's 1920x1200 panel. */
+  #canvasWrap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+  /* The canvas is a real preview: the selected theme's own background,
+     tiles and colours, at the panel's proportions. */
+  #canvas {
+    position: relative; width: 100%; aspect-ratio: 1920 / 1200;
+    background: var(--t-bg, #0b0d13);
+    border-radius: 8px; overflow: hidden; touch-action: none;
+    container-type: size;
+  }
+  #gridlines {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+      linear-gradient(to right, rgba(128,128,128,.16) 1px, transparent 1px) 0 0 / calc(100%/12) 100%,
+      linear-gradient(to bottom, rgba(128,128,128,.16) 1px, transparent 1px) 0 0 / 100% calc(100%/8);
+  }
+  .tile {
+    position: absolute;
+    background: var(--t-surface, #1d2331);
+    border: 1px solid var(--t-border, #313a4d);
+    border-radius: var(--t-radius, 10px);
+    box-shadow: var(--t-shadow, none);
+    padding: 8px; overflow: hidden; cursor: grab;
+    display: flex; flex-direction: column; gap: 2px; user-select: none;
+  }
+  .tile.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tile.clash { outline: 2px solid var(--danger); outline-offset: 2px; }
+  .tile .glyph { font-size: 18px; line-height: 1; }
+  .tile .name {
+    font-size: 12px; color: var(--t-muted, var(--muted));
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Stand-in content, so a tile shows what it will look like rather than
+     what it is called. */
+  .tile .body {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    justify-content: center; gap: .18em; overflow: hidden;
+  }
+  .tile .line {
+    line-height: 1.1; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; color: var(--t-text);
+  }
+  .tile .line.muted { color: var(--t-muted); }
+  .tile .line.accent { color: var(--t-accent); }
+  .tile .badge {
+    position: absolute; top: 4px; left: 6px; font-size: 11px; opacity: .55;
+    pointer-events: none;
+  }
+  .tile .handle {
+    position: absolute; right: 0; bottom: 0; width: 26px; height: 26px; cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, var(--t-accent, var(--accent)) 50%);
+    opacity: .8; border-bottom-right-radius: 9px;
+  }
+
+  aside { display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  .palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+  .palette button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; text-align: center; }
+  .palette .g { font-size: 20px; }
+  .palette .n { font-size: 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; background: #0f1219; border: 1px solid var(--line);
+    border-radius: 9px; padding: 10px; color: var(--text); font: inherit;
+  }
+  textarea { min-height: 76px; resize: vertical; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
+  .help { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .empty { color: var(--muted); font-size: 14px; }
+  .warn { color: var(--danger); font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kiosk dashboard</h1>
+  <span id="status">Loading…</span>
+  <select id="theme" title="Theme"></select>
+  <label class="toggle"><input type="checkbox" id="roundedCorners"> Rounded corners</label>
+  <label class="toggle"><input type="checkbox" id="tileShadows"> Shadows</label>
+  <button id="revert">Revert</button>
+  <button id="save" class="primary">Save</button>
+</header>
+
+<main>
+  <div id="canvasWrap">
+    <div id="canvas"><div id="gridlines"></div></div>
+    <div id="clashWarning" class="warn" hidden>Two widgets overlap — drag one clear.</div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <h2>Add a widget</h2>
+      <div class="palette" id="palette"></div>
+    </div>
+    <div class="card" id="settingsCard">
+      <h2>Widget settings</h2>
+      <div id="settings"><p class="empty">Select a widget to change its settings.</p></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+"use strict";
+
+const state = {
+  schema: null,
+  dashboard: null,
+  selectedId: null,
+  dirty: false,
+  // What each widget is showing on the panel right now, keyed by widget id.
+  live: {},
+};
+
+const canvas = document.getElementById("canvas");
+const statusEl = document.getElementById("status");
+
+const api = {
+  async get(path) {
+    const r = await fetch(path);
+    if (!r.ok) throw new Error(path + " -> " + r.status);
+    return r.json();
+  },
+  async put(path, body) {
+    const r = await fetch(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(path + " -> " + r.status);
+    return r.json();
+  },
+};
+
+function setStatus(text, isError) {
+  statusEl.textContent = text;
+  statusEl.style.color = isError ? "var(--danger)" : "var(--muted)";
+}
+
+function markDirty() {
+  state.dirty = true;
+  setStatus("Unsaved changes");
+}
+
+function typeOf(name) {
+  return state.schema.widgetTypes.find(t => t.type === name);
+}
+
+/* ---------- rendering ---------- */
+
+function overlaps(a, b) {
+  return a.x < b.x + b.width && b.x < a.x + a.width &&
+         a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+/* Flutter writes colours as #aarrggbb; CSS reads 8-digit hex as #rrggbbaa.
+   Converting rather than reordering at the source keeps the saved theme
+   files in the one format the app itself uses. */
+function cssColour(v) {
+  if (typeof v !== "string") return "transparent";
+  const hex = v.replace("#", "");
+  if (hex.length === 6) return "#" + hex;
+  if (hex.length !== 8) return v;
+  const a = parseInt(hex.slice(0, 2), 16) / 255;
+  const r = parseInt(hex.slice(2, 4), 16);
+  const g = parseInt(hex.slice(4, 6), 16);
+  const b = parseInt(hex.slice(6, 8), 16);
+  return "rgba(" + r + "," + g + "," + b + "," + a.toFixed(3) + ")";
+}
+
+function currentTheme() {
+  return state.schema.themes.find(t => t.id === state.dashboard.themeId)
+      || state.schema.themes[0];
+}
+
+function applyTheme() {
+  const t = currentTheme();
+  if (!t) return;
+  const bg = (t.background || []).map(cssColour);
+  const s = canvas.style;
+  s.setProperty("--t-bg", bg.length > 1
+    ? "linear-gradient(135deg, " + bg.join(", ") + ")"
+    : (bg[0] || "#0b0d13"));
+  s.setProperty("--t-surface", cssColour(t.surface));
+  s.setProperty("--t-border", cssColour(t.border));
+  s.setProperty("--t-text", cssColour(t.textPrimary));
+  s.setProperty("--t-muted", cssColour(t.textSecondary));
+  s.setProperty("--t-accent", cssColour(t.accent));
+  // The dashboard's own overrides sit on top of whatever the theme asked
+  // for — the same precedence the panel applies, so the preview agrees.
+  const themeRadius = t.cornerRadius || 0;
+  const radius = state.dashboard.roundedCorners
+    ? (themeRadius > 0 ? themeRadius : 20)
+    : 0;
+  const shadow = !!state.dashboard.tileShadows;
+
+  // Scaled from the panel's width to the canvas's, so a corner looks as
+  // round here as it will on the wall.
+  s.setProperty("--t-radius", (radius / 1920 * 100) + "cqw");
+  s.setProperty("--t-shadow", shadow ? "0 6px 18px rgba(0,0,0,.25)" : "none");
+  canvas.style.color = cssColour(t.textPrimary);
+}
+
+function previewBody(w, t, el) {
+  // The real thing where the kiosk could tell us what this widget is
+  // showing, its stand-in content where it could not — a feed with no
+  // address yet, or a service with nothing to report.
+  const lines = state.live[w.id]
+    || (t && t.preview && t.preview.length ? t.preview : null)
+    || [{ text: t ? t.name : w.type, scale: 0.14, muted: true, accent: false }];
+
+  // Heights are a fraction of the tile, and the tile is a fraction of the
+  // canvas, so a preview stays honest as either is resized. Container query
+  // units do that arithmetic in CSS rather than here.
+  const canvasRows = state.schema.grid.rows;
+  const scale = (w.fontScale || 1);
+  let html = '<div class="body">';
+  for (const line of lines) {
+    const size = (line.scale * (w.height / canvasRows) * 100 * scale);
+    html += '<div class="line' + (line.muted ? " muted" : "") +
+      (line.accent ? " accent" : "") + '" style="font-size:' + size +
+      "cqh;text-align:" + (line.centre ? "center" : "left") + '">' +
+      escapeHtml(substitute(line.text)) + "</div>";
+  }
+  return html + "</div>";
+}
+
+function substitute(text) {
+  const now = new Date();
+  const two = (n) => String(n).padStart(2, "0");
+  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const months = ["January","February","March","April","May","June","July",
+                  "August","September","October","November","December"];
+  return text
+    .replace("{time}", two(now.getHours()) + ":" + two(now.getMinutes()))
+    .replace("{date}", days[now.getDay()] + " " + now.getDate() + " " + months[now.getMonth()]);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+
+function render() {
+  const { columns, rows } = state.schema.grid;
+  const t = currentTheme();
+  // Exactly the arithmetic the kiosk lays out with, so what you drag here is
+  // where it lands — including the gap between tiles and around the edges.
+  const gapX = (t && t.gap ? t.gap : 14) / 1920 * 100;
+  const gapY = (t && t.gap ? t.gap : 14) / 1200 * 100;
+  const cellW = (100 - gapX * (columns + 1)) / columns;
+  const cellH = (100 - gapY * (rows + 1)) / rows;
+
+  applyTheme();
+  for (const el of [...canvas.querySelectorAll(".tile")]) el.remove();
+  let anyClash = false;
+
+  for (const w of state.dashboard.widgets) {
+    const t = typeOf(w.type);
+    const el = document.createElement("div");
+    el.className = "tile" + (w.id === state.selectedId ? " selected" : "");
+    el.style.left = (gapX + w.x * (cellW + gapX)) + "%";
+    el.style.top = (gapY + w.y * (cellH + gapY)) + "%";
+    el.style.width = (w.width * cellW + (w.width - 1) * gapX) + "%";
+    el.style.height = (w.height * cellH + (w.height - 1) * gapY) + "%";
+    el.dataset.id = w.id;
+
+    const clash = state.dashboard.widgets.some(o => o.id !== w.id && overlaps(w, o));
+    if (clash) { el.classList.add("clash"); anyClash = true; }
+
+    el.innerHTML =
+      '<div class="badge">' + (t ? t.glyph : "❓") + "</div>" +
+      previewBody(w, t, el) +
+      '<div class="handle"></div>';
+    // The font and size chosen for this widget, so the preview is the thing
+    // itself rather than a label for it.
+    el.style.fontFamily = w.fontFamily
+      ? ('"' + w.fontFamily + '", system-ui, sans-serif')
+      : "system-ui, sans-serif";
+
+    canvas.appendChild(el);
+  }
+
+  document.getElementById("clashWarning").hidden = !anyClash;
+  renderSettings();
+}
+
+/* ---------- dragging and resizing ---------- */
+
+// One pointer handler for both, because a phone and a mouse should behave
+// the same and Pointer Events already unify them.
+let drag = null;
+
+canvas.addEventListener("pointerdown", (e) => {
+  const tile = e.target.closest(".tile");
+  if (!tile) { state.selectedId = null; render(); return; }
+
+  const w = state.dashboard.widgets.find(x => x.id === tile.dataset.id);
+  if (!w) return;
+
+  state.selectedId = w.id;
+  const rect = canvas.getBoundingClientRect();
+  drag = {
+    widget: w,
+    mode: e.target.classList.contains("handle") ? "resize" : "move",
+    startX: e.clientX,
+    startY: e.clientY,
+    originX: w.x, originY: w.y, originW: w.width, originH: w.height,
+    cellW: rect.width / state.schema.grid.columns,
+    cellH: rect.height / state.schema.grid.rows,
+  };
+  canvas.setPointerCapture(e.pointerId);
+  render();
+  e.preventDefault();
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const { columns, rows } = state.schema.grid;
+  const dx = Math.round((e.clientX - drag.startX) / drag.cellW);
+  const dy = Math.round((e.clientY - drag.startY) / drag.cellH);
+  const w = drag.widget;
+  const t = typeOf(w.type) || { minWidth: 1, minHeight: 1 };
+
+  if (drag.mode === "move") {
+    const nx = clamp(drag.originX + dx, 0, columns - w.width);
+    const ny = clamp(drag.originY + dy, 0, rows - w.height);
+    if (nx === w.x && ny === w.y) return;
+    w.x = nx; w.y = ny;
+  } else {
+    const nw = clamp(drag.originW + dx, t.minWidth || 1, columns - w.x);
+    const nh = clamp(drag.originH + dy, t.minHeight || 1, rows - w.y);
+    if (nw === w.width && nh === w.height) return;
+    w.width = nw; w.height = nh;
+  }
+  markDirty();
+  render();
+});
+
+function endDrag() { if (drag) { drag = null; } }
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+/* ---------- palette ---------- */
+
+function renderPalette() {
+  const palette = document.getElementById("palette");
+  palette.innerHTML = "";
+  for (const t of state.schema.widgetTypes) {
+    const b = document.createElement("button");
+    b.title = t.description;
+    b.innerHTML = '<span class="g">' + t.glyph + '</span><span class="n">' + t.name + "</span>";
+    b.onclick = () => addWidget(t);
+    palette.appendChild(b);
+  }
+}
+
+function firstFreeSlot(width, height) {
+  const { columns, rows } = state.schema.grid;
+  for (let y = 0; y <= rows - height; y++) {
+    for (let x = 0; x <= columns - width; x++) {
+      const candidate = { x, y, width, height };
+      if (!state.dashboard.widgets.some(w => overlaps(candidate, w))) return { x, y };
+    }
+  }
+  return null;
+}
+
+function addWidget(t) {
+  const slot = firstFreeSlot(t.defaultWidth, t.defaultHeight) || { x: 0, y: 0 };
+  const options = {};
+  for (const o of t.options) {
+    if (o.default !== null && o.default !== undefined) options[o.key] = o.default;
+  }
+  const id = "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  state.dashboard.widgets.push({
+    id, type: t.type,
+    x: slot.x, y: slot.y,
+    width: t.defaultWidth, height: t.defaultHeight,
+    fontFamily: "", fontScale: 1,
+    options,
+  });
+  state.selectedId = id;
+  markDirty();
+  render();
+}
+
+/* ---------- settings form, built from the schema ---------- */
+
+function renderSettings() {
+  const host = document.getElementById("settings");
+  const w = state.dashboard.widgets.find(x => x.id === state.selectedId);
+  if (!w) {
+    host.innerHTML = '<p class="empty">Select a widget to change its settings.</p>';
+    return;
+  }
+  const t = typeOf(w.type);
+  host.innerHTML = "";
+
+  const title = document.createElement("p");
+  title.style.margin = "0 0 6px";
+  title.innerHTML = "<strong>" + (t ? t.name : w.type) + "</strong>";
+  host.appendChild(title);
+
+  if (t && t.description) {
+    const d = document.createElement("p");
+    d.className = "help";
+    d.textContent = t.description;
+    host.appendChild(d);
+  }
+
+  if (t) {
+    for (const o of t.options) {
+      host.appendChild(field(w, o));
+    }
+  } else {
+    const p = document.createElement("p");
+    p.className = "help";
+    p.textContent = "This kiosk build doesn't have a widget of this type. Its settings are kept as they are.";
+    host.appendChild(p);
+  }
+
+  // Appearance is offered for every widget by the frame that draws it, so a
+  // new widget gets these without asking and can't forget to honour them.
+  const rule = document.createElement("hr");
+  rule.style.cssText = "border:none;border-top:1px solid var(--line);margin:16px 0 4px";
+  host.appendChild(rule);
+
+  const fontLabel = document.createElement("label");
+  fontLabel.textContent = "Font";
+  host.appendChild(fontLabel);
+  const fontSel = document.createElement("select");
+  // Grouped, because twenty in one list is a scroll rather than a choice.
+  const groups = new Map();
+  for (const f of state.schema.fonts || []) {
+    const key = f.groupLabel || "Other";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(f);
+  }
+  for (const [label, fonts] of groups) {
+    const group = document.createElement("optgroup");
+    group.label = label;
+    for (const f of fonts) {
+      const o = document.createElement("option");
+      o.value = f.family; o.textContent = f.name;
+      o.title = f.description;
+      // Each name shown in its own face, so the list is the sample.
+      if (f.family) o.style.fontFamily = '"' + f.family + '", system-ui';
+      group.appendChild(o);
+    }
+    fontSel.appendChild(group);
+  }
+  fontSel.value = w.fontFamily || "";
+  fontSel.onchange = () => { w.fontFamily = fontSel.value; markDirty(); render(); };
+  host.appendChild(fontSel);
+  const fontHelp = document.createElement("p");
+  fontHelp.className = "help";
+  const chosen = (state.schema.fonts || []).find(f => f.family === (w.fontFamily || ""));
+  fontHelp.textContent = chosen ? chosen.description : "";
+  host.appendChild(fontHelp);
+
+  const sizeLabel = document.createElement("label");
+  sizeLabel.textContent = "Text size";
+  host.appendChild(sizeLabel);
+  const sizeSel = document.createElement("select");
+  for (const [name, value] of Object.entries(state.schema.fontScales || { Normal: 1 })) {
+    const o = document.createElement("option");
+    o.value = String(value); o.textContent = name;
+    sizeSel.appendChild(o);
+  }
+  sizeSel.value = String(w.fontScale != null ? w.fontScale : 1);
+  sizeSel.onchange = () => { w.fontScale = Number(sizeSel.value); markDirty(); render(); };
+  host.appendChild(sizeSel);
+
+  const size = document.createElement("p");
+  size.className = "help";
+  size.textContent = "Position " + (w.x + 1) + "," + (w.y + 1) + " · " + w.width + "x" + w.height + " cells";
+  host.appendChild(size);
+
+  const del = document.createElement("button");
+  del.className = "danger";
+  del.textContent = "Remove widget";
+  del.style.marginTop = "10px";
+  del.onclick = () => {
+    state.dashboard.widgets = state.dashboard.widgets.filter(x => x.id !== w.id);
+    state.selectedId = null;
+    markDirty();
+    render();
+  };
+  host.appendChild(del);
+}
+
+/* A colour input insists on #rrggbb, where a theme or an older config may
+   have written #aarrggbb. */
+function normaliseColour(v) {
+  const hex = String(v).replace("#", "");
+  if (hex.length === 8) return "#" + hex.slice(2);
+  if (hex.length === 6) return "#" + hex;
+  return "#7dd3fc";
+}
+
+/* A repeating group: rows of fields, a plus to add one, a cross to remove.
+   Driven entirely by the option's declared fields, so any widget can have a
+   list of anything without the editor knowing what it is. */
+function listField(w, o) {
+  const host = document.createElement("div");
+  const rows = Array.isArray(w.options[o.key]) ? w.options[o.key] : [];
+  w.options[o.key] = rows;
+
+  rows.forEach((row, index) => {
+    const card = document.createElement("div");
+    card.style.cssText =
+      "border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;position:relative";
+
+    for (const f of o.fields || []) {
+      const label = document.createElement("label");
+      label.textContent = f.label;
+      label.style.marginTop = "6px";
+      card.appendChild(label);
+
+      const input = document.createElement("input");
+      if (f.kind === "colour") {
+        input.type = "color";
+        input.style.height = "40px";
+        input.value = normaliseColour(row[f.key] != null ? row[f.key] : f.default);
+      } else {
+        input.type = f.kind === "number" ? "number" : "text";
+        input.value = row[f.key] != null ? String(row[f.key]) : "";
+      }
+      input.oninput = () => {
+        row[f.key] = f.kind === "number" ? Number(input.value) : input.value;
+        markDirty();
+        render();
+      };
+      card.appendChild(input);
+    }
+
+    const remove = document.createElement("button");
+    remove.className = "danger";
+    remove.textContent = "Remove";
+    remove.style.marginTop = "10px";
+    remove.onclick = () => {
+      rows.splice(index, 1);
+      markDirty();
+      render();
+    };
+    card.appendChild(remove);
+    host.appendChild(card);
+  });
+
+  const add = document.createElement("button");
+  add.textContent = "＋ " + (o.addLabel || "Add");
+  add.style.marginTop = "10px";
+  add.onclick = () => {
+    const row = {};
+    for (const f of o.fields || []) {
+      if (f.default !== null && f.default !== undefined) row[f.key] = f.default;
+    }
+    rows.push(row);
+    markDirty();
+    render();
+  };
+  host.appendChild(add);
+  return host;
+}
+
+function field(w, o) {
+  const wrap = document.createElement("div");
+  const value = w.options[o.key] !== undefined ? w.options[o.key] : o.default;
+
+  if (o.kind === "boolean") {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.marginTop = "12px";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = !!value;
+    input.onchange = () => { w.options[o.key] = input.checked; markDirty(); };
+    const label = document.createElement("span");
+    label.textContent = o.label;
+    row.append(input, label);
+    wrap.appendChild(row);
+  } else {
+    const label = document.createElement("label");
+    label.textContent = o.label;
+    wrap.appendChild(label);
+
+    let input;
+    if (o.kind === "list") {
+      wrap.appendChild(listField(w, o));
+      if (o.help) {
+        const help = document.createElement("p");
+        help.className = "help";
+        help.textContent = o.help;
+        wrap.appendChild(help);
+      }
+      return wrap;
+    } else if (o.kind === "colour") {
+      input = document.createElement("input");
+      input.type = "color";
+      input.style.height = "42px";
+      input.value = normaliseColour(value != null ? String(value) : "#7dd3fc");
+      input.oninput = () => { w.options[o.key] = input.value; markDirty(); render(); };
+    } else if (o.kind === "choice") {
+      input = document.createElement("select");
+      for (const [k, name] of Object.entries(o.choices || {})) {
+        const opt = document.createElement("option");
+        opt.value = k; opt.textContent = name;
+        input.appendChild(opt);
+      }
+      input.value = value != null ? String(value) : "";
+      input.onchange = () => { w.options[o.key] = input.value; markDirty(); render(); };
+    } else if (o.kind === "multiline") {
+      input = document.createElement("textarea");
+      input.value = value != null ? String(value) : "";
+      input.oninput = () => { w.options[o.key] = input.value; markDirty(); };
+    } else {
+      input = document.createElement("input");
+      input.type = o.kind === "number" ? "number" : "text";
+      input.value = value != null ? String(value) : "";
+      input.oninput = () => {
+        w.options[o.key] = o.kind === "number"
+          ? (input.value === "" ? 0 : Number(input.value))
+          : input.value;
+        markDirty();
+      };
+    }
+    wrap.appendChild(input);
+  }
+
+  if (o.help) {
+    const help = document.createElement("p");
+    help.className = "help";
+    help.textContent = o.help;
+    wrap.appendChild(help);
+  }
+  return wrap;
+}
+
+/* ---------- themes, save, load ---------- */
+
+/// Loads the same font files the panel uses, served by the kiosk itself, so
+/// the preview shows the real typeface rather than a browser substitute.
+function installFonts() {
+  const css = (state.schema.fonts || [])
+    .filter(f => f.file)
+    .map(f => '@font-face{font-family:"' + f.family +
+      '";src:url("/fonts/' + f.file + '") format("truetype");font-display:swap;}')
+    .join("\n");
+  const style = document.createElement("style");
+  style.textContent = css;
+  document.head.appendChild(style);
+}
+
+function renderOverrides() {
+  for (const key of ["roundedCorners", "tileShadows"]) {
+    const box = document.getElementById(key);
+    box.checked = state.dashboard[key] !== false;
+    box.onchange = () => {
+      state.dashboard[key] = box.checked;
+      markDirty();
+      render();
+    };
+  }
+}
+
+function renderThemes() {
+  const sel = document.getElementById("theme");
+  sel.innerHTML = "";
+  for (const t of state.schema.themes) {
+    const o = document.createElement("option");
+    o.value = t.id; o.textContent = t.name;
+    sel.appendChild(o);
+  }
+  sel.value = state.dashboard.themeId;
+  sel.onchange = () => {
+    state.dashboard.themeId = sel.value;
+    markDirty();
+    // Repaint straight away rather than waiting for a save, so picking a
+    // theme shows you the theme.
+    render();
+  };
+}
+
+document.getElementById("save").onclick = async () => {
+  try {
+    setStatus("Saving…");
+    await api.put("/api/dashboard", state.dashboard);
+    state.dirty = false;
+    setStatus("Saved");
+  } catch (e) {
+    setStatus("Save failed", true);
+    console.error(e);
+  }
+};
+
+document.getElementById("revert").onclick = () => load(true);
+
+// Nothing here is saved until you press Save, so leaving with changes
+// pending would silently lose them.
+window.addEventListener("beforeunload", (e) => {
+  if (!state.dirty) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
+
+async function load(quiet) {
+  try {
+    if (!quiet) setStatus("Loading…");
+    const [schema, dashboard] = await Promise.all([
+      api.get("/api/schema"),
+      api.get("/api/dashboard"),
+    ]);
+    state.schema = schema;
+    state.dashboard = dashboard;
+    state.selectedId = null;
+    state.dirty = false;
+    installFonts();
+    renderPalette();
+    renderThemes();
+    renderOverrides();
+    render();
+    setStatus("Ready");
+  } catch (e) {
+    setStatus("Could not reach the kiosk", true);
+    console.error(e);
+  }
+}
+
+/* The panel's current content. Refreshed on a timer so a clock ticks and a
+   headline changes here as it does on the wall. */
+async function refreshLive() {
+  try {
+    state.live = await api.get("/api/preview");
+    if (state.schema) render();
+  } catch (e) {
+    // A preview that can't be fetched isn't worth interrupting editing for.
+  }
+}
+
+load().then(refreshLive);
+setInterval(refreshLive, 20000);
+</script>
+</body>
+</html>

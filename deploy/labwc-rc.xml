@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!--
+  labwc configuration for the kiosk, to merge into ~/.config/labwc/rc.xml.
+
+  Merge rather than copy: an existing install almost certainly has settings
+  of its own in here, and the touch rule below in particular is specific to
+  one panel.
+
+  Apply changes without restarting the session:
+
+      killall -HUP labwc
+
+  `labwc --reconfigure` looks like it should do this and does nothing to the
+  already-running compositor, which makes a change appear not to have worked.
+-->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+
+  <!--
+    The DSI touchscreen, bound to the panel it belongs to.
+
+    mouseEmulation="no" is the important part: it makes labwc deliver real
+    touch events rather than synthesised mouse ones. Everything that follows
+    depends on it — Firefox reads touch through the Wayland seat, and with
+    emulation on it would see a pointer and lose multitouch entirely.
+
+    deviceName comes from `libinput list-devices` (or /proc/bus/input/devices)
+    and mapToOutput from `wlr-randr`; both differ between panels.
+  -->
+  <touch deviceName="11-0041 ili_v3" mapToOutput="DSI-2" mouseEmulation="no"/>
+
+  <windowRules>
+    <!--
+      No titlebar on browser windows. The kiosk draws its own close button in
+      the strip it leaves free beneath them, so labwc's decoration is both
+      redundant and a row of targets far too small for a finger.
+
+      identifier matches app_id for Wayland clients. Firefox must be running
+      as a native Wayland client for this to match at all — under XWayland it
+      is WM_CLASS instead, and touch would not reach it anyway.
+    -->
+    <windowRule identifier="firefox" serverDecoration="no"/>
+    <windowRule identifier="chromium" serverDecoration="no"/>
+  </windowRules>
+
+</openbox_config>

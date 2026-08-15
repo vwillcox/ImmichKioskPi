@@ -7,13 +7,21 @@ import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
 import 'models/immich_models.dart';
+import 'dashboard/live_preview.dart';
+import 'dashboard/widgets/widgets.dart';
+import 'services/camera_service.dart';
 import 'services/config_service.dart';
+import 'services/dashboard_service.dart';
+import 'services/feed_service.dart';
 import 'services/immich_service.dart';
 import 'services/indoor_sensor_service.dart';
 import 'services/locked_folder_service.dart';
 import 'services/media_cache.dart';
 import 'services/now_playing_service.dart';
+import 'services/screen_idle_service.dart';
+import 'services/share_inbox_service.dart';
 import 'services/spotify_service.dart';
+import 'services/tv_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
 import 'screens/album_screen.dart';
@@ -23,6 +31,8 @@ import 'screens/locked_folder_screen.dart';
 import 'screens/setup_screen.dart';
 import 'screens/slideshow_screen.dart';
 import 'screens/video_player_screen.dart';
+import 'widgets/camera_overlay.dart';
+import 'widgets/incoming_share_overlay.dart';
 import 'widgets/now_playing_overlay.dart';
 import 'theme.dart';
 
@@ -54,6 +64,41 @@ void main() async {
   final spotify = SpotifyService(config);
   unawaited(spotify.start());
 
+  // Lets the companion phone app share a photo/GIF/video/link/note to the
+  // kiosk directly — no separate relay, just a small HTTP listener here.
+  final shareInbox = ShareInboxService(config);
+  unawaited(shareInbox.start());
+
+  // Widget types have to be registered before anything reads the dashboard:
+  // the editor's palette and each widget's settings form are both generated
+  // from the registry.
+  registerBuiltInWidgets();
+
+  // Feeds for the dashboard's calendar and news widgets, shared by URL so two
+  // widgets on the same feed cost one fetch.
+  final feeds = FeedService()..start();
+
+  final dashboard = DashboardService(
+    config,
+    // Resolved on each request so the editor's preview reflects the moment
+    // it was asked for.
+    previewData: () => PreviewData(
+      weather: weather,
+      feeds: feeds,
+      playback: spotify.available ? spotify : nowPlaying,
+    ),
+  );
+  unawaited(dashboard.start());
+
+  // Switches the panel off by itself when nothing's playing and no
+  // slideshow is running — see ScreenIdleService for why the switching
+  // itself is left to the host-side screen_control.py service.
+  final screenIdle = ScreenIdleService(config, [spotify, nowPlaying])..start();
+
+  // A share arriving is worth waking the panel for — unless Do Not Disturb is
+  // on, which the screen service checks for itself.
+  shareInbox.onItemArrived = screenIdle.wakeForNotification;
+
   runApp(
     MultiProvider(
       providers: [
@@ -64,11 +109,23 @@ void main() async {
         ChangeNotifierProvider.value(value: nowPlaying),
         ChangeNotifierProvider.value(value: spotify),
         ChangeNotifierProvider.value(value: indoor),
+        ChangeNotifierProvider.value(value: shareInbox),
+        Provider<ScreenIdleService>.value(value: screenIdle),
+        ChangeNotifierProvider(create: (_) => CameraService(config)),
+        ChangeNotifierProvider.value(value: feeds),
+        ChangeNotifierProvider.value(value: dashboard),
+        ChangeNotifierProvider(create: (_) => TvService(config)),
       ],
       child: const ImmichKioskPiApp(),
     ),
   );
 }
+
+/// The overlay added in [ImmichKioskPiApp]'s `builder` sits as a *sibling* of
+/// this Navigator (both are children of the same Stack), not a descendant of
+/// it, so `Navigator.of(context)` from inside the overlay can't find it by
+/// walking up the tree. A global key to the same Navigator sidesteps that.
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 class ImmichKioskPiApp extends StatelessWidget {
   const ImmichKioskPiApp({super.key});
@@ -76,6 +133,7 @@ class ImmichKioskPiApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: 'ImmichKioskPi',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
@@ -83,6 +141,25 @@ class ImmichKioskPiApp extends StatelessWidget {
       // Flutter's Linux embedder, so enable drag-scrolling for every pointer
       // kind (otherwise touch drag doesn't scroll lists/grids).
       scrollBehavior: const _AppScrollBehavior(),
+      // Stacked above the routed content itself (rather than added to each
+      // screen individually) so a shared-content notification can pop up
+      // over *any* screen — settings, a slideshow, a video — not just the
+      // couple of screens the now-playing overlay lives in.
+      builder: (context, child) => Listener(
+        // Any touch counts as "someone's here", which is what stops the
+        // idle timer switching the panel off mid-use. Listener sees the
+        // event on the way down without consuming it, so nothing below
+        // behaves any differently.
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => context.read<ScreenIdleService>().noteInteraction(),
+        child: Stack(
+          children: [
+            ?child,
+            IncomingShareOverlay(navigatorKey: rootNavigatorKey),
+            CameraOverlay(navigatorKey: rootNavigatorKey),
+          ],
+        ),
+      ),
       home: const _RootGate(),
     );
   }

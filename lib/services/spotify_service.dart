@@ -10,8 +10,46 @@ import 'package:flutter/material.dart' show Icons, IconData;
 
 import '../config/app_config.dart' show SpotifySettings;
 import 'config_service.dart';
+import 'kiosk_browser.dart';
 import 'now_playing_service.dart' show NowPlaying;
 import 'playback_source.dart';
+
+/// A Spotify Connect device the account can play on.
+class SpotifyDevice {
+  final String id;
+  final String name;
+  final String type;
+  final bool isActive;
+  const SpotifyDevice({
+    required this.id,
+    required this.name,
+    required this.type,
+    required this.isActive,
+  });
+}
+
+/// Something that can be shown in a list and played or queued — a playlist,
+/// a recently-played track, a top track. [uri] is what gets handed back to
+/// Spotify to act on it.
+class SpotifyItem {
+  final String uri;
+  final String title;
+  final String subtitle;
+  final String? artUrl;
+
+  /// Playlists and albums are *contexts* (played with `context_uri`); tracks
+  /// are individual (played with `uris`, or queued). They're handled
+  /// differently by the play endpoint, so the distinction has to survive.
+  final bool isContext;
+
+  const SpotifyItem({
+    required this.uri,
+    required this.title,
+    this.subtitle = '',
+    this.artUrl,
+    required this.isContext,
+  });
+}
 
 /// Full playback control for a Spotify Premium account via the Web API:
 /// play/pause/next/previous/seek/shuffle/repeat/volume, for whatever is
@@ -37,7 +75,8 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
 
   static const _scopes = 'user-read-playback-state user-modify-playback-state '
       'user-read-currently-playing user-library-read user-library-modify '
-      'playlist-read-private playlist-modify-public playlist-modify-private';
+      'playlist-read-private playlist-modify-public playlist-modify-private '
+      'user-read-recently-played user-top-read';
 
   static const Duration idleTimeout = Duration(minutes: 1);
   static const Duration _activePoll = Duration(seconds: 2);
@@ -100,6 +139,49 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   /// against a slow response landing after the track has already moved on.
   String? _likedCheckedForTrackId;
   bool _isLiked = false;
+
+  /// Re-checked periodically rather than every single poll: liking/unliking
+  /// from Spotify itself (the phone, the web player) while this same track
+  /// keeps playing here otherwise never gets picked up, since nothing else
+  /// about the player state changes to prompt a recheck.
+  ///
+  /// Kept deliberately infrequent. This endpoint is rate-limited far more
+  /// tightly than the player one, and its answer changes rarely — polling it
+  /// every 2s (the main poll interval) earned an hours-long 429 block, and
+  /// even 20s was more than it tolerates sustained.
+  DateTime? _lastLikedRecheckAt;
+  String? _lastLikedRecheckTrackId;
+  static const Duration _likedRecheckInterval = Duration(minutes: 1);
+
+  /// When Spotify 429s, it says how long to stay away for — sometimes hours.
+  /// Retrying regardless (as this used to) never recovers and only keeps the
+  /// block alive, so nothing touches that endpoint again until it passes.
+  ///
+  /// Kept per endpoint rather than for the service as a whole: the limits
+  /// are applied per endpoint too, and one of them being blocked for hours
+  /// shouldn't take the rest of the integration down with it.
+  final Map<String, DateTime> _rateLimitedUntil = {};
+
+  bool _rateLimited(String what) {
+    final until = _rateLimitedUntil[what];
+    if (until == null) return false;
+    if (DateTime.now().isBefore(until)) return true;
+    _rateLimitedUntil.remove(what);
+    return false;
+  }
+
+  /// Records a `Retry-After` if [e] is a 429. Returns true if it was one.
+  bool _noteIfRateLimited(Object e, String what) {
+    if (e is! DioException || e.response?.statusCode != 429) return false;
+    final header = e.response?.headers.value('retry-after');
+    final seconds = int.tryParse(header ?? '') ?? 60;
+    final until = DateTime.now().add(Duration(seconds: seconds));
+    _rateLimitedUntil[what] = until;
+    debugPrint('Spotify rate-limited on $what; backing off ${seconds}s '
+        '(until $until)');
+    return true;
+  }
+
   @override
   bool get canLike => true;
   @override
@@ -114,6 +196,10 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   /// Call after settings change — right after [connect] or [disconnect].
   void refreshFromSettings() {
     _pollTimer?.cancel();
+    // _speedUpPolling() is a no-op while this is set, so leaving it true
+    // after cancelling the timer above means polling never restarts and the
+    // panel sits frozen on whatever it last saw.
+    _fastPolling = false;
     if (_settings.isConfigured) {
       _beginPolling();
     } else {
@@ -167,30 +253,18 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
   /// Opens a browser for the one-time Spotify login, catches the redirect on
   /// a loopback server, and exchanges the code for tokens. Returns null on
   /// success, or a message to show the user on failure.
-  /// The command to open a URL in a real, visible browser window on this
+  /// Opens the Spotify login page in a real, visible browser window on this
   /// screen — not xdg-open, which on this Pi's bare labwc session (no full
-  /// desktop environment) resolves to Chromium, but with defaults that
-  /// crash it outright: it picks the X11 ozone platform and dies with
-  /// "Missing X server or $DISPLAY", and even forced onto Wayland it blocks
-  /// on a GNOME-Keyring "choose a password" prompt with nothing to do with
-  /// Spotify. Both are suppressed by the flags below. Falls back to
-  /// xdg-open on a machine where Chromium isn't the browser.
-  Future<({String executable, List<String> args})> _browserCommand(
-      String url) async {
-    final chromium = await Process.run('which', ['chromium']);
-    if (chromium.exitCode == 0) {
-      return (
-        executable: 'chromium',
-        args: [
-          '--ozone-platform=wayland',
-          '--password-store=basic',
-          '--new-window',
-          url,
-        ],
-      );
-    }
-    return (executable: 'xdg-open', args: [url]);
-  }
+  /// desktop environment) resolves to a browser with defaults that break it:
+  /// Chromium picks the X11 ozone platform and dies with "Missing X server or
+  /// $DISPLAY", and even forced onto Wayland blocks on a GNOME-Keyring
+  /// "choose a password" prompt with nothing to do with Spotify.
+  ///
+  /// Unlike the page viewers this keeps the browser's own chrome. Logging in
+  /// means typing an address, seeing which site is asking, and sometimes
+  /// going back — none of which work without a toolbar.
+  Future<Process?> _openLoginPage(String url) =>
+      KioskBrowser.open(url, profile: 'spotify-login');
 
   Future<String?> connect(String clientId) async {
     final verifier = _randomUrlSafe(64);
@@ -214,12 +288,9 @@ class SpotifyService extends ChangeNotifier implements PlaybackSource {
       'state': state,
     });
 
-    try {
-      final browser = await _browserCommand(authUrl.toString());
-      await Process.start(browser.executable, browser.args);
-    } catch (e) {
+    if (await _openLoginPage(authUrl.toString()) == null) {
       await server.close(force: true);
-      return 'Could not open a browser: $e';
+      return 'Could not open a browser to log in with.';
     }
 
     String? code;
@@ -350,7 +421,9 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       }
       _applyPlayerState((r.data as Map).cast<String, dynamic>());
     } catch (e) {
-      debugPrint('Spotify poll error: $e');
+      if (!_noteIfRateLimited(e, 'player poll')) {
+        debugPrint('Spotify poll error: $e');
+      }
     }
   }
 
@@ -361,6 +434,8 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       _artUrl = null;
       _isLiked = false;
       _likedCheckedForTrackId = null;
+      _lastLikedRecheckAt = null;
+      _lastLikedRecheckTrackId = null;
       notifyListeners();
     }
     _slowDownPolling();
@@ -399,12 +474,16 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       trackId: trackId,
     );
     _artUrl = art;
-    // Re-checked every poll, not just once per track: liking/unliking from
-    // Spotify itself (the phone, the web player) while this same track
-    // keeps playing here otherwise never gets picked up, since nothing else
-    // about the player state changes to prompt a recheck.
-    if (trackId.isNotEmpty) {
-      unawaited(_refreshLikedStatus(trackId));
+    if (trackId.isNotEmpty && !_rateLimited('liked-status')) {
+      final now = DateTime.now();
+      final trackChanged = trackId != _lastLikedRecheckTrackId;
+      final intervalElapsed = _lastLikedRecheckAt == null ||
+          now.difference(_lastLikedRecheckAt!) >= _likedRecheckInterval;
+      if (trackChanged || intervalElapsed) {
+        _lastLikedRecheckAt = now;
+        _lastLikedRecheckTrackId = trackId;
+        unawaited(_refreshLikedStatus(trackId));
+      }
     }
     _deviceHasVolume = device?['supports_volume'] as bool? ?? false;
     final vol = device?['volume_percent'];
@@ -475,7 +554,9 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
         ),
       );
     } catch (e) {
-      debugPrint('Spotify $method $path error: $e');
+      if (!_noteIfRateLimited(e, '$method $path')) {
+        debugPrint('Spotify $method $path error: $e');
+      }
     }
     // Reflect the change immediately rather than waiting for the next poll.
     unawaited(_poll());
@@ -558,6 +639,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
   static String _trackUri(String trackId) => 'spotify:track:$trackId';
 
   Future<void> _refreshLikedStatus(String trackId) async {
+    if (_rateLimited('liked-status')) return;
     _likedCheckedForTrackId = trackId;
     final token = await _validAccessToken();
     if (token == null) return;
@@ -572,7 +654,9 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       _isLiked = list.isNotEmpty && list.first == true;
       notifyListeners();
     } catch (e) {
-      debugPrint('Spotify liked-status error: $e');
+      if (!_noteIfRateLimited(e, 'liked-status')) {
+        debugPrint('Spotify liked-status error: $e');
+      }
     }
   }
 
@@ -599,6 +683,7 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
         ),
       );
     } catch (e) {
+      _noteIfRateLimited(e, 'toggleLike');
       debugPrint('Spotify toggleLike error: $e');
       _isLiked = wasLiked;
       notifyListeners();
@@ -623,7 +708,9 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
               ))
           .toList();
     } catch (e) {
-      debugPrint('Spotify loadPlaylists error: $e');
+      if (!_noteIfRateLimited(e, 'loadPlaylists')) {
+        debugPrint('Spotify loadPlaylists error: $e');
+      }
       return const [];
     }
   }
@@ -641,8 +728,211 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
     } catch (e) {
-      debugPrint('Spotify addToPlaylist error: $e');
+      if (!_noteIfRateLimited(e, 'addToPlaylist')) {
+        debugPrint('Spotify addToPlaylist error: $e');
+      }
     }
+  }
+
+  // ---- Devices, queue and browsing ---------------------------------------
+  //
+  // Everything below is fetched on demand, when the user opens the relevant
+  // panel — never polled. The player endpoint is the only thing this app
+  // polls, deliberately: these are rate-limited more tightly, and a kiosk
+  // left running for weeks would otherwise rack up an enormous number of
+  // requests for lists nobody is looking at.
+
+  /// Fetches one list of items from an endpoint, mapping each entry with
+  /// [map]. Shared by the recently-played/top/playlist loaders, which differ
+  /// only in where the list lives in the response and how a row is built.
+  Future<List<SpotifyItem>> _loadItems(
+    String path,
+    String what, {
+    Map<String, dynamic>? query,
+    required SpotifyItem? Function(Map<String, dynamic>) map,
+  }) async {
+    if (_rateLimited(what)) return const [];
+    final token = await _validAccessToken();
+    if (token == null) return const [];
+    try {
+      final r = await _dio.get(
+        '$_apiBase$path',
+        queryParameters: query,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final items = (r.data as Map)['items'] as List? ?? const [];
+      return items
+          .map((e) => map((e as Map).cast<String, dynamic>()))
+          .whereType<SpotifyItem>()
+          .toList();
+    } catch (e) {
+      if (!_noteIfRateLimited(e, what)) {
+        debugPrint('Spotify $what error: $e');
+      }
+      return const [];
+    }
+  }
+
+  static String? _imageOf(Map<String, dynamic>? owner) {
+    final images = owner?['images'] as List?;
+    if (images == null || images.isEmpty) return null;
+    return (images.first as Map)['url'] as String?;
+  }
+
+  static String _artistsOf(Map<String, dynamic> track) =>
+      (track['artists'] as List? ?? [])
+          .map((a) => (a as Map)['name'] as String? ?? '')
+          .where((n) => n.isNotEmpty)
+          .join(', ');
+
+  static SpotifyItem? _trackToItem(Map<String, dynamic>? track) {
+    if (track == null) return null;
+    final uri = track['uri'] as String?;
+    if (uri == null) return null;
+    return SpotifyItem(
+      uri: uri,
+      title: track['name'] as String? ?? '',
+      subtitle: _artistsOf(track),
+      artUrl: _imageOf((track['album'] as Map?)?.cast<String, dynamic>()),
+      isContext: false,
+    );
+  }
+
+  Future<List<SpotifyDevice>> loadDevices() async {
+    if (_rateLimited('loadDevices')) return const [];
+    final token = await _validAccessToken();
+    if (token == null) return const [];
+    try {
+      final r = await _dio.get(
+        '$_apiBase/me/player/devices',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final devices = (r.data as Map)['devices'] as List? ?? const [];
+      return devices
+          .map((d) => (d as Map).cast<String, dynamic>())
+          // A device with no id can't be transferred to.
+          .where((d) => d['id'] is String)
+          .map((d) => SpotifyDevice(
+                id: d['id'] as String,
+                name: d['name'] as String? ?? 'Unknown',
+                type: d['type'] as String? ?? '',
+                isActive: d['is_active'] as bool? ?? false,
+              ))
+          .toList();
+    } catch (e) {
+      if (!_noteIfRateLimited(e, 'loadDevices')) {
+        debugPrint('Spotify loadDevices error: $e');
+      }
+      return const [];
+    }
+  }
+
+  /// Moves playback to [deviceId], keeping whatever is currently playing.
+  Future<void> transferPlayback(String deviceId) async {
+    final token = await _validAccessToken();
+    if (token == null) return;
+    try {
+      await _dio.put(
+        '$_apiBase/me/player',
+        data: {
+          'device_ids': [deviceId],
+          // keep playing/paused as it was rather than forcing playback
+          'play': _now.isPlaying,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } catch (e) {
+      if (!_noteIfRateLimited(e, 'transferPlayback')) {
+        debugPrint('Spotify transferPlayback error: $e');
+      }
+    }
+    unawaited(_poll());
+  }
+
+  /// What's coming up next. The response's `queue` is upcoming items only —
+  /// `currently_playing` is separate and already shown by the panel.
+  Future<List<SpotifyItem>> loadQueue() async {
+    if (_rateLimited('loadQueue')) return const [];
+    final token = await _validAccessToken();
+    if (token == null) return const [];
+    try {
+      final r = await _dio.get(
+        '$_apiBase/me/player/queue',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final queue = (r.data as Map)['queue'] as List? ?? const [];
+      return queue
+          .map((t) => _trackToItem((t as Map).cast<String, dynamic>()))
+          .whereType<SpotifyItem>()
+          .toList();
+    } catch (e) {
+      if (!_noteIfRateLimited(e, 'loadQueue')) {
+        debugPrint('Spotify loadQueue error: $e');
+      }
+      return const [];
+    }
+  }
+
+  Future<List<SpotifyItem>> loadPlaylistItems() => _loadItems(
+        '/me/playlists',
+        'loadPlaylistItems',
+        query: {'limit': 50},
+        map: (p) {
+          final uri = p['uri'] as String?;
+          if (uri == null) return null;
+          final tracks = (p['tracks'] as Map?)?['total'];
+          return SpotifyItem(
+            uri: uri,
+            title: p['name'] as String? ?? '',
+            subtitle: tracks is int ? '$tracks tracks' : '',
+            artUrl: _imageOf(p),
+            isContext: true,
+          );
+        },
+      );
+
+  Future<List<SpotifyItem>> loadRecentlyPlayed() => _loadItems(
+        '/me/player/recently-played',
+        'loadRecentlyPlayed',
+        query: {'limit': 30},
+        // each entry wraps the track under `track`
+        map: (e) => _trackToItem((e['track'] as Map?)?.cast<String, dynamic>()),
+      );
+
+  Future<List<SpotifyItem>> loadTopTracks() => _loadItems(
+        '/me/top/tracks',
+        'loadTopTracks',
+        query: {'limit': 30, 'time_range': 'medium_term'},
+        map: (t) => _trackToItem(t),
+      );
+
+  /// Starts [item] playing on whatever device is currently active.
+  Future<void> play(SpotifyItem item) async {
+    final token = await _validAccessToken();
+    if (token == null) return;
+    try {
+      await _dio.put(
+        '$_apiBase/me/player/play',
+        // a playlist/album is a context to play *within*; a single track is
+        // not, and has to be passed as a one-item uri list instead
+        data: item.isContext
+            ? {'context_uri': item.uri}
+            : {
+                'uris': [item.uri]
+              },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } catch (e) {
+      if (!_noteIfRateLimited(e, 'play')) {
+        debugPrint('Spotify play error: $e');
+      }
+    }
+    unawaited(_poll());
+  }
+
+  Future<void> queue(SpotifyItem item) async {
+    if (item.isContext) return; // only tracks/episodes can be queued
+    await _request('POST', '/me/player/queue', query: {'uri': item.uri});
   }
 
   @override

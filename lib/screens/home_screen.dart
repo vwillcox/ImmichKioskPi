@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/immich_models.dart';
+import '../services/camera_service.dart';
 import '../services/immich_service.dart';
 import '../services/config_service.dart';
 import '../services/locked_folder_service.dart';
 import '../widgets/now_playing_overlay.dart';
 import '../widgets/remote_image.dart';
 import 'album_screen.dart';
+import 'dashboard_screen.dart';
 import 'locked_folder_screen.dart';
 import 'pin_screen.dart';
 import 'settings_screen.dart';
@@ -241,6 +243,23 @@ class _HomeScreenState extends State<HomeScreen> {
               tooltip: 'Locked Folder',
               onPressed: _openLockedFolder,
             ),
+          if (context.watch<ConfigService>().config.dashboard.enabled)
+            IconButton(
+              icon: const Icon(Icons.dashboard_outlined),
+              tooltip: 'Dashboard',
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const DashboardScreen(),
+              )),
+            ),
+          if (context.watch<CameraService>().isConfigured)
+            IconButton(
+              icon: Icon(context.watch<CameraService>().isOpen
+                  ? Icons.videocam_off
+                  : Icons.videocam),
+              tooltip: 'Camera',
+              onPressed: context.read<CameraService>().toggleOpen,
+            ),
+          const _DndSwitch(),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
@@ -439,6 +458,36 @@ class _AlbumTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Mutes the incoming-share chime — a "slider" rather than an icon button
+/// since that's specifically what was asked for, kept in the top bar so it's
+/// reachable in one tap rather than buried in Settings.
+class _DndSwitch extends StatelessWidget {
+  const _DndSwitch();
+
+  @override
+  Widget build(BuildContext context) {
+    final config = context.watch<ConfigService>();
+    final muted = config.config.shareInbox.dndMuted;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(muted ? Icons.notifications_off : Icons.notifications,
+              color: muted ? Colors.white54 : null, size: 20),
+          Switch(
+            value: !muted,
+            onChanged: (on) {
+              config.config.shareInbox.dndMuted = !on;
+              config.save();
+            },
+          ),
+        ],
       ),
     );
   }

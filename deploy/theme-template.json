@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "A dashboard theme. Drop this in ~/.config/immich_kiosk_pi/themes/ as",
+    "<something>.json and it appears in the theme picker, in the browser",
+    "editor and in Settings -> Dashboard. Reusing the id of a shipped theme",
+    "replaces it, which is how you adjust a built-in without editing the app.",
+    "Colours are #rrggbb or #aarrggbb. Themes are read at startup."
+  ],
+
+  "id": "my-theme",
+  "name": "My theme",
+
+  "//background": "One colour is flat; two make a diagonal gradient.",
+  "background": ["#0B0F1A", "#141C2E"],
+
+  "//surface": "The tile behind each widget. Fully transparent (#00000000) with a transparent border gives a flat look with no panels at all.",
+  "surface": "#14FFFFFF",
+  "border": "#1FFFFFFF",
+
+  "textPrimary": "#F2F5FA",
+  "textSecondary": "#99F2F5FA",
+
+  "//accent": "What the eye should land on first — the time, a temperature, the progress bar.",
+  "accent": "#7DD3FC",
+
+  "cornerRadius": 20,
+
+  "//gap": "Space between tiles, in pixels. Larger suits sparse layouts.",
+  "gap": 14,
+
+  "//fontFamily": "Null uses the app's own font.",
+  "fontFamily": null,
+
+  "//shadow": "Soft shadow under each tile. Turn off for flat and light themes.",
+  "shadow": true
+}
