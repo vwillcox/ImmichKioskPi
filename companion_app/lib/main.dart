@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+
+import 'sealed_sender.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -139,28 +141,26 @@ class _HomeScreenState extends State<HomeScreen> {
       SharedMediaType.file => 'File',
     };
     try {
-      final uri = Uri.parse('${_settings.address}/share');
-      final headers = {'Authorization': 'Bearer ${_settings.token}'};
+      // Everything goes out sealed: only the kiosk can read it, so the
+      // reverse proxy it passes through on the way sees nothing but bytes.
+      final sender = SealedSender(
+        address: _settings.address,
+        token: _settings.token,
+      );
       http.Response resp;
 
       if (f.type == SharedMediaType.text || f.type == SharedMediaType.url) {
         final content = f.path.trim();
         final isLink = f.type == SharedMediaType.url ||
             (Uri.tryParse(content)?.hasScheme ?? false);
-        resp = await http.post(
-          uri,
-          headers: {...headers, 'Content-Type': 'application/json'},
-          body:
-              jsonEncode({'type': isLink ? 'link' : 'text', 'content': content}),
+        resp = await sender.send(
+          utf8.encode(
+              jsonEncode({'type': isLink ? 'link' : 'text', 'content': content})),
+          'application/json',
         );
       } else {
         final bytes = await File(f.path).readAsBytes();
-        final mime = f.mimeType ?? _guessMime(f);
-        resp = await http.post(
-          uri,
-          headers: {...headers, 'Content-Type': mime},
-          body: bytes,
-        );
+        resp = await sender.send(bytes, f.mimeType ?? _guessMime(f));
       }
 
       final ok = resp.statusCode == 200;

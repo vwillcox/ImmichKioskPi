@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 
 import '../config/app_config.dart' show ShareInboxSettings;
 import 'config_service.dart';
+import 'sealed_share.dart';
+import 'sealed_stream.dart';
 import 'media_cache.dart';
 
 enum ShareType { link, text, image, gif, video }
@@ -63,10 +65,17 @@ class ShareInboxService extends ChangeNotifier {
 
   ShareInboxSettings get _settings => _configService.config.shareInbox;
 
+  /// The panel's end-to-end encryption identity. Rotated on a schedule; see
+  /// [ShareKeys] for why per-message keys matter more than the schedule does.
+  final ShareKeys keys = ShareKeys();
+  bool _keysReady = false;
+
   SharedItem? get current => _queue.isEmpty ? null : _queue.first;
   int get pendingCount => _queue.length;
 
   Future<void> start() async {
+    await keys.load();
+    _keysReady = true;
     await _extractChimeAsset();
     await _bind();
   }
@@ -92,8 +101,37 @@ class ShareInboxService extends ChangeNotifier {
     }
   }
 
+  /// Content type a sealed body arrives as. The real type is inside, where
+  /// the network cannot see it.
+  static const String sealedMime = 'application/vnd.kiosk.sealed';
+
   Future<void> _handleRequest(HttpRequest request) async {
-    if (request.method != 'POST' || request.uri.path != '/share') {
+    final path = request.uri.path;
+
+    // Every sender is a known device holding a token, so the public key is
+    // handed out to them rather than to the world — it is not secret, but
+    // there is no reason to answer strangers either.
+    if (request.method == 'GET' && path == '/pubkey') {
+      if (_senderFor(request) == null) {
+        request.response.statusCode = HttpStatus.unauthorized;
+        await request.response.close();
+        return;
+      }
+      if (_keysReady) await keys.maybeRotate();
+      request.response
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode({
+          'v': SealedShare.version,
+          'kid': keys.currentKeyId,
+          'key': base64Encode(await keys.currentPublicKey()),
+          'rotatedAt': keys.rotatedAt?.toIso8601String(),
+          'rotateEveryHours': keys.rotateEvery.inHours,
+        }));
+      await request.response.close();
+      return;
+    }
+
+    if (request.method != 'POST' || path != '/share') {
       request.response.statusCode = HttpStatus.notFound;
       await request.response.close();
       return;
@@ -108,15 +146,41 @@ class ShareInboxService extends ChangeNotifier {
 
     try {
       final contentType = request.headers.contentType;
-      if (contentType?.mimeType == 'application/json') {
-        await _handleJson(request, sender);
+      final sealed = contentType?.mimeType == sealedMime;
+
+      if (!sealed && _settings.requireEncryption) {
+        // Refusing rather than quietly accepting: a setting that says
+        // everything must be encrypted is worth nothing if a sender can opt
+        // out by omitting a header.
+        debugPrint('ShareInbox: refused an unencrypted share from $sender');
+        request.response.statusCode = HttpStatus.preconditionFailed;
+        request.response.write(
+            'This kiosk accepts encrypted shares only. Update the app.');
+        await request.response.close();
+        return;
+      }
+
+      if (sealed) {
+        await _handleSealed(request, sender);
+      } else if (contentType?.mimeType == 'application/json') {
+        await _handleJson(request, await _drain(request), sender);
       } else if (contentType != null) {
-        await _handleFile(request, sender, contentType);
+        await _handleFile(request, request, sender, contentType.mimeType);
       } else {
         request.response.statusCode = HttpStatus.badRequest;
         await request.response.close();
         return;
       }
+    } on SealedAuthException catch (e) {
+      debugPrint('ShareInbox: rejected a sealed share from $sender: $e');
+      request.response.statusCode = HttpStatus.unauthorized;
+      request.response.write(e.message);
+      await request.response.close();
+    } on SealedFormatException catch (e) {
+      debugPrint('ShareInbox: malformed sealed share from $sender: $e');
+      request.response.statusCode = HttpStatus.badRequest;
+      request.response.write(e.message);
+      await request.response.close();
     } catch (e) {
       debugPrint('ShareInbox request error: $e');
       request.response.statusCode = HttpStatus.internalServerError;
@@ -124,6 +188,7 @@ class ShareInboxService extends ChangeNotifier {
     }
   }
 
+  /// The name behind the bearer token, or null when it matches nobody.
   String? _senderFor(HttpRequest request) {
     final auth = request.headers.value(HttpHeaders.authorizationHeader) ?? '';
     if (!auth.startsWith('Bearer ')) return null;
@@ -134,8 +199,59 @@ class ShareInboxService extends ChangeNotifier {
     return null;
   }
 
-  Future<void> _handleJson(HttpRequest request, String sender) async {
-    final bytes = await _drain(request);
+  /// Opens a sealed body and hands the plaintext to the ordinary handlers.
+  ///
+  /// The decryption streams, so a video is written to disk a chunk at a time
+  /// rather than being assembled in memory first.
+  Future<void> _handleSealed(HttpRequest request, String sender) async {
+    if (!_keysReady) {
+      request.response.statusCode = HttpStatus.serviceUnavailable;
+      await request.response.close();
+      return;
+    }
+
+    final header = Completer<SealedHeader>();
+    // Plain StreamController, not broadcast: it holds what arrives until a
+    // listener attaches, which is what lets the route be chosen from the
+    // header — known only once the first bytes have been decrypted — without
+    // losing the bytes that followed it.
+    final plaintext = StreamController<List<int>>();
+
+    final reader = SealedReader(keyFor: keys.keyPairFor);
+    reader.open(request, onHeader: (h) {
+      if (!header.isCompleted) header.complete(h);
+    }).listen(
+      plaintext.add,
+      onError: (Object e, StackTrace st) {
+        if (!header.isCompleted) header.completeError(e, st);
+        if (!plaintext.isClosed) plaintext.addError(e, st);
+        unawaited(plaintext.close());
+      },
+      onDone: () {
+        if (!header.isCompleted) {
+          header.completeError(
+              const SealedFormatException('the message carried no header'));
+        }
+        if (!plaintext.isClosed) plaintext.close();
+      },
+      cancelOnError: true,
+    );
+
+    final open = await header.future;
+
+    if (open.mime == 'application/json') {
+      final bytes = <int>[];
+      await for (final chunk in plaintext.stream) {
+        bytes.addAll(chunk);
+      }
+      await _handleJson(request, bytes, sender);
+      return;
+    }
+    await _handleFile(request, plaintext.stream, sender, open.mime);
+  }
+
+  Future<void> _handleJson(
+      HttpRequest request, List<int> bytes, String sender) async {
     final body = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
     final kindStr = body['type'] as String?;
     final content = (body['content'] as String? ?? '').trim();
@@ -153,8 +269,11 @@ class ShareInboxService extends ChangeNotifier {
   }
 
   Future<void> _handleFile(
-      HttpRequest request, String sender, ContentType contentType) async {
-    final mime = '${contentType.primaryType}/${contentType.subType}';
+    HttpRequest request,
+    Stream<List<int>> body,
+    String sender,
+    String mime,
+  ) async {
     final type = _typeForMime(mime);
     if (type == null) {
       request.response.statusCode = HttpStatus.unsupportedMediaType;
@@ -166,8 +285,20 @@ class ShareInboxService extends ChangeNotifier {
     final path = p.join(
         dir.path, '${DateTime.now().microsecondsSinceEpoch}${_extForMime(mime)}');
     final sink = File(path).openWrite();
-    await sink.addStream(request);
-    await sink.close();
+    try {
+      // A sealed stream raises at the end if it was cut short, so reaching
+      // the end of this without error is what proves the file whole.
+      await sink.addStream(body);
+      await sink.close();
+    } catch (e) {
+      await sink.close();
+      // A half-written file from a message that failed its check is rubbish;
+      // leaving it would put a truncated video in the queue.
+      try {
+        await File(path).delete();
+      } catch (_) {}
+      rethrow;
+    }
     _enqueue(SharedItem(type: type, sender: sender, localPath: path));
     await _respondOk(request);
   }

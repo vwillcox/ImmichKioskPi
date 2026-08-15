@@ -45,6 +45,9 @@ dependencies:
   # Hisense VIDAA televisions are controlled over MQTT
   mqtt_client: ^10.11.11
 
+  # X25519, HKDF and ChaCha20-Poly1305 for end-to-end encrypted shares
+  cryptography: ^2.7.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

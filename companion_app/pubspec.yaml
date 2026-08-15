@@ -36,6 +36,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   receive_sharing_intent: ^1.9.0
   shared_preferences: ^2.5.5
+  # X25519, HKDF and ChaCha20-Poly1305 for sealing shares end to end
+  cryptography: ^2.7.0
+
   http: ^1.6.0
   image_picker: ^1.2.3
 

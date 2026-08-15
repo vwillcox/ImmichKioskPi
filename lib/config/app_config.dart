@@ -479,16 +479,26 @@ class ShareInboxSettings {
 
   List<SenderToken> senderTokens;
 
+  /// Refuse anything that arrives unencrypted.
+  ///
+  /// Off by default because turning it on stops older copies of the phone app
+  /// working — every sender has to be updated first. On, it is what makes the
+  /// guarantee real: otherwise anyone able to reach the port can simply omit
+  /// the encryption and be accepted.
+  bool requireEncryption;
+
   ShareInboxSettings({
     this.listenPort = 8081,
     this.dndMuted = false,
     this.notificationVolume = 80,
+    this.requireEncryption = false,
     List<SenderToken>? senderTokens,
   }) : senderTokens = senderTokens ?? [];
 
   factory ShareInboxSettings.fromJson(Map<String, dynamic> j) {
     return ShareInboxSettings(
       listenPort: (j['listenPort'] as num?)?.toInt() ?? 8081,
+      requireEncryption: j['requireEncryption'] as bool? ?? false,
       dndMuted: j['dndMuted'] as bool? ?? false,
       notificationVolume: (j['notificationVolume'] as num?)?.toDouble() ?? 80,
       senderTokens: (j['senderTokens'] as List?)
@@ -500,6 +510,7 @@ class ShareInboxSettings {
 
   Map<String, dynamic> toJson() => {
         'listenPort': listenPort,
+        'requireEncryption': requireEncryption,
         'dndMuted': dndMuted,
         'notificationVolume': notificationVolume,
         'senderTokens': senderTokens.map((t) => t.toJson()).toList(),
