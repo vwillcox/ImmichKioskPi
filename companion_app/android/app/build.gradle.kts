@@ -9,6 +9,10 @@ android {
     // receive_sharing_intent's native module compiles against SDK 37, above
     // Flutter's own default (flutter.compileSdkVersion) for this AGP version.
     compileSdk = 37
+    // Google now ships this platform as "android-37.0" rather than
+    // "android-37". AGP 9 needs the minor told to it separately, or it looks
+    // for a directory the SDK manager never creates.
+    compileSdkMinor = 0
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
