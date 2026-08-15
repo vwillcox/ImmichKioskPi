@@ -164,8 +164,20 @@ class TvService extends ChangeNotifier {
   void _finishConnected() {
     _client!.getState();
     _client!.getVolume();
+    // Asked for once here and not again. The set runs its authentication
+    // check whenever it is asked for the source list, which puts the pairing
+    // code up on the television — so polling it, however cheap it looks,
+    // interrupts whatever is being watched.
+    _client!.getSourceList();
     _setConn(ConnState.connected);
   }
+
+  /// The television's inputs, empty until it has answered.
+  List<TvSource> get sources => state.sources;
+
+  /// Re-reads the inputs. Only for an explicit user action — see the note in
+  /// [_finishConnected] about what asking costs.
+  void refreshSources() => _client?.getSourceList();
 
   /// Connect with a saved/refreshed token if possible, else fall to pairing.
   Future<void> connect() async {

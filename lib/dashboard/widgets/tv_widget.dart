@@ -61,6 +61,7 @@ class _DashboardTvWidgetState extends State<DashboardTvWidget> {
     }
 
     final compact = widget.w.option('compact', false);
+    final showInputs = widget.w.option('inputs', false);
     return LayoutBuilder(
       builder: (context, c) {
         // A short tile has no room for a d-pad; a tall one should not waste
@@ -72,6 +73,10 @@ class _DashboardTvWidgetState extends State<DashboardTvWidget> {
             const SizedBox(height: 8),
             if (showPad) ...[
               Expanded(child: _Pad(theme: t, tv: tv)),
+              const SizedBox(height: 8),
+            ],
+            if (showInputs && tv.sources.isNotEmpty) ...[
+              _Inputs(theme: t, tv: tv),
               const SizedBox(height: 8),
             ],
             _Transport(theme: t, tv: tv, expanded: !showPad),
@@ -92,8 +97,14 @@ class _Status extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = tv.state;
+    // "HDMI1 · Fire TV Stick" beats "HDMI1" when you are glancing at this
+    // from the sofa wondering what the television is showing.
+    final current =
+        state.sources.where((s) => s.id == state.sourceId).firstOrNull;
+    final device = current?.deviceName ?? '';
     final bits = <String>[
       if ((state.sourceName ?? '').isNotEmpty) state.sourceName!,
+      if (device.isNotEmpty) device,
       if (state.volume != null) state.muted ? 'muted' : 'vol ${state.volume}',
     ];
     return Row(
@@ -410,6 +421,14 @@ final tvWidgetType = DashboardWidgetType(
   minHeight: 2,
   options: const [
     WidgetOption(
+      key: 'inputs',
+      label: 'Show a row of inputs',
+      kind: OptionKind.boolean,
+      defaultValue: false,
+      help: 'Each input the television reports, with a dot showing whether '
+          'anything is connected to it. Tap one to switch.',
+    ),
+    WidgetOption(
       key: 'compact',
       label: 'Buttons only, no direction pad',
       kind: OptionKind.boolean,
@@ -425,3 +444,64 @@ final tvWidgetType = DashboardWidgetType(
   ],
   build: (context, w) => DashboardTvWidget(w: w),
 );
+
+/// A scrolling row of the television's inputs, each with a light showing
+/// whether anything is plugged into it.
+///
+/// Horizontal rather than a grid because this is a tile on a dashboard, not a
+/// screen of its own — the standalone remote has room for the full grid.
+class _Inputs extends StatelessWidget {
+  const _Inputs({required this.theme, required this.tv});
+
+  final DashboardTheme theme;
+  final TvService tv;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 46,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: tv.sources.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final s = tv.sources[i];
+          final Color dot = s.hasSignal
+              ? const Color(0xFF4ADE80)
+              : (s.knownButAsleep ? const Color(0xFFF59E0B) : theme.textSecondary);
+          return Material(
+            color: s.isActive ? theme.accent : theme.surface,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => tv.changeSource(s.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 9,
+                      height: 9,
+                      decoration:
+                          BoxDecoration(color: dot, shape: BoxShape.circle),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      s.name,
+                      style: TextStyle(
+                        color: s.isActive ? Colors.white : theme.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}

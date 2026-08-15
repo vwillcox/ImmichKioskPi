@@ -58,6 +58,61 @@ VidaaCredentials generateCredentials(
   return VidaaCredentials(clientId, username, password);
 }
 
+/// One selectable input, as the television itself describes it.
+///
+/// The ids are not numbers: this set reports `TV`, `HDMI1`…`HDMI4`, `AVS`, and
+/// a numeric id for the built-in VIDAA launcher. Guessing them does not work,
+/// which is why the list is asked for rather than assumed.
+class TvSource {
+  TvSource({
+    required this.id,
+    required this.name,
+    required this.deviceName,
+    required this.hasSignal,
+    required this.isActive,
+  });
+
+  final String id;
+
+  /// What to call it — the TV's own display name, e.g. "HDMI1" or "AV".
+  final String name;
+
+  /// The connected device's name where the TV knows it, e.g. "Fire TV Stick".
+  /// Empty when nothing has announced itself over CEC.
+  final String deviceName;
+
+  /// Something is plugged in and powered.
+  ///
+  /// From `has_signal` rather than `is_signal`: the latter is only true for
+  /// the input currently on screen, so using it would show every other socket
+  /// as empty regardless of what is attached.
+  final bool hasSignal;
+
+  /// This is the input currently showing.
+  final bool isActive;
+
+  /// True when the TV remembers a device here but sees nothing now — a name
+  /// with no signal, typically something switched off at the wall.
+  bool get knownButAsleep => !hasSignal && deviceName.isNotEmpty;
+
+  static bool _flag(Object? v) => v == 1 || v == '1' || v == true;
+
+  static TvSource? parse(Object? entry, {String? currentId}) {
+    if (entry is! Map) return null;
+    final id = '${entry['sourceid'] ?? ''}';
+    if (id.isEmpty) return null;
+    final display = '${entry['displayname'] ?? ''}';
+    final source = '${entry['sourcename'] ?? ''}';
+    return TvSource(
+      id: id,
+      name: display.isNotEmpty ? display : (source.isNotEmpty ? source : id),
+      deviceName: '${entry['displayname2'] ?? ''}',
+      hasSignal: _flag(entry['has_signal']) || _flag(entry['is_signal']),
+      isActive: currentId != null && currentId == id,
+    );
+  }
+}
+
 /// Live TV state pushed from broadcast topics.
 class TvState {
   String? sourceId;
@@ -66,6 +121,10 @@ class TvState {
   bool muted = false;
   bool powerOn = true;
   Map<String, dynamic> raw = {};
+
+  /// The inputs the TV reports, in its own order. Empty until the first
+  /// sourcelist reply arrives.
+  List<TvSource> sources = const [];
 }
 
 typedef StateCallback = void Function(TvState state);
@@ -224,11 +283,16 @@ class VidaaClient {
         final w = _tokenWaiter;
         if (w != null && !w.isCompleted) w.complete(d);
       }
+    } else if (topic.endsWith('/data/sourcelist')) {
+      // A JSON array, not an object, so the decode above leaves d null —
+      // which is why this reply was previously received and thrown away.
+      _parseSourceList(payload);
     } else if (topic == '/remoteapp/mobile/broadcast/ui_service/state') {
       if (d != null) {
         state.raw = d;
         state.sourceId = d['sourceid']?.toString();
         state.sourceName = d['sourcename']?.toString();
+        _remarkActive();
         onState?.call(state);
       }
     } else if (topic.endsWith('/actions/volumechange') ||
@@ -243,6 +307,40 @@ class VidaaClient {
     }
   }
 
+  void _parseSourceList(String payload) {
+    try {
+      final list = jsonDecode(payload);
+      if (list is! List) return;
+      final parsed = <TvSource>[];
+      for (final e in list) {
+        final s = TvSource.parse(e, currentId: state.sourceId);
+        if (s != null) parsed.add(s);
+      }
+      // An empty reply is not an answer — keeping the previous list beats
+      // blanking the inputs because one poll came back short.
+      if (parsed.isEmpty) return;
+      state.sources = parsed;
+      onState?.call(state);
+    } catch (e) {
+      _log('could not read the source list: $e');
+    }
+  }
+
+  /// Recomputes which cached source is the active one, without refetching.
+  void _remarkActive() {
+    if (state.sources.isEmpty) return;
+    state.sources = [
+      for (final s in state.sources)
+        TvSource(
+          id: s.id,
+          name: s.name,
+          deviceName: s.deviceName,
+          hasSignal: s.hasSignal,
+          isActive: s.id == state.sourceId,
+        )
+    ];
+  }
+
   void _publish(String topic, String payload) {
     final builder = MqttClientPayloadBuilder()..addString(payload);
     _client?.publishMessage(topic, MqttQos.atMostOnce, builder.payload!);
@@ -253,6 +351,15 @@ class VidaaClient {
       _publish(_tvTopic('remote_service', 'sendkey'), key);
 
   void getState() => _publish(_tvTopic('ui_service', 'gettvstate'), '');
+
+  /// Asks the TV for its input list; the reply arrives on the sourcelist
+  /// topic already subscribed to in [_subscribeCore].
+  ///
+  /// Costly in a way the name does not suggest: the set runs its
+  /// authentication check when asked, which puts the pairing code up on the
+  /// television. Call it on connect, where an auth exchange is happening
+  /// anyway, and otherwise only when the user asks.
+  void getSourceList() => _publish(_tvTopic('ui_service', 'sourcelist'), '');
   void getVolume() => _publish(_tvTopic('platform_service', 'getvolume'), '');
   void changeSource(String sourceId) => _publish(
       _tvTopic('ui_service', 'changesource'),
