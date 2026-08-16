@@ -49,6 +49,28 @@ class TtsService {
     return _availableCache = ok;
   }
 
+  /// How long to leave between the sender and the note.
+  ///
+  /// Long enough to land as two statements rather than one sentence — you are
+  /// meant to hear who it is from, then hear what they said.
+  static const Duration announcementGap = Duration(milliseconds: 850);
+
+  /// Speaks each part in turn, with [gap] between them.
+  ///
+  /// Queued as one unit, so a second note arriving cannot slot itself between
+  /// somebody's name and their message.
+  Future<void> speakAll(List<String> parts,
+      {double volume = 100, Duration gap = announcementGap}) {
+    final say = parts.map(_tidy).where((p) => p.isNotEmpty).toList();
+    if (say.isEmpty) return Future.value();
+    return _queue = _queue.then((_) async {
+      for (var i = 0; i < say.length; i++) {
+        if (i > 0) await Future<void>.delayed(gap);
+        await _speakNow(say[i], volume);
+      }
+    }).catchError((Object e) => debugPrint('Tts: $e'));
+  }
+
   /// Speaks [text], after anything already queued.
   ///
   /// Silently does nothing when piper is not installed: speech is a nicety,
@@ -134,12 +156,30 @@ class TtsService {
     }
   }
 
-  /// Describes a shared note the way a person would announce it.
-  static String announcement(String text, String sender, {bool withSender = true}) {
+  /// A shared note as the pieces to say, in order.
+  ///
+  /// Two utterances rather than one string, because piper takes no SSML and a
+  /// full stop buys only the pause it would give mid-paragraph. Saying them
+  /// separately lets a real gap sit between "who this is from" and "what they
+  /// said", which is the difference between an announcement and a run-on
+  /// sentence.
+  static List<String> announcementParts(
+    String text,
+    String sender, {
+    bool withSender = true,
+  }) {
     final body = _tidy(text);
-    if (body.isEmpty) return '';
-    if (!withSender || sender.trim().isEmpty) return body;
-    return 'Message from $sender. $body';
+    if (body.isEmpty) return const [];
+    if (!withSender || sender.trim().isEmpty) return [body];
+    return ['Message from $sender.', body];
+  }
+
+  /// Kept for the single-string case and for tests; the spoken path uses
+  /// [announcementParts] so the gap can be real.
+  static String announcement(String text, String sender,
+      {bool withSender = true}) {
+    final parts = announcementParts(text, sender, withSender: withSender);
+    return parts.join(' ');
   }
 
   void dispose() {

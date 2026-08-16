@@ -397,15 +397,15 @@ class ShareInboxService extends ChangeNotifier {
     if (item.type != ShareType.text) return;
     final tts = speech;
     if (tts == null) return;
-    final text = TtsService.announcement(
+    final parts = TtsService.announcementParts(
       item.content ?? '',
       item.sender,
       withSender: _settings.speakSender,
     );
-    if (text.isEmpty) return;
+    if (parts.isEmpty) return;
     // After the chime rather than over it.
     await Future<void>.delayed(const Duration(milliseconds: 900));
-    await tts.speak(text, volume: _settings.speechVolume);
+    await tts.speakAll(parts, volume: _settings.speechVolume);
   }
 
   Future<void> _playChime() async {

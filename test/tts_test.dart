@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_kiosk_pi/services/tts_service.dart';
 
 void main() {
+  _parts();
   group('what actually gets said', () {
     test('a plain note is read as written', () {
       expect(TtsService.tidy('Dinner is ready'), 'Dinner is ready');
@@ -56,6 +57,40 @@ void main() {
       // Guards against announcing "Message from Jo." and then silence.
       expect(TtsService.announcement('', 'Jo'), isEmpty);
       expect(TtsService.announcement('   ', 'Jo'), isEmpty);
+    });
+  });
+}
+
+void _parts() {
+  group('the announcement is said as two statements', () {
+    test('sender and note are separate utterances', () {
+      // Separate so a real pause can sit between them; piper takes no SSML,
+      // and a full stop only buys a mid-paragraph pause.
+      expect(
+        TtsService.announcementParts('Dinner is ready', 'Jo'),
+        ['Message from Jo.', 'Dinner is ready'],
+      );
+    });
+
+    test('without the sender it is one part', () {
+      expect(
+        TtsService.announcementParts('Dinner is ready', 'Jo', withSender: false),
+        ['Dinner is ready'],
+      );
+    });
+
+    test('an unnamed sender is not announced', () {
+      expect(TtsService.announcementParts('Hello', '   '), ['Hello']);
+    });
+
+    test('an empty note says nothing at all, not just the name', () {
+      expect(TtsService.announcementParts('', 'Jo'), isEmpty);
+      expect(TtsService.announcementParts('  \n ', 'Jo'), isEmpty);
+    });
+
+    test('the gap is long enough to hear as a break', () {
+      expect(TtsService.announcementGap.inMilliseconds,
+          greaterThanOrEqualTo(600));
     });
   });
 }
