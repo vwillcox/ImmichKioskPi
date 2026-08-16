@@ -27,6 +27,15 @@ class WidgetOption {
   /// For [OptionKind.choice]: the allowed values, and what to call them.
   final Map<String, String> choices;
 
+  /// For [OptionKind.choice]: the name of a list the *kiosk* supplies, rather
+  /// than one written here — currently only `albums`.
+  ///
+  /// Needed because some choices are not knowable when the widget is
+  /// declared: which albums exist is a property of somebody's Immich server,
+  /// changes without this app being rebuilt, and cannot be a const map.
+  /// The editor fills these from the schema at render time.
+  final String? choicesFrom;
+
   /// Shown under the field. Say what the setting is for, not what it is.
   final String? help;
 
@@ -38,6 +47,7 @@ class WidgetOption {
 
   const WidgetOption({
     required this.key,
+    this.choicesFrom,
     required this.label,
     this.kind = OptionKind.text,
     this.defaultValue,
@@ -53,6 +63,7 @@ class WidgetOption {
         'kind': kind.name,
         'default': defaultValue,
         'choices': choices,
+        'choicesFrom': choicesFrom,
         'help': help,
         'fields': fields.map((f) => f.toJson()).toList(),
         'addLabel': addLabel,

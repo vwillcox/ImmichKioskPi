@@ -79,6 +79,11 @@ void main() async {
   // widgets on the same feed cost one fetch.
   final feeds = FeedService()..start();
 
+  // One instance, shared with the provider below rather than created twice:
+  // it holds the album and asset caches, and a second copy would warm its own
+  // from scratch.
+  final immich = ImmichService(config);
+
   final dashboard = DashboardService(
     config,
     // Resolved on each request so the editor's preview reflects the moment
@@ -88,6 +93,11 @@ void main() async {
       feeds: feeds,
       playback: spotify.available ? spotify : nowPlaying,
     ),
+    // For the Immich widget's album picker. Cached by the service it calls,
+    // so opening the editor does not hammer the server.
+    albums: () async => {
+      for (final a in await immich.getAlbums()) a.id: a.name,
+    },
   );
   unawaited(dashboard.start());
 
@@ -104,7 +114,7 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: config),
-        Provider<ImmichService>(create: (_) => ImmichService(config)),
+        Provider<ImmichService>.value(value: immich),
         ChangeNotifierProvider(create: (_) => LockedFolderService(config)),
         ChangeNotifierProvider.value(value: weather),
         ChangeNotifierProvider.value(value: nowPlaying),

@@ -3,6 +3,7 @@ import 'calendar_widget.dart';
 import 'clock_widget.dart';
 import 'news_widget.dart';
 import 'spotify_widget.dart';
+import 'immich_widget.dart';
 import 'speedtest_widget.dart';
 import 'tv_widget.dart';
 import 'weather_widget.dart';
@@ -22,5 +23,6 @@ void registerBuiltInWidgets() {
     newsWidgetType,
     tvWidgetType,
     speedtestWidgetType,
+    immichWidgetType,
   ]);
 }

@@ -818,7 +818,15 @@ function field(w, o) {
       input.oninput = () => { w.options[o.key] = input.value; markDirty(); render(); };
     } else if (o.kind === "choice") {
       input = document.createElement("select");
-      for (const [k, name] of Object.entries(o.choices || {})) {
+      // A list the kiosk supplies — which albums exist, say — rather than one
+      // written into the widget. Falls back to the declared choices, so a
+      // list that could not be fetched leaves a usable field rather than an
+      // empty dropdown.
+      const dynamic = o.choicesFrom ? (state.schema.lists || {})[o.choicesFrom] : null;
+      const entries = dynamic && Object.keys(dynamic).length
+        ? dynamic
+        : (o.choices || {});
+      for (const [k, name] of Object.entries(entries)) {
         const opt = document.createElement("option");
         opt.value = k; opt.textContent = name;
         input.appendChild(opt);
