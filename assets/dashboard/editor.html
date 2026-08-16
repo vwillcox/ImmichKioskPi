@@ -100,7 +100,13 @@
     opacity: .8; border-bottom-right-radius: 9px;
   }
 
-  aside { display: flex; flex-direction: column; gap: 14px; }
+  aside {
+    display: flex; flex-direction: column; gap: 14px;
+    /* Sticky and scrollable, so the settings for the widget being edited
+       stay reachable however long the canvas is. */
+    position: sticky; top: 18px; max-height: calc(100vh - 36px);
+    overflow-y: auto;
+  }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
   .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
   .palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
@@ -115,6 +121,23 @@
   textarea { min-height: 76px; resize: vertical; }
   .row { display: flex; align-items: center; gap: 10px; }
   .row input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
+  /* Collapsible panels. The header stays put and the body is what folds, so
+     a collapsed panel is still a labelled target you can find and reopen. */
+  .panelHead {
+    cursor: pointer; user-select: none; display: flex; align-items: center;
+    gap: 8px; margin: 0;
+  }
+  .panelHead .chev {
+    display: inline-block; transition: transform .15s ease;
+    font-size: 12px; color: var(--muted);
+  }
+  .card.collapsed .panelHead { margin: 0; }
+  .card.collapsed .panelHead .chev { transform: rotate(-90deg); }
+  .card.collapsed .panelBody { display: none; }
+  .panelBody { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .field { font-size: 12px; color: var(--muted); }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .row #pageLabel { flex: 1; }
   .help { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .empty { color: var(--muted); font-size: 14px; }
   .warn { color: var(--danger); font-size: 13px; margin-top: 8px; }
@@ -124,20 +147,6 @@
 <header>
   <h1>Kiosk dashboard</h1>
   <span id="status">Loading…</span>
-  <select id="theme" title="Theme"></select>
-  <label class="toggle"><input type="checkbox" id="roundedCorners"> Rounded corners</label>
-  <label class="toggle"><input type="checkbox" id="tileShadows"> Shadows</label>
-  <span id="pageBar">
-    <button id="pagePrev" title="Previous page">‹</button>
-    <span id="pageLabel">Page 1 / 1</span>
-    <button id="pageNext" title="Next page">›</button>
-    <button id="pageAdd" title="Add a page">+ Page</button>
-    <button id="pageDel" title="Delete this page" class="danger">− Page</button>
-  </span>
-  <label class="toggle" title="0 leaves paging manual">
-    Flip every <input type="number" id="pageSeconds" min="0" max="3600" step="1"> s
-  </label>
-  <label class="toggle"><input type="checkbox" id="tapToFlip"> Tap to flip</label>
   <button id="revert">Revert</button>
   <button id="save" class="primary">Save</button>
 </header>
@@ -149,14 +158,55 @@
   </div>
 
   <aside>
-    <div class="card">
-      <h2>Add a widget</h2>
-      <div class="palette" id="palette"></div>
-    </div>
-    <div class="card" id="settingsCard">
-      <h2>Widget settings</h2>
-      <div id="settings"><p class="empty">Select a widget to change its settings.</p></div>
-    </div>
+    <!-- Every panel collapses to its own header. On a laptop the sidebar is
+         taller than the window once all three are open, and the settings for
+         the widget you are actually editing are the ones at the bottom. -->
+    <section class="card" data-panel="dashboard">
+      <h2 class="panelHead"><span class="chev">▾</span>Dashboard</h2>
+      <div class="panelBody">
+        <label class="field">Theme</label>
+        <select id="theme" title="Theme"></select>
+
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="roundedCorners"> Rounded corners</label>
+          <label class="toggle"><input type="checkbox" id="tileShadows"> Shadows</label>
+        </div>
+
+        <label class="field">Pages</label>
+        <div class="row" id="pageBar">
+          <button id="pagePrev" title="Previous page">‹</button>
+          <span id="pageLabel">Page 1 / 1</span>
+          <button id="pageNext" title="Next page">›</button>
+        </div>
+        <div class="row">
+          <button id="pageAdd" title="Add a page">+ Page</button>
+          <button id="pageDel" title="Delete this page" class="danger">− Page</button>
+        </div>
+
+        <div class="row">
+          <label class="toggle" title="0 leaves paging manual">
+            Flip every <input type="number" id="pageSeconds" min="0" max="3600" step="1"> s
+          </label>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="tapToFlip"> Tap to flip</label>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" data-panel="palette">
+      <h2 class="panelHead"><span class="chev">▾</span>Add a widget</h2>
+      <div class="panelBody">
+        <div class="palette" id="palette"></div>
+      </div>
+    </section>
+
+    <section class="card" data-panel="settings" id="settingsCard">
+      <h2 class="panelHead"><span class="chev">▾</span>Widget settings</h2>
+      <div class="panelBody">
+        <div id="settings"><p class="empty">Select a widget to change its settings.</p></div>
+      </div>
+    </section>
   </aside>
 </main>
 
@@ -377,32 +427,40 @@ function fitPreview(tile) {
   const lines = [...body.querySelectorAll(".line")];
   if (!lines.length) return;
 
-  // Across: each line independently, since one long headline should not
-  // shrink the timestamp underneath it.
+  // Start from the asked-for sizes, so fitting twice gives the same answer
+  // as fitting once rather than creeping towards zero.
   for (const line of lines) {
     const base = parseFloat(line.dataset.cqh);
-    if (!base) continue;
-    line.style.fontSize = base + "cqh";
-    if (line.clientWidth > 0 && line.scrollWidth > line.clientWidth) {
-      // A whisker under the exact ratio, so rounding cannot leave it one
-      // pixel over and still clipped.
-      let factor = (line.clientWidth / line.scrollWidth) * 0.98;
-      // Floored, because a long headline shrunk to fit exactly ends up
-      // smaller than the timestamp beneath it — which inverts the hierarchy
-      // and looks more broken than the clipping did. Past this it ellipsises
-      // instead, which is what the widget itself does on the panel.
-      factor = Math.max(factor, 0.5);
-      line.style.fontSize = (base * factor) + "cqh";
-    }
+    if (base) line.style.fontSize = base + "cqh";
   }
 
-  // Down: all lines together, so their relative sizes are preserved.
-  if (body.clientHeight > 0 && body.scrollHeight > body.clientHeight) {
-    const factor = (body.clientHeight / body.scrollHeight) * 0.98;
-    for (const line of lines) {
-      const current = parseFloat(line.style.fontSize) || parseFloat(line.dataset.cqh);
-      line.style.fontSize = (current * factor) + "cqh";
+  // One factor for the whole tile, taken from the line that overflows worst.
+  // Scaling lines independently was the obvious approach and the wrong one:
+  // it fitted each line exactly and so destroyed the relationship between
+  // them, leaving a headline smaller than its own timestamp.
+  let factor = 1;
+  for (const line of lines) {
+    if (line.clientWidth > 0 && line.scrollWidth > line.clientWidth) {
+      factor = Math.min(factor, line.clientWidth / line.scrollWidth);
     }
+  }
+  if (body.clientHeight > 0 && body.scrollHeight > body.clientHeight) {
+    factor = Math.min(factor, body.clientHeight / body.scrollHeight);
+  }
+  if (factor >= 1) return;
+
+  // A single line has no hierarchy to protect, so it shrinks as far as it
+  // needs to and is shown whole — a clock reading "11:…" is useless, and it
+  // is exactly the case a floor would ruin. Several lines are floored, since
+  // shrinking a tile to fit one long headline would make the rest unreadable;
+  // past the floor that line ellipsises, which is what the widget itself does
+  // on the panel.
+  const floor = lines.length === 1 ? 0.15 : 0.45;
+  factor = Math.max(factor * 0.98, floor);
+
+  for (const line of lines) {
+    const base = parseFloat(line.dataset.cqh);
+    if (base) line.style.fontSize = (base * factor) + "cqh";
   }
 }
 
@@ -861,6 +919,47 @@ function renderPageBar() {
   };
 }
 
+/* Collapsing the sidebar panels.
+
+   Which are open is remembered in localStorage rather than in the dashboard
+   config: it is a preference of whoever is looking at this browser, not part
+   of what the panel displays, and it should not make the config dirty or
+   travel to the kiosk. */
+const PANEL_KEY = "kiosk.editor.collapsed";
+
+function collapsedPanels() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(PANEL_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function installPanels() {
+  const collapsed = collapsedPanels();
+  for (const card of document.querySelectorAll("aside .card[data-panel]")) {
+    const name = card.dataset.panel;
+    if (collapsed.has(name)) card.classList.add("collapsed");
+    const head = card.querySelector(".panelHead");
+    if (!head) continue;
+    head.onclick = () => {
+      card.classList.toggle("collapsed");
+      const now = collapsedPanels();
+      if (card.classList.contains("collapsed")) now.add(name);
+      else now.delete(name);
+      try {
+        localStorage.setItem(PANEL_KEY, JSON.stringify([...now]));
+      } catch {
+        // Private browsing, or storage full. Collapsing still works for this
+        // visit; it just will not be remembered.
+      }
+      // The canvas does not change size, but a panel opening can change the
+      // sidebar's scroll height — refit so nothing is left measured wrong.
+      fitAllPreviews();
+    };
+  }
+}
+
 function renderPaging() {
   const secs = document.getElementById("pageSeconds");
   secs.value = state.dashboard.pageSeconds || 0;
@@ -949,6 +1048,7 @@ async function load(quiet) {
       ...state.dashboard.widgets.map(w => (w.page || 0) + 1),
     );
     installFonts();
+    installPanels();
     renderPalette();
     renderThemes();
     renderOverrides();
