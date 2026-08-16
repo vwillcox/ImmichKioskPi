@@ -21,6 +21,7 @@ import 'services/now_playing_service.dart';
 import 'services/screen_idle_service.dart';
 import 'services/share_inbox_service.dart';
 import 'services/spotify_service.dart';
+import 'services/speedtest_service.dart';
 import 'services/tv_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
@@ -115,6 +116,10 @@ void main() async {
         ChangeNotifierProvider.value(value: feeds),
         ChangeNotifierProvider.value(value: dashboard),
         ChangeNotifierProvider(create: (_) => TvService(config)),
+        // Owned above the dashboard so a test keeps running while you
+        // page away from the widget, and the result is still there when
+        // you come back.
+        ChangeNotifierProvider(create: (_) => SpeedtestService()),
       ],
       child: const ImmichKioskPiApp(),
     ),

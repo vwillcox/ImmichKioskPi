@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -24,6 +26,10 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   ScreenIdleService? _screenIdle;
 
+  final PageController _pages = PageController();
+  Timer? _flip;
+  int _page = 0;
+
   @override
   void initState() {
     super.initState();
@@ -42,7 +48,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Releasing it here rather than on the way in to the next screen means
     // the timer restarts from now, not from whenever the dashboard opened.
     _screenIdle?.dashboardShowing = false;
+    _flip?.cancel();
+    _pages.dispose();
     super.dispose();
+  }
+
+  /// Starts, restarts or stops the automatic page turn to match the settings
+  /// and how many pages there actually are.
+  void _syncFlipTimer(DashboardSettings settings) {
+    final wanted = settings.pageSeconds > 0 && settings.pageCount > 1;
+    if (!wanted) {
+      _flip?.cancel();
+      _flip = null;
+      return;
+    }
+    if (_flip != null && _flip!.isActive) return;
+    _flip = Timer.periodic(Duration(seconds: settings.pageSeconds), (_) {
+      if (!mounted) return;
+      _goTo(_page + 1, settings.pageCount);
+    });
+  }
+
+  void _goTo(int index, int pageCount) {
+    if (pageCount <= 1) return;
+    final next = index % pageCount;
+    _pages.animateToPage(
+      next,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  /// A tap anywhere that a widget did not claim.
+  ///
+  /// Only reached when the widget under the finger ignored it, so tapping the
+  /// TV remote or the speed test still does what those do rather than turning
+  /// the page underneath them.
+  void _tapped(DashboardSettings settings) {
+    if (!settings.tapToFlip) return;
+    _goTo(_page + 1, settings.pageCount);
+    // Manual turns restart the clock, so a page you just chose is not
+    // whipped away half a second later.
+    if (settings.pageSeconds > 0) {
+      _flip?.cancel();
+      _flip = null;
+      _syncFlipTimer(settings);
+    }
   }
 
   @override
@@ -51,15 +102,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final settings = context.watch<ConfigService>().config.dashboard;
     final theme = dashboard.themes.byId(settings.themeId);
 
+    final pageCount = settings.pageCount;
+    // Kept in step with the config on every build, so editing the interval in
+    // the browser takes effect without leaving and re-entering the dashboard.
+    _syncFlipTimer(settings);
+
     return Scaffold(
       body: Container(
         decoration: theme.backgroundDecoration,
         child: SafeArea(
           child: Stack(
             children: [
-              settings.widgets.isEmpty
-                  ? _Empty(theme: theme, address: dashboard.editorAddress)
-                  : _Grid(settings: settings, theme: theme),
+              if (settings.widgets.isEmpty)
+                _Empty(theme: theme, address: dashboard.editorAddress)
+              else
+                // Behind the widgets, not over them: a translucent layer on
+                // top would swallow every tap meant for a widget. This only
+                // sees taps that fell on empty grid.
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => _tapped(settings),
+                  child: PageView.builder(
+                    controller: _pages,
+                    itemCount: pageCount,
+                    // Swiping works whatever the settings say — it is
+                    // unambiguous in a way that tapping is not.
+                    onPageChanged: (i) => setState(() => _page = i),
+                    itemBuilder: (context, page) => _Grid(
+                      settings: settings,
+                      theme: theme,
+                      page: page,
+                    ),
+                  ),
+                ),
               // The panel has no keyboard and no window chrome, so without
               // this there is no way off the dashboard at all. Drawn in the
               // theme's own colours so it belongs to the dashboard rather
@@ -69,6 +144,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 bottom: 12,
                 child: _BackButton(theme: theme),
               ),
+              if (pageCount > 1)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 16,
+                  child: _PageDots(
+                    count: pageCount,
+                    current: _page,
+                    theme: theme,
+                    onTap: (i) => _goTo(i, pageCount),
+                  ),
+                ),
             ],
           ),
         ),
@@ -106,10 +193,15 @@ class _BackButton extends StatelessWidget {
 }
 
 class _Grid extends StatelessWidget {
-  const _Grid({required this.settings, required this.theme});
+  const _Grid({
+    required this.settings,
+    required this.theme,
+    this.page = 0,
+  });
 
   final DashboardSettings settings;
   final DashboardTheme theme;
+  final int page;
 
   @override
   Widget build(BuildContext context) {
@@ -127,7 +219,7 @@ class _Grid extends StatelessWidget {
 
         return Stack(
           children: [
-            for (final w in settings.widgets)
+            for (final w in settings.widgetsOn(page))
               Positioned(
                 left: gap + w.x * (cellWidth + gap),
                 top: gap + w.y * (cellHeight + gap),
@@ -245,6 +337,54 @@ class _Empty extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Which page you are on, and a way to jump straight to another.
+///
+/// Sized for a finger rather than as decoration: on a wall panel these are
+/// the only visible sign that there is more than one page at all.
+class _PageDots extends StatelessWidget {
+  const _PageDots({
+    required this.count,
+    required this.current,
+    required this.theme,
+    required this.onTap,
+  });
+
+  final int count;
+  final int current;
+  final DashboardTheme theme;
+  final void Function(int) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i < count; i++)
+          GestureDetector(
+            onTap: () => onTap(i),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              // The padding is the touch target; the dot itself stays small
+              // so it does not compete with the widgets for attention.
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                width: i == current ? 30 : 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: i == current
+                      ? theme.accent
+                      : theme.textSecondary.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

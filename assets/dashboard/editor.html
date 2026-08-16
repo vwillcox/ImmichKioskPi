@@ -29,6 +29,11 @@
   }
   button.primary { background: var(--accent); color: #06232e; border-color: transparent; font-weight: 600; }
   button.danger { color: var(--danger); }
+  #pageBar { display: inline-flex; align-items: center; gap: 6px; }
+  #pageBar button { min-width: 36px; }
+  #pageLabel { color: var(--muted); font-size: 13px; min-width: 84px;
+               text-align: center; }
+  #pageSeconds { width: 64px; }
   button:disabled { opacity: .5; cursor: default; }
   #status { color: var(--muted); font-size: 13px; min-width: 8ch; }
   .toggle {
@@ -122,6 +127,17 @@
   <select id="theme" title="Theme"></select>
   <label class="toggle"><input type="checkbox" id="roundedCorners"> Rounded corners</label>
   <label class="toggle"><input type="checkbox" id="tileShadows"> Shadows</label>
+  <span id="pageBar">
+    <button id="pagePrev" title="Previous page">‹</button>
+    <span id="pageLabel">Page 1 / 1</span>
+    <button id="pageNext" title="Next page">›</button>
+    <button id="pageAdd" title="Add a page">+ Page</button>
+    <button id="pageDel" title="Delete this page" class="danger">− Page</button>
+  </span>
+  <label class="toggle" title="0 leaves paging manual">
+    Flip every <input type="number" id="pageSeconds" min="0" max="3600" step="1"> s
+  </label>
+  <label class="toggle"><input type="checkbox" id="tapToFlip"> Tap to flip</label>
   <button id="revert">Revert</button>
   <button id="save" class="primary">Save</button>
 </header>
@@ -152,6 +168,11 @@ const state = {
   dashboard: null,
   selectedId: null,
   dirty: false,
+  // Which page is being edited, and how many the user has opened up. The
+  // latter is separate because an empty new page has no widgets to infer it
+  // from and would otherwise disappear the moment it was added.
+  page: 0,
+  pagesShown: 1,
   // What each widget is showing on the panel right now, keyed by widget id.
   live: {},
 };
@@ -288,6 +309,7 @@ function escapeHtml(s) {
 
 function render() {
   const { columns, rows } = state.schema.grid;
+  renderPageBar();
   const t = currentTheme();
   // Exactly the arithmetic the kiosk lays out with, so what you drag here is
   // where it lands — including the gap between tiles and around the edges.
@@ -300,7 +322,7 @@ function render() {
   for (const el of [...canvas.querySelectorAll(".tile")]) el.remove();
   let anyClash = false;
 
-  for (const w of state.dashboard.widgets) {
+  for (const w of widgetsOnPage()) {
     const t = typeOf(w.type);
     const el = document.createElement("div");
     el.className = "tile" + (w.id === state.selectedId ? " selected" : "");
@@ -310,7 +332,7 @@ function render() {
     el.style.height = (w.height * cellH + (w.height - 1) * gapY) + "%";
     el.dataset.id = w.id;
 
-    const clash = state.dashboard.widgets.some(o => o.id !== w.id && overlaps(w, o));
+    const clash = widgetsOnPage().some(o => o.id !== w.id && overlaps(w, o));
     if (clash) { el.classList.add("clash"); anyClash = true; }
 
     el.innerHTML =
@@ -407,7 +429,7 @@ function firstFreeSlot(width, height) {
   for (let y = 0; y <= rows - height; y++) {
     for (let x = 0; x <= columns - width; x++) {
       const candidate = { x, y, width, height };
-      if (!state.dashboard.widgets.some(w => overlaps(candidate, w))) return { x, y };
+      if (!widgetsOnPage().some(w => overlaps(candidate, w))) return { x, y };
     }
   }
   return null;
@@ -424,6 +446,7 @@ function addWidget(t) {
     id, type: t.type,
     x: slot.x, y: slot.y,
     width: t.defaultWidth, height: t.defaultHeight,
+    page: state.page,
     fontFamily: "", fontScale: 1,
     options,
   });
@@ -472,6 +495,35 @@ function renderSettings() {
   const rule = document.createElement("hr");
   rule.style.cssText = "border:none;border-top:1px solid var(--line);margin:16px 0 4px";
   host.appendChild(rule);
+
+  // Moving a widget between pages. Without this a widget could only ever be
+  // created on a page, never moved off it, and dragging across a page break
+  // is not a gesture this canvas has.
+  const pageLabel = document.createElement("label");
+  pageLabel.textContent = "Page";
+  host.appendChild(pageLabel);
+  const pageSel = document.createElement("select");
+  for (let i = 0; i < pageCount(); i++) {
+    const o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = "Page " + (i + 1);
+    pageSel.appendChild(o);
+  }
+  pageSel.value = String(w.page || 0);
+  pageSel.onchange = () => {
+    w.page = parseInt(pageSel.value, 10) || 0;
+    // It may well land on top of something over there, so drop it into the
+    // first free slot on the page it is moving to rather than keeping
+    // coordinates that were only free on the page it left.
+    const was = state.page;
+    state.page = w.page;
+    const slot = firstFreeSlot(w.width, w.height);
+    state.page = was;
+    if (slot) { w.x = slot.x; w.y = slot.y; }
+    markDirty();
+    goToPage(w.page);
+  };
+  host.appendChild(pageSel);
 
   const fontLabel = document.createElement("label");
   fontLabel.textContent = "Font";
@@ -699,6 +751,77 @@ function installFonts() {
   document.head.appendChild(style);
 }
 
+/// Widgets on the page being edited. Everything in the canvas — drawing,
+/// clash detection, finding a free slot — works from this rather than the
+/// whole list, so two widgets on different pages are not treated as
+/// overlapping when they can never be on screen together.
+function widgetsOnPage() {
+  return state.dashboard.widgets.filter(w => (w.page || 0) === state.page);
+}
+
+function pageCount() {
+  let highest = 0;
+  for (const w of state.dashboard.widgets) highest = Math.max(highest, w.page || 0);
+  // At least one more than the highest in use when the user has added an
+  // empty page to fill, so a new page does not vanish before anything is
+  // put on it.
+  return Math.max(highest + 1, state.pagesShown || 1);
+}
+
+function goToPage(i) {
+  const count = pageCount();
+  state.page = ((i % count) + count) % count;
+  state.selectedId = null;
+  render();
+}
+
+function renderPageBar() {
+  const count = pageCount();
+  document.getElementById("pageLabel").textContent =
+    "Page " + (state.page + 1) + " / " + count;
+  document.getElementById("pagePrev").onclick = () => goToPage(state.page - 1);
+  document.getElementById("pageNext").onclick = () => goToPage(state.page + 1);
+  document.getElementById("pageAdd").onclick = () => {
+    state.pagesShown = count + 1;
+    goToPage(count);
+  };
+  const del = document.getElementById("pageDel");
+  del.disabled = count <= 1;
+  del.onclick = () => {
+    const onThis = widgetsOnPage();
+    if (onThis.length &&
+        !confirm("Delete page " + (state.page + 1) + " and its " +
+                 onThis.length + " widget(s)?")) return;
+    // Everything above this page shuffles down, so the numbering stays
+    // contiguous instead of leaving a gap that renders as a blank page.
+    state.dashboard.widgets = state.dashboard.widgets
+      .filter(w => (w.page || 0) !== state.page)
+      .map(w => ({ ...w, page: (w.page || 0) > state.page ? (w.page || 0) - 1 : (w.page || 0) }));
+    state.pagesShown = Math.max(1, count - 1);
+    markDirty();
+    goToPage(Math.min(state.page, state.pagesShown - 1));
+  };
+}
+
+function renderPaging() {
+  const secs = document.getElementById("pageSeconds");
+  secs.value = state.dashboard.pageSeconds || 0;
+  secs.onchange = () => {
+    const v = parseInt(secs.value, 10);
+    // Matches the model: 0 is manual, anything else is floored at 3s so a
+    // typo cannot make the panel strobe.
+    state.dashboard.pageSeconds = (!v || v <= 0) ? 0 : Math.min(3600, Math.max(3, v));
+    secs.value = state.dashboard.pageSeconds;
+    markDirty();
+  };
+  const tap = document.getElementById("tapToFlip");
+  tap.checked = !!state.dashboard.tapToFlip;
+  tap.onchange = () => {
+    state.dashboard.tapToFlip = tap.checked;
+    markDirty();
+  };
+}
+
 function renderOverrides() {
   for (const key of ["roundedCorners", "tileShadows"]) {
     const box = document.getElementById(key);
@@ -762,10 +885,16 @@ async function load(quiet) {
     state.dashboard = dashboard;
     state.selectedId = null;
     state.dirty = false;
+    state.page = 0;
+    state.pagesShown = Math.max(
+      1,
+      ...state.dashboard.widgets.map(w => (w.page || 0) + 1),
+    );
     installFonts();
     renderPalette();
     renderThemes();
     renderOverrides();
+    renderPaging();
     render();
     setStatus("Ready");
   } catch (e) {

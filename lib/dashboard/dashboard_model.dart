@@ -34,6 +34,14 @@ class DashboardWidgetConfig {
   int width;
   int height;
 
+  /// Which page this widget lives on, counted from zero.
+  ///
+  /// Every widget carries one rather than pages owning lists of widgets: it
+  /// keeps the config a flat list, so a config written before pages existed
+  /// loads as a single page without conversion, and moving a widget between
+  /// pages is a field change rather than a restructure.
+  int page;
+
   /// Whatever that widget type wants to remember — a feed URL, a format
   /// string, which fields to show. Opaque here.
   Map<String, dynamic> options;
@@ -53,6 +61,7 @@ class DashboardWidgetConfig {
     required this.y,
     required this.width,
     required this.height,
+    this.page = 0,
     this.fontFamily = '',
     this.fontScale = 1.0,
     Map<String, dynamic>? options,
@@ -72,6 +81,8 @@ class DashboardWidgetConfig {
       y: ((j['y'] as num?)?.toInt() ?? 0).clamp(0, DashboardGrid.rows - height),
       width: width,
       height: height,
+      // Absent means page one, which is what every pre-pages config is.
+      page: ((j['page'] as num?)?.toInt() ?? 0).clamp(0, 99),
       fontFamily: j['fontFamily'] as String? ?? '',
       // Clamped so a hand-edited config can't produce text too small to read
       // or so large the tile shows one letter.
@@ -87,13 +98,18 @@ class DashboardWidgetConfig {
         'y': y,
         'width': width,
         'height': height,
+        'page': page,
         'fontFamily': fontFamily,
         'fontScale': fontScale,
         'options': options,
       };
 
   /// True when this widget's cells overlap [other]'s.
+  ///
+  /// Widgets on different pages never overlap however their cells line up —
+  /// they are never on screen together.
   bool overlaps(DashboardWidgetConfig other) =>
+      page == other.page &&
       x < other.x + other.width &&
       other.x < x + width &&
       y < other.y + other.height &&
@@ -127,6 +143,15 @@ class DashboardSettings {
   bool roundedCorners;
   bool tileShadows;
 
+  /// Seconds between automatic page turns; 0 leaves it manual.
+  int pageSeconds;
+
+  /// Tap anywhere on the dashboard to go to the next page.
+  ///
+  /// Off by default: a dashboard full of tappable widgets would otherwise
+  /// turn the page every time you pressed one of them.
+  bool tapToFlip;
+
   List<DashboardWidgetConfig> widgets;
 
   DashboardSettings({
@@ -136,6 +161,8 @@ class DashboardSettings {
     this.editorPort = 8090,
     this.roundedCorners = true,
     this.tileShadows = true,
+    this.pageSeconds = 0,
+    this.tapToFlip = false,
     List<DashboardWidgetConfig>? widgets,
   }) : widgets = widgets ?? [];
 
@@ -150,6 +177,13 @@ class DashboardSettings {
             (j['corners'] == null ? true : j['corners'] != 'square'),
         tileShadows: j['tileShadows'] as bool? ??
             (j['shadows'] == null ? true : j['shadows'] != 'off'),
+        // Floored at 3s: anything quicker is unreadable, and a config typo
+        // of 1 would make the panel strobe.
+        pageSeconds: () {
+          final v = (j['pageSeconds'] as num?)?.toInt() ?? 0;
+          return v <= 0 ? 0 : v.clamp(3, 3600);
+        }(),
+        tapToFlip: j['tapToFlip'] as bool? ?? false,
         widgets: ((j['widgets'] as List?) ?? const [])
             .whereType<Map<String, dynamic>>()
             .map(DashboardWidgetConfig.fromJson)
@@ -164,6 +198,8 @@ class DashboardSettings {
         'editorPort': editorPort,
         'roundedCorners': roundedCorners,
         'tileShadows': tileShadows,
+        'pageSeconds': pageSeconds,
+        'tapToFlip': tapToFlip,
         'widgets': widgets.map((w) => w.toJson()).toList(),
       };
 
@@ -178,14 +214,32 @@ class DashboardSettings {
   /// The first free rectangle of [width]x[height] cells, scanning left to
   /// right then top to bottom, or null when the grid is full. Used to place a
   /// newly added widget somewhere sensible instead of on top of another.
-  ({int x, int y})? firstFreeSlot(int width, int height) {
+  ({int x, int y})? firstFreeSlot(int width, int height, {int page = 0}) {
     for (var y = 0; y <= DashboardGrid.rows - height; y++) {
       for (var x = 0; x <= DashboardGrid.columns - width; x++) {
         final candidate = DashboardWidgetConfig(
-          id: '', type: '', x: x, y: y, width: width, height: height);
+            id: '', type: '', x: x, y: y, width: width, height: height,
+            page: page);
         if (!widgets.any(candidate.overlaps)) return (x: x, y: y);
       }
     }
     return null;
   }
+
+  /// How many pages there are: enough to hold the highest page in use, and
+  /// never fewer than one.
+  ///
+  /// Derived rather than stored, so a page cannot claim to exist after its
+  /// last widget has been deleted or moved off it.
+  int get pageCount {
+    var highest = 0;
+    for (final w in widgets) {
+      if (w.page > highest) highest = w.page;
+    }
+    return highest + 1;
+  }
+
+  /// The widgets on [page], in configuration order.
+  List<DashboardWidgetConfig> widgetsOn(int page) =>
+      widgets.where((w) => w.page == page).toList();
 }

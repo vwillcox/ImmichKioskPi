@@ -285,6 +285,69 @@ placeholders, so what you lay out is what appears on the panel.
   feed can't crowd out the rest; tap an item to read it.
 - **Spotify** — artwork that repositions with the tile's shape, a fade like the
   full player's, and transport controls sized for a quick tap.
+- **Speed test** — see below.
+
+#### Pages
+
+A dashboard can have several pages. Use **+ Page** in the editor, then move a
+widget across with the **Page** dropdown in its settings — dragging does not
+cross a page break.
+
+Two ways to turn them, and they combine:
+
+- **Flip every _n_ seconds** turns the page on a timer. 0 leaves it manual, and
+  anything under 3 is floored, since a config typo would otherwise make the
+  panel strobe.
+- **Tap to flip** turns the page when you tap the background. Off by default:
+  a dashboard full of tappable widgets would otherwise change page every time
+  you pressed one. The tap only counts when it lands on empty grid — the
+  widget under your finger gets it first.
+
+Swiping sideways always works regardless of either setting, and the dots along
+the bottom show where you are and jump straight to a page. A manual turn
+restarts the timer, so a page you just chose is not whipped away.
+
+Pages are inferred from the widgets rather than stored as a count, so a page
+cannot claim to exist after its last widget has been deleted or moved off it.
+
+#### Speed test
+
+Runs [Ookla's speedtest CLI](https://www.speedtest.net/apps/cli) and shows it
+happening: ping first, then download on the outer ring of the dial, upload on
+the inner one, with the live figure in the middle. Tap to start, tap again to
+cancel.
+
+Both speeds share **one dial**, because the pair is the interesting thing — a
+line is "200 down, 20 up", and reading that off two gauges makes you do the
+comparison yourself.
+
+The scale is **logarithmic**, one power of ten per equal sweep. A linear dial
+calibrated for a gigabit line squashes everything under about 50 Mbps into the
+first few degrees, so 20 Mbps and 2 Mbps look identical — which is exactly when
+you are looking at it.
+
+Install the CLI first. It needs no root:
+
+```bash
+curl -fsSL -o /tmp/st.tgz \
+  https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-aarch64.tgz
+mkdir -p ~/.local/bin && tar xzf /tmp/st.tgz -C /tmp speedtest
+install -m755 /tmp/speedtest ~/.local/bin/speedtest
+```
+
+> Use Ookla's own binary, not Debian's `speedtest-cli` package. That is a
+> different program with different output entirely, and this widget reads
+> Ookla's `--format=jsonl` stream — one JSON object per line as the test runs,
+> which is what makes a live display possible. Ookla's `--format=json` prints
+> nothing at all until the test has finished.
+
+Bandwidth arrives as **bytes per second** and is converted to megabits here.
+Getting that wrong is the classic way to report a line as an eighth of its real
+speed.
+
+Set **Run automatically every (hours)** to have it test on its own; 0 leaves it
+manual. Each run moves a few hundred megabytes, so keep it well spaced on a
+metered connection.
 
 ### Share Inbox
 

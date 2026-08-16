@@ -370,6 +370,8 @@ class DashboardService extends ChangeNotifier {
     current.themeId = incoming.themeId;
     current.roundedCorners = incoming.roundedCorners;
     current.tileShadows = incoming.tileShadows;
+    current.pageSeconds = incoming.pageSeconds;
+    current.tapToFlip = incoming.tapToFlip;
     current.widgets = incoming.widgets;
     await _config.save();
     notifyListeners();
