@@ -200,6 +200,14 @@ class NowPlayingSettings {
 /// keeps one radio owner instead of two, and Home Assistant's history is better
 /// than anything this app kept on its own.
 class HomeAssistantSettings {
+  /// Whether to read the indoor sensor at all.
+  ///
+  /// Separate from whether it is *configured*, so the feature can be switched
+  /// off without discarding the URL, token and entity ids — a long-lived
+  /// token is not something you want to have to re-issue because you turned
+  /// a reading off for a week.
+  bool enabled;
+
   /// Base URL, no trailing slash. Home Assistant runs on the same Pi.
   String baseUrl;
 
@@ -212,6 +220,7 @@ class HomeAssistantSettings {
   String batteryEntity;
 
   HomeAssistantSettings({
+    this.enabled = true,
     this.baseUrl = 'http://localhost:8123',
     this.token = '',
     this.temperatureEntity = '',
@@ -219,11 +228,25 @@ class HomeAssistantSettings {
     this.batteryEntity = '',
   });
 
+  /// Everything needed to read the sensor, and permission to.
+  ///
+  /// The service polls on this alone, so switching [enabled] off stops the
+  /// timers and clears the reading by the same path as never having set it
+  /// up — no second code path to get wrong.
   bool get isConfigured =>
-      baseUrl.isNotEmpty && token.isNotEmpty && temperatureEntity.isNotEmpty;
+      enabled &&
+      baseUrl.isNotEmpty &&
+      token.isNotEmpty &&
+      temperatureEntity.isNotEmpty;
+
+  /// Set up, but deliberately switched off.
+  bool get isPaused =>
+      !enabled && baseUrl.isNotEmpty && token.isNotEmpty;
 
   factory HomeAssistantSettings.fromJson(Map<String, dynamic> j) =>
       HomeAssistantSettings(
+        // Absent means on, so an existing config keeps working.
+        enabled: j['enabled'] as bool? ?? true,
         baseUrl: (j['baseUrl'] as String? ?? 'http://localhost:8123')
             .replaceAll(RegExp(r'/+$'), ''),
         token: j['token'] as String? ?? '',
@@ -233,6 +256,7 @@ class HomeAssistantSettings {
       );
 
   Map<String, dynamic> toJson() => {
+        'enabled': enabled,
         'baseUrl': baseUrl,
         'token': token,
         'temperatureEntity': temperatureEntity,

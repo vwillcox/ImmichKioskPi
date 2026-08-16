@@ -665,6 +665,7 @@ class _HomeAssistantSettingsTile extends StatelessWidget {
     final temp = TextEditingController(text: s.temperatureEntity);
     final hum = TextEditingController(text: s.humidityEntity);
     final batt = TextEditingController(text: s.batteryEntity);
+    var enabled = s.enabled;
 
     Widget field(String label, TextEditingController c, {String? hint}) =>
         Padding(
@@ -698,6 +699,24 @@ class _HomeAssistantSettingsTile extends StatelessWidget {
                   style: TextStyle(color: Colors.white70, fontSize: 14),
                 ),
                 const SizedBox(height: 14),
+                // A switch rather than clearing the fields: turning the
+                // reading off should not cost you a long-lived token you then
+                // have to re-issue in Home Assistant.
+                StatefulBuilder(
+                  builder: (context, setLocal) => SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Read the indoor sensor',
+                        style: TextStyle(fontSize: 18)),
+                    subtitle: const Text(
+                      'Off stops polling Home Assistant and hides the indoor '
+                      'reading, keeping these settings for later.',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    value: enabled,
+                    onChanged: (v) => setLocal(() => enabled = v),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 field('Server', url, hint: 'http://localhost:8123'),
                 field('Long-lived access token', token),
                 field('Temperature entity', temp,
@@ -722,6 +741,7 @@ class _HomeAssistantSettingsTile extends StatelessWidget {
     );
 
     if (saved != true) return;
+    s.enabled = enabled;
     s.baseUrl = url.text.trim().replaceAll(RegExp(r'/+$'), '');
     s.token = token.text.trim();
     s.temperatureEntity = temp.text.trim();

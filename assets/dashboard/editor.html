@@ -87,6 +87,11 @@
   .tile .line {
     line-height: 1.1; white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; color: var(--t-text);
+    /* Never squashed. As flex children these shrank to fit the body instead
+       of overflowing it, which made lines overlap and — worse — made
+       scrollHeight equal clientHeight, so nothing could detect that the
+       content did not fit. */
+    flex: 0 0 auto;
   }
   .tile .line.muted { color: var(--t-muted); }
   .tile .line.accent { color: var(--t-accent); }
@@ -427,37 +432,36 @@ function fitPreview(tile) {
   const lines = [...body.querySelectorAll(".line")];
   if (!lines.length) return;
 
-  // Start from the asked-for sizes, so fitting twice gives the same answer
-  // as fitting once rather than creeping towards zero.
+  // Start from the asked-for sizes, so fitting twice gives the same answer as
+  // fitting once rather than creeping towards zero.
   for (const line of lines) {
     const base = parseFloat(line.dataset.cqh);
     if (base) line.style.fontSize = base + "cqh";
   }
 
-  // One factor for the whole tile, taken from the line that overflows worst.
-  // Scaling lines independently was the obvious approach and the wrong one:
-  // it fitted each line exactly and so destroyed the relationship between
-  // them, leaving a headline smaller than its own timestamp.
-  let factor = 1;
+  // Across: one factor for the whole tile, from whichever line overflows
+  // worst, so the relative sizes of the lines survive. Floored, past which a
+  // line ellipsises — which is what the widget does on the panel anyway.
+  let across = 1;
   for (const line of lines) {
     if (line.clientWidth > 0 && line.scrollWidth > line.clientWidth) {
-      factor = Math.min(factor, line.clientWidth / line.scrollWidth);
+      across = Math.min(across, line.clientWidth / line.scrollWidth);
     }
   }
+  across = Math.max(across, lines.length === 1 ? 0.15 : 0.5);
+
+  // Down: only worth shrinking for a modest overrun. A news tile is handed
+  // twenty lines and is never going to fit them; squeezing it until they all
+  // show would leave text far too small to read, when what the widget really
+  // does is draw items until it runs out of room and clip the rest. So this
+  // absorbs a little overflow and lets anything beyond that be clipped.
+  let down = 1;
   if (body.clientHeight > 0 && body.scrollHeight > body.clientHeight) {
-    factor = Math.min(factor, body.clientHeight / body.scrollHeight);
+    down = Math.max(body.clientHeight / body.scrollHeight, 0.7);
   }
+
+  const factor = Math.min(across, down) * 0.98;
   if (factor >= 1) return;
-
-  // A single line has no hierarchy to protect, so it shrinks as far as it
-  // needs to and is shown whole — a clock reading "11:…" is useless, and it
-  // is exactly the case a floor would ruin. Several lines are floored, since
-  // shrinking a tile to fit one long headline would make the rest unreadable;
-  // past the floor that line ellipsises, which is what the widget itself does
-  // on the panel.
-  const floor = lines.length === 1 ? 0.15 : 0.45;
-  factor = Math.max(factor * 0.98, floor);
-
   for (const line of lines) {
     const base = parseFloat(line.dataset.cqh);
     if (base) line.style.fontSize = (base * factor) + "cqh";
