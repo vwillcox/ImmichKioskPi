@@ -356,13 +356,39 @@ class FeedService extends ChangeNotifier {
       .replaceAll(r'\N', '\n')
       .replaceAll(r'\\', r'\');
 
-  static String _unescape(String v) => v
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&apos;', "'");
+  /// Decodes the HTML entities feeds arrive full of.
+  ///
+  /// Named ones first, then numeric, which is also what unpicks the
+  /// double-encoding feeds are prone to: `&amp;#038;` becomes `&#038;` on the
+  /// first pass and `&` on the second.
+  ///
+  /// The numeric pass matters more than it looks. Feeds are full of `&#8217;`
+  /// for an apostrophe and `&#8211;` for a dash, and a headline reading
+  /// "Simpsons: Hit &#038; Run" on the wall is the sort of thing you notice
+  /// every time you walk past it.
+  static String _unescape(String v) {
+    final named = v
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&apos;', "'")
+        .replaceAll('&nbsp;', ' ')
+        // Ampersand last of the named ones: doing it first would turn
+        // "&amp;lt;" into a working "<" that was never meant to be one.
+        .replaceAll('&amp;', '&');
+
+    return named.replaceAllMapped(
+      RegExp(r'&#(x?)([0-9a-fA-F]+);'),
+      (m) {
+        final hex = m[1]!.isNotEmpty;
+        final code = int.tryParse(m[2]!, radix: hex ? 16 : 10);
+        // Anything outside Unicode, or a control character, is left as it was
+        // rather than turned into something unprintable.
+        if (code == null || code < 0x20 || code > 0x10FFFF) return m[0]!;
+        return String.fromCharCode(code);
+      },
+    );
+  }
 
   static String? _stripHtml(String? v) {
     if (v == null || v.isEmpty) return null;

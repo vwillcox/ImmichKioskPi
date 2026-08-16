@@ -282,8 +282,12 @@ function previewBody(w, t, el) {
   let html = '<div class="body">';
   for (const line of lines) {
     const size = (line.scale * (w.height / canvasRows) * 100 * scale);
+    // The asked-for size is kept on the element because fitting shrinks it,
+    // and a second fit must start from the original rather than from the
+    // already-shrunk value — otherwise repeated renders creep towards zero.
     html += '<div class="line' + (line.muted ? " muted" : "") +
-      (line.accent ? " accent" : "") + '" style="font-size:' + size +
+      (line.accent ? " accent" : "") + '" data-cqh="' + size +
+      '" style="font-size:' + size +
       "cqh;text-align:" + (line.centre ? "center" : "left") + '">' +
       escapeHtml(substitute(line.text)) + "</div>";
   }
@@ -348,8 +352,62 @@ function render() {
     canvas.appendChild(el);
   }
 
+  // Only measurable once the tiles are laid out, so this is a second pass
+  // rather than part of building them.
+  fitAllPreviews();
+
   document.getElementById("clashWarning").hidden = !anyClash;
   renderSettings();
+}
+
+/* Shrink preview text that does not fit its tile.
+
+   The sizes in a widget's preview are given as a fraction of the tile's
+   *height*, which says nothing about whether the text fits across it. A wide
+   line in a narrow tile was therefore sized correctly and then ellipsised —
+   "10:34" showing as "10:…" — and several lines in a short tile overflowed
+   the bottom. Both looked like the preview was broken rather than that the
+   text was too big for the space.
+
+   Measured and scaled rather than solved in CSS: how wide a string renders
+   depends on the font, and the editor offers twenty of them. */
+function fitPreview(tile) {
+  const body = tile.querySelector(".body");
+  if (!body) return;
+  const lines = [...body.querySelectorAll(".line")];
+  if (!lines.length) return;
+
+  // Across: each line independently, since one long headline should not
+  // shrink the timestamp underneath it.
+  for (const line of lines) {
+    const base = parseFloat(line.dataset.cqh);
+    if (!base) continue;
+    line.style.fontSize = base + "cqh";
+    if (line.clientWidth > 0 && line.scrollWidth > line.clientWidth) {
+      // A whisker under the exact ratio, so rounding cannot leave it one
+      // pixel over and still clipped.
+      let factor = (line.clientWidth / line.scrollWidth) * 0.98;
+      // Floored, because a long headline shrunk to fit exactly ends up
+      // smaller than the timestamp beneath it — which inverts the hierarchy
+      // and looks more broken than the clipping did. Past this it ellipsises
+      // instead, which is what the widget itself does on the panel.
+      factor = Math.max(factor, 0.5);
+      line.style.fontSize = (base * factor) + "cqh";
+    }
+  }
+
+  // Down: all lines together, so their relative sizes are preserved.
+  if (body.clientHeight > 0 && body.scrollHeight > body.clientHeight) {
+    const factor = (body.clientHeight / body.scrollHeight) * 0.98;
+    for (const line of lines) {
+      const current = parseFloat(line.style.fontSize) || parseFloat(line.dataset.cqh);
+      line.style.fontSize = (current * factor) + "cqh";
+    }
+  }
+}
+
+function fitAllPreviews() {
+  for (const tile of canvas.querySelectorAll(".tile")) fitPreview(tile);
 }
 
 /* ---------- dragging and resizing ---------- */
@@ -916,6 +974,21 @@ async function refreshLive() {
 
 load().then(refreshLive);
 setInterval(refreshLive, 20000);
+
+/* The fitted sizes are measured, so they go stale whenever the measurement
+   would come out differently. Two cases, both easy to miss:
+
+   - The canvas changes width when the browser window does. Text is sized as
+     a fraction of *height*, so a wider canvas does not change the size but
+     does change whether it fits.
+   - The dashboard fonts arrive after the page does. Anything measured before
+     they land was measured in the fallback face, which is a different width. */
+if (window.ResizeObserver) {
+  new ResizeObserver(() => fitAllPreviews()).observe(canvas);
+}
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => fitAllPreviews());
+}
 </script>
 </body>
 </html>
