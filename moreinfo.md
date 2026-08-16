@@ -374,6 +374,53 @@ already run. The kiosk only needs to know which local port to bind.
 The chime plays through its own player, so its volume is independent of whatever
 else is playing. A **Do Not Disturb** switch in the top bar mutes it.
 
+#### Reading notes aloud
+
+**Settings → Share Inbox → Read notes aloud** speaks incoming text notes, with
+"Message from <name>" first unless you turn that off.
+
+Text only. A photo has nothing to read, and a link spoken aloud is a stream of
+letters nobody can follow — the chime already says something arrived and the
+screen says what it was. A URL inside a note becomes "a link", and anything
+past 600 characters is cut short with "and there is more on screen" rather
+than trapping you in a recital.
+
+Speech has its own volume, defaulting to **45%** — deliberately below the
+chime and the music. A voice at the same level as music is startling in a
+quiet room: it arrives unannounced rather than being something you chose to
+play. Do Not Disturb silences it along with the chime.
+
+It uses [piper](https://github.com/rhasspy/piper), a neural text-to-speech
+engine that runs locally — measured on this Pi 5 at a real-time factor of
+about 0.16, so a sentence is synthesised in roughly a sixth of the time it
+takes to say. Local rather than a cloud voice for the same reason as
+everything else here: a note somebody shares to this panel is private, and
+reading it out should not mean sending it anywhere.
+
+Install it and a voice; neither needs root:
+
+```bash
+mkdir -p ~/.local/share/piper ~/.local/bin && cd ~/.local/share/piper
+curl -fsSL -o piper.tgz \
+  https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_aarch64.tar.gz
+tar xzf piper.tgz && rm piper.tgz
+ln -sf ~/.local/share/piper/piper/piper ~/.local/bin/piper
+
+V=https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/jenny_dioco/medium
+curl -fsSL -o voice.onnx      $V/en_GB-jenny_dioco-medium.onnx
+curl -fsSL -o voice.onnx.json $V/en_GB-jenny_dioco-medium.onnx.json
+```
+
+That is a British female voice. Any piper voice works — swap the two files,
+keeping the names `voice.onnx` and `voice.onnx.json`. Without them the setting
+does nothing and the panel carries on as before; speech is a nicety, not a
+dependency.
+
+> Do **not** `apt install piper`. Debian's package of that name is a GTK
+> configurator for gaming mice, which shares the name and does nothing useful
+> here. Debian does package `espeak-ng`, which is a real synthesiser but plainly
+> robotic — acceptable in a headset, less so read aloud in a room.
+
 #### End-to-end encryption
 
 Shares reaching the kiosk from outside pass through whatever proxy you put in

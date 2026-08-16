@@ -501,6 +501,19 @@ class ShareInboxSettings {
   /// volume — turning music down (or up) doesn't touch this. 0-100.
   double notificationVolume;
 
+  /// Read incoming text notes aloud.
+  bool speakNotes;
+
+  /// Say who sent it before reading the note.
+  bool speakSender;
+
+  /// How loud speech is, 0–100.
+  ///
+  /// Deliberately below the chime's default. A voice at the level of music
+  /// is startling in a quiet room — it is speech arriving unannounced, not
+  /// something you chose to play.
+  double speechVolume;
+
   List<SenderToken> senderTokens;
 
   /// Refuse anything that arrives unencrypted.
@@ -515,6 +528,9 @@ class ShareInboxSettings {
     this.listenPort = 8081,
     this.dndMuted = false,
     this.notificationVolume = 80,
+    this.speakNotes = false,
+    this.speakSender = true,
+    this.speechVolume = 45,
     this.requireEncryption = false,
     List<SenderToken>? senderTokens,
   }) : senderTokens = senderTokens ?? [];
@@ -525,6 +541,10 @@ class ShareInboxSettings {
       requireEncryption: j['requireEncryption'] as bool? ?? false,
       dndMuted: j['dndMuted'] as bool? ?? false,
       notificationVolume: (j['notificationVolume'] as num?)?.toDouble() ?? 80,
+      speakNotes: j['speakNotes'] as bool? ?? false,
+      speakSender: j['speakSender'] as bool? ?? true,
+      speechVolume:
+          ((j['speechVolume'] as num?)?.toDouble() ?? 45).clamp(0, 100),
       senderTokens: (j['senderTokens'] as List?)
               ?.map((t) => SenderToken.fromJson(t as Map<String, dynamic>))
               .toList() ??
@@ -537,6 +557,9 @@ class ShareInboxSettings {
         'requireEncryption': requireEncryption,
         'dndMuted': dndMuted,
         'notificationVolume': notificationVolume,
+        'speakNotes': speakNotes,
+        'speakSender': speakSender,
+        'speechVolume': speechVolume,
         'senderTokens': senderTokens.map((t) => t.toJson()).toList(),
       };
 }

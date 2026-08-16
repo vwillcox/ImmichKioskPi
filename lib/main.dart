@@ -22,6 +22,7 @@ import 'services/screen_idle_service.dart';
 import 'services/share_inbox_service.dart';
 import 'services/spotify_service.dart';
 import 'services/speedtest_service.dart';
+import 'services/tts_service.dart';
 import 'services/tv_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
@@ -67,7 +68,11 @@ void main() async {
 
   // Lets the companion phone app share a photo/GIF/video/link/note to the
   // kiosk directly — no separate relay, just a small HTTP listener here.
-  final shareInbox = ShareInboxService(config);
+  // Reads shared notes aloud. Built here and handed over rather than owned by
+  // the inbox, so speech being unavailable is not the inbox's problem.
+  final speech = TtsService();
+
+  final shareInbox = ShareInboxService(config)..speech = speech;
   unawaited(shareInbox.start());
 
   // Widget types have to be registered before anything reads the dashboard:

@@ -11,6 +11,7 @@ import '../config/app_config.dart' show ShareInboxSettings;
 import 'config_service.dart';
 import 'sealed_share.dart';
 import 'sealed_stream.dart';
+import 'tts_service.dart';
 import 'media_cache.dart';
 
 enum ShareType { link, text, image, gif, video }
@@ -53,6 +54,10 @@ class ShareInboxService extends ChangeNotifier {
   HttpServer? _server;
   Player? _chime;
   String? _chimePath;
+
+  /// Reads notes aloud. Injected rather than constructed here so the inbox
+  /// does not depend on speech existing at all.
+  TtsService? speech;
 
   final List<SharedItem> _queue = [];
 
@@ -359,7 +364,10 @@ class ShareInboxService extends ChangeNotifier {
   void _enqueue(SharedItem item) {
     _queue.add(item);
     notifyListeners();
-    if (!_settings.dndMuted) unawaited(_playChime());
+    if (!_settings.dndMuted) {
+      unawaited(_playChime());
+      unawaited(_speak(item));
+    }
     // Left to decide for itself whether Do Not Disturb applies.
     unawaited(onItemArrived?.call());
   }
@@ -377,6 +385,27 @@ class ShareInboxService extends ChangeNotifier {
     } catch (e) {
       debugPrint('ShareInbox could not extract chime asset: $e');
     }
+  }
+
+  /// Reads a shared note out, if that is switched on.
+  ///
+  /// Text only. A photo has nothing to read, and a link read aloud is a
+  /// stream of letters nobody can follow — the chime already says something
+  /// arrived, and the screen says what.
+  Future<void> _speak(SharedItem item) async {
+    if (!_settings.speakNotes) return;
+    if (item.type != ShareType.text) return;
+    final tts = speech;
+    if (tts == null) return;
+    final text = TtsService.announcement(
+      item.content ?? '',
+      item.sender,
+      withSender: _settings.speakSender,
+    );
+    if (text.isEmpty) return;
+    // After the chime rather than over it.
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    await tts.speak(text, volume: _settings.speechVolume);
   }
 
   Future<void> _playChime() async {
