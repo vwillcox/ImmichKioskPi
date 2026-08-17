@@ -24,6 +24,7 @@ import 'services/spotify_service.dart';
 import 'services/speedtest_service.dart';
 import 'services/tts_service.dart';
 import 'services/tv_service.dart';
+import 'services/unifi_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
 import 'screens/album_screen.dart';
@@ -89,6 +90,11 @@ void main() async {
   // from scratch.
   final immich = ImmichService(config);
 
+  // Reads the UniFi console for the network widgets. One service, one poll,
+  // five widgets — none of them should cost their own round trip.
+  final unifi = UnifiService(config);
+  unawaited(unifi.start());
+
   final dashboard = DashboardService(
     config,
     // Resolved on each request so the editor's preview reflects the moment
@@ -120,6 +126,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider.value(value: config),
         Provider<ImmichService>.value(value: immich),
+        ChangeNotifierProvider.value(value: unifi),
         ChangeNotifierProvider(create: (_) => LockedFolderService(config)),
         ChangeNotifierProvider.value(value: weather),
         ChangeNotifierProvider.value(value: nowPlaying),

@@ -6,6 +6,7 @@ import 'spotify_widget.dart';
 import 'immich_widget.dart';
 import 'speedtest_widget.dart';
 import 'tv_widget.dart';
+import 'unifi_widgets.dart';
 import 'weather_widget.dart';
 
 /// Every widget type the dashboard ships with.
@@ -24,5 +25,10 @@ void registerBuiltInWidgets() {
     tvWidgetType,
     speedtestWidgetType,
     immichWidgetType,
+    unifiHealthWidgetType,
+    unifiPresenceWidgetType,
+    unifiDevicesWidgetType,
+    unifiClientsWidgetType,
+    unifiThroughputWidgetType,
   ]);
 }

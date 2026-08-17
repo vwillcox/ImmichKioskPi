@@ -400,6 +400,63 @@ class CameraSettings {
 /// a session — the MQTT client id is derived from the UUID — so if you also
 /// run the standalone remote app, give one of them a different UUID or they
 /// will displace each other.
+/// A UniFi console — a Dream Router, Dream Machine or Cloud Key.
+class UnifiSettings {
+  bool enabled;
+
+  /// The console's address. UniFi OS serves everything over HTTPS on 443,
+  /// including the Network application under /proxy/network.
+  String host;
+
+  /// An API key from Network → Settings → Control Plane → Integrations.
+  ///
+  /// Keys inherit the role of the admin that created them, so one made under
+  /// a read-only admin can report the network but not restart it — which is
+  /// all any of these widgets need.
+  String apiKey;
+
+  /// Which site to read. UniFi's own default site is literally called
+  /// "default"; the id is discovered on first use and cached here.
+  String siteId;
+
+  /// Trust the console's certificate even though it is self-signed.
+  ///
+  /// A UniFi console on a home LAN presents a certificate for its
+  /// `.id.ui.direct` name, not for its address, so a strict check fails
+  /// against the very device you are holding. Defaults on because the
+  /// alternative is the feature simply not working; turn it off if you have
+  /// put a real certificate on the console.
+  bool allowSelfSignedCert;
+
+  UnifiSettings({
+    this.enabled = false,
+    this.host = '192.168.1.1',
+    this.apiKey = '',
+    this.siteId = '',
+    this.allowSelfSignedCert = true,
+  });
+
+  bool get isConfigured => enabled && host.isNotEmpty && apiKey.isNotEmpty;
+
+  factory UnifiSettings.fromJson(Map<String, dynamic> j) => UnifiSettings(
+        enabled: j['enabled'] as bool? ?? false,
+        host: (j['host'] as String? ?? '192.168.1.1')
+            .replaceAll(RegExp(r'^https?://'), '')
+            .replaceAll(RegExp(r'/+$'), ''),
+        apiKey: j['apiKey'] as String? ?? '',
+        siteId: j['siteId'] as String? ?? '',
+        allowSelfSignedCert: j['allowSelfSignedCert'] as bool? ?? true,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        'host': host,
+        'apiKey': apiKey,
+        'siteId': siteId,
+        'allowSelfSignedCert': allowSelfSignedCert,
+      };
+}
+
 class TvSettings {
   bool enabled;
 
@@ -580,6 +637,7 @@ class AppConfig {
   CameraSettings camera;
   DashboardSettings dashboard;
   TvSettings tv;
+  UnifiSettings unifi;
 
   /// Video player volume (0-100) and mute, remembered between videos.
   double videoVolume;
@@ -600,6 +658,7 @@ class AppConfig {
     CameraSettings? camera,
     DashboardSettings? dashboard,
     TvSettings? tv,
+    UnifiSettings? unifi,
     this.videoVolume = 100,
     this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
@@ -611,7 +670,8 @@ class AppConfig {
         screen = screen ?? ScreenSettings(),
         camera = camera ?? CameraSettings(),
         dashboard = dashboard ?? DashboardSettings(),
-        tv = tv ?? TvSettings();
+        tv = tv ?? TvSettings(),
+        unifi = unifi ?? UnifiSettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -710,6 +770,9 @@ class AppConfig {
       tv: j['tv'] is Map<String, dynamic>
           ? TvSettings.fromJson(j['tv'] as Map<String, dynamic>)
           : TvSettings(),
+      unifi: j['unifi'] is Map<String, dynamic>
+          ? UnifiSettings.fromJson(j['unifi'] as Map<String, dynamic>)
+          : UnifiSettings(),
       videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
       videoMuted: j['videoMuted'] as bool? ?? false,
     );
@@ -730,6 +793,7 @@ class AppConfig {
         'camera': camera.toJson(),
         'dashboard': dashboard.toJson(),
         'tv': tv.toJson(),
+        'unifi': unifi.toJson(),
         'videoVolume': videoVolume,
         'videoMuted': videoMuted,
       };
