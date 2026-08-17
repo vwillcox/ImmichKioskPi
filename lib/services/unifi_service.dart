@@ -209,6 +209,19 @@ class UnifiService extends ChangeNotifier {
 
   Map<String, dynamic>? get site => _sites;
 
+  /// Triggering a test is deliberately not offered.
+  ///
+  /// The legacy command endpoint accepts `{"cmd":"speedtest"}` and answers
+  /// `rc: ok` — then does nothing. Verified twice on this console, with and
+  /// without the gateway MAC, watching `speedtest_lastrun` for two minutes
+  /// each time; it never moved. That endpoint answers `ok` to a command that
+  /// does not exist either, so its reply carries no information. The v2 route
+  /// returns 405.
+  ///
+  /// Device commands appear to need a session login rather than an API key,
+  /// and a stored console password on a wall panel is a poor trade for one
+  /// button. The console runs the test on its own schedule; this reports it.
+
   /// Reads the built-in speed test from the legacy health endpoint.
   ///
   /// The only legacy call in here, and only because the Integration API does

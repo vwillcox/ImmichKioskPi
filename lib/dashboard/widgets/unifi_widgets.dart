@@ -707,7 +707,6 @@ class UnifiIspWidget extends StatelessWidget {
     final t = w.theme;
     final unifi = context.watch<UnifiService>();
     final isp = unifi.ispTest;
-
     if (isp == null || !isp.hasResult) {
       return Center(
         child: Text(
@@ -795,8 +794,9 @@ final unifiIspWidgetType = DashboardWidgetType(
   name: 'ISP speed test',
   description:
       "The router's own built-in speed test — what the line achieved, "
-      'measured by the router rather than by this panel. Runs on the '
-      "console's schedule, not on demand. $_needsKey",
+      'measured by the router rather than by this panel. Read only: the '
+      'console runs it on its own schedule and cannot be asked to run one '
+      'with an API key. $_needsKey',
   glyph: '🚀',
   defaultWidth: 3,
   defaultHeight: 2,
