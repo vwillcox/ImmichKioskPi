@@ -30,5 +30,6 @@ void registerBuiltInWidgets() {
     unifiDevicesWidgetType,
     unifiClientsWidgetType,
     unifiThroughputWidgetType,
+    unifiIspWidgetType,
   ]);
 }

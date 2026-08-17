@@ -84,6 +84,11 @@ class UnifiService extends ChangeNotifier {
 
   bool get hasContent => _devices.isNotEmpty || _clients.isNotEmpty;
 
+  UnifiIspTest? _isp;
+
+  /// The console's own ISP speed test, if it has ever run one.
+  UnifiIspTest? get ispTest => _isp;
+
   /// Devices that are not online, which is the thing worth surfacing.
   List<UnifiDevice> get offlineDevices =>
       _devices.where((d) => !d.online).toList();
@@ -172,6 +177,7 @@ class UnifiService extends ChangeNotifier {
         }
       }
       _recordThroughput();
+      await _readIspTest();
 
       _error = null;
       _fetchedAt = DateTime.now();
@@ -202,6 +208,25 @@ class UnifiService extends ChangeNotifier {
   }
 
   Map<String, dynamic>? get site => _sites;
+
+  /// Reads the built-in speed test from the legacy health endpoint.
+  ///
+  /// The only legacy call in here, and only because the Integration API does
+  /// not expose this at all. It is tolerated rather than embraced: a failure
+  /// leaves the previous result alone and never disturbs the rest of the
+  /// refresh, so a console that drops the endpoint in a future release costs
+  /// one widget rather than all six.
+  Future<void> _readIspTest() async {
+    try {
+      final r = await _client().get<Object?>(
+          'https://${settings.host}/proxy/network/api/s/default/stat/health');
+      if ((r.statusCode ?? 0) >= 400) return;
+      final parsed = UnifiIspTest.fromHealth(r.data);
+      if (parsed != null) _isp = parsed;
+    } catch (e) {
+      debugPrint('UniFi: ISP speed test unavailable: $e');
+    }
+  }
 
   void _recordThroughput() {
     final s = gatewayStats;

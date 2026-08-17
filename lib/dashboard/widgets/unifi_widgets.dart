@@ -687,3 +687,125 @@ final unifiThroughputWidgetType = DashboardWidgetType(
   ],
   build: (context, w) => UnifiThroughputWidget(w: w),
 );
+
+// ---------------------------------------------------------------------------
+// 6. The console's own ISP speed test
+// ---------------------------------------------------------------------------
+
+/// The result of the router's built-in speed test.
+///
+/// Distinct from the Ookla widget, and worth having both: this one is what
+/// your line achieved when the router tested itself, unaffected by whatever
+/// the Pi's own WiFi or USB adapter were doing at the time. The Ookla widget
+/// measures the path to the panel; this measures the path to the internet.
+class UnifiIspWidget extends StatelessWidget {
+  const UnifiIspWidget({super.key, required this.w});
+  final DashboardWidgetContext w;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = w.theme;
+    final unifi = context.watch<UnifiService>();
+    final isp = unifi.ispTest;
+
+    if (isp == null || !isp.hasResult) {
+      return Center(
+        child: Text(
+          unifi.hasContent
+              ? 'The router has not run a speed test yet'
+              : 'Reading the network…',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: t.textSecondary, fontSize: 14),
+        ),
+      );
+    }
+
+    final age = isp.age;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Row(
+          children: [
+            Icon(isp.ok ? Icons.speed : Icons.warning_amber,
+                size: 20,
+                color: isp.ok ? t.accent : Colors.orangeAccent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('ISP speed test',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: t.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+                child: _Stat(
+                    theme: t,
+                    label: 'Down',
+                    value: isp.downMbps == null
+                        ? '—'
+                        : '${isp.downMbps!.toStringAsFixed(0)} Mb/s',
+                    colour: t.accent)),
+            Expanded(
+                child: _Stat(
+                    theme: t,
+                    label: 'Up',
+                    value: isp.upMbps == null
+                        ? '—'
+                        : '${isp.upMbps!.toStringAsFixed(0)} Mb/s')),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+                child: _Stat(
+                    theme: t,
+                    label: 'Ping',
+                    value: isp.pingMs == null
+                        ? '—'
+                        : '${isp.pingMs!.toStringAsFixed(0)} ms',
+                    scale: 0.8)),
+            Expanded(
+              child: _Stat(
+                theme: t,
+                label: 'Tested',
+                // Age rather than a timestamp: "3h ago" answers the question
+                // "is this still true", which a clock time does not.
+                value: age == null ? '—' : '${formatUptime(age)} ago',
+                scale: 0.8,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+final unifiIspWidgetType = DashboardWidgetType(
+  type: 'unifi_isp',
+  name: 'ISP speed test',
+  description:
+      "The router's own built-in speed test — what the line achieved, "
+      'measured by the router rather than by this panel. Runs on the '
+      "console's schedule, not on demand. $_needsKey",
+  glyph: '🚀',
+  defaultWidth: 3,
+  defaultHeight: 2,
+  minWidth: 2,
+  minHeight: 2,
+  preview: const [
+    PreviewLine('ISP speed test', scale: 0.14),
+    PreviewLine('↓ 941 Mb/s   ↑ 93 Mb/s', scale: 0.16, accent: true),
+    PreviewLine('18 ms · tested 3h ago', scale: 0.10, muted: true),
+  ],
+  build: (context, w) => UnifiIspWidget(w: w),
+);

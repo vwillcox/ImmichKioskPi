@@ -253,3 +253,58 @@ String formatUptime(Duration d) {
   if (d.inMinutes >= 1) return '${d.inMinutes}m';
   return '${d.inSeconds}s';
 }
+
+/// The console's own ISP speed test.
+///
+/// Not available on the Integration API — every candidate endpoint there
+/// 404s. It lives on the legacy `/stat/health` endpoint, which on this
+/// console accepts the same API key, so reading it costs no extra
+/// credentials. Legacy means undocumented: treat a missing field as the
+/// console having changed rather than as an error.
+class UnifiIspTest {
+  const UnifiIspTest({
+    this.downMbps,
+    this.upMbps,
+    this.pingMs,
+    this.lastRun,
+    this.status = '',
+  });
+
+  final double? downMbps;
+  final double? upMbps;
+  final double? pingMs;
+  final DateTime? lastRun;
+  final String status;
+
+  bool get ok => status.toLowerCase() == 'success';
+  bool get hasResult => downMbps != null || upMbps != null;
+
+  Duration? get age =>
+      lastRun == null ? null : DateTime.now().difference(lastRun!);
+
+  /// Picks the WAN subsystem out of the health response.
+  ///
+  /// `/stat/health` answers with a list of subsystems — wan, wlan, www, lan —
+  /// and only one of them carries the speed test.
+  static UnifiIspTest? fromHealth(Object? body) {
+    if (body is! Map) return null;
+    final data = body['data'];
+    if (data is! List) return null;
+    for (final sub in data) {
+      if (sub is! Map) continue;
+      if (!sub.keys.any((k) => '$k'.startsWith('speedtest'))) continue;
+      final run = _i(sub['speedtest_lastrun']);
+      return UnifiIspTest(
+        downMbps: _d(sub['xput_down']),
+        upMbps: _d(sub['xput_up']),
+        pingMs: _d(sub['speedtest_ping']),
+        // Unix seconds, unlike the ISO timestamps the Integration API uses.
+        lastRun: run == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(run * 1000),
+        status: '${sub['speedtest_status'] ?? ''}',
+      );
+    }
+    return null;
+  }
+}
