@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/throughput_history.dart';
 import '../../services/unifi_models.dart';
 import '../../services/unifi_service.dart';
 import '../dashboard_theme.dart';
@@ -454,50 +455,103 @@ class UnifiThroughputWidget extends StatelessWidget {
     final unifi = context.watch<UnifiService>();
     if (!unifi.hasContent) return _Waiting(theme: t, service: unifi);
 
-    final stats = unifi.gatewayStats;
-    final samples = unifi.throughput;
-    final down = _uploadColour(t);
+    final window = windows[w.option('window', '1h')] ?? const Duration(hours: 1);
+    final showVolume = w.option('showVolume', true);
+    final up = _uploadColour(t);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    // Listens to the history rather than the service, so a sample a second
+    // repaints this graph and nothing else on the dashboard.
+    return ListenableBuilder(
+      listenable: unifi.history,
+      builder: (context, _) {
+        final h = unifi.history;
+        final latest = h.latest;
+        final volume = showVolume ? h.volume(window) : null;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              children: [
+                Expanded(
+                    child: _Stat(
+                        theme: t,
+                        label: 'Down',
+                        value: formatBps(latest?.rx),
+                        colour: t.accent)),
+                Expanded(
+                    child: _Stat(
+                        theme: t,
+                        label: 'Up',
+                        value: formatBps(latest?.tx),
+                        colour: up)),
+              ],
+            ),
+            const SizedBox(height: 6),
             Expanded(
-                child: _Stat(
-                    theme: t,
-                    label: 'Down',
-                    value: formatBps(stats.rxRateBps),
-                    colour: t.accent)),
-            Expanded(
-                child: _Stat(
-                    theme: t,
-                    label: 'Up',
-                    value: formatBps(stats.txRateBps),
-                    colour: down)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: samples.length < 2
-              ? Center(
-                  child: Text('Collecting…',
-                      style:
-                          TextStyle(color: t.textSecondary, fontSize: 13)),
-                )
-              : CustomPaint(
-                  size: Size.infinite,
-                  painter: _ThroughputPainter(
-                    samples: samples,
-                    downColour: t.accent,
-                    upColour: down,
-                    gridColour: t.textSecondary.withValues(alpha: 0.15),
-                  ),
+              child: LayoutBuilder(
+                builder: (context, c) {
+                  // One point per pixel column at most: handing a 400-pixel
+                  // graph 1,440 values only overdraws the same columns.
+                  final points =
+                      h.series(window, math.max(2, c.maxWidth.floor()));
+                  if (points.length < 2) {
+                    return Center(
+                      child: Text('Collecting…',
+                          style: TextStyle(
+                              color: t.textSecondary, fontSize: 13)),
+                    );
+                  }
+                  return CustomPaint(
+                    size: Size.infinite,
+                    painter: _ThroughputPainter(
+                      points: points,
+                      downColour: t.accent,
+                      upColour: up,
+                      gridColour: t.textSecondary.withValues(alpha: 0.15),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Text(
+                  // The window asked for, and how much there actually is — a
+                  // panel up ten minutes cannot show a day, and saying so
+                  // beats a graph that looks mysteriously short.
+                  h.span < window
+                      ? '${_label(window)} · ${formatUptime(h.span)} so far'
+                      : _label(window),
+                  style: TextStyle(color: t.textSecondary, fontSize: 11),
                 ),
-        ),
-      ],
+                const Spacer(),
+                if (volume != null)
+                  Text(
+                    '↓ ${formatBytes(volume.rxBytes)}  ↑ ${formatBytes(volume.txBytes)}',
+                    style: TextStyle(color: t.textSecondary, fontSize: 11),
+                  ),
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
+
+  /// The windows offered. Ten minutes and under come from the per-second
+  /// samples; longer spans from per-minute peaks.
+  static const Map<String, Duration> windows = {
+    '5m': Duration(minutes: 5),
+    '15m': Duration(minutes: 15),
+    '1h': Duration(hours: 1),
+    '6h': Duration(hours: 6),
+    '24h': Duration(hours: 24),
+  };
+
+  static String _label(Duration d) =>
+      d.inHours >= 1 ? 'last ${d.inHours}h' : 'last ${d.inMinutes}m';
 
   static Color _uploadColour(DashboardTheme t) {
     final hsl = HSLColor.fromColor(t.accent);
@@ -509,13 +563,13 @@ class UnifiThroughputWidget extends StatelessWidget {
 /// the obvious feature rather than something to work out.
 class _ThroughputPainter extends CustomPainter {
   _ThroughputPainter({
-    required this.samples,
+    required this.points,
     required this.downColour,
     required this.upColour,
     required this.gridColour,
   });
 
-  final List<ThroughputSample> samples;
+  final List<ThroughputPoint> points;
   final Color downColour;
   final Color upColour;
   final Color gridColour;
@@ -523,8 +577,8 @@ class _ThroughputPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     var peak = 0.0;
-    for (final s in samples) {
-      peak = math.max(peak, math.max(s.txBps, s.rxBps));
+    for (final p in points) {
+      peak = math.max(peak, math.max(p.tx, p.rx));
     }
     // A floor on the scale, so an idle line is a flat trace along the bottom
     // rather than noise amplified to fill the graph.
@@ -533,11 +587,11 @@ class _ThroughputPainter extends CustomPainter {
     canvas.drawLine(Offset(0, size.height), Offset(size.width, size.height),
         Paint()..color = gridColour..strokeWidth = 1);
 
-    void trace(double Function(ThroughputSample) pick, Color colour) {
+    void trace(double Function(ThroughputPoint) pick, Color colour) {
       final path = Path()..moveTo(0, size.height);
-      for (var i = 0; i < samples.length; i++) {
-        final x = size.width * (i / (samples.length - 1));
-        final y = size.height * (1 - (pick(samples[i]) / peak).clamp(0.0, 1.0));
+      for (var i = 0; i < points.length; i++) {
+        final x = size.width * (i / (points.length - 1));
+        final y = size.height * (1 - (pick(points[i]) / peak).clamp(0.0, 1.0));
         path.lineTo(x, y);
       }
       path
@@ -546,9 +600,9 @@ class _ThroughputPainter extends CustomPainter {
       canvas.drawPath(path, Paint()..color = colour.withValues(alpha: 0.28));
 
       final line = Path();
-      for (var i = 0; i < samples.length; i++) {
-        final x = size.width * (i / (samples.length - 1));
-        final y = size.height * (1 - (pick(samples[i]) / peak).clamp(0.0, 1.0));
+      for (var i = 0; i < points.length; i++) {
+        final x = size.width * (i / (points.length - 1));
+        final y = size.height * (1 - (pick(points[i]) / peak).clamp(0.0, 1.0));
         i == 0 ? line.moveTo(x, y) : line.lineTo(x, y);
       }
       canvas.drawPath(
@@ -559,13 +613,12 @@ class _ThroughputPainter extends CustomPainter {
             ..color = colour);
     }
 
-    trace((s) => s.rxBps, downColour);
-    trace((s) => s.txBps, upColour);
+    trace((p) => p.rx, downColour);
+    trace((p) => p.tx, upColour);
   }
 
   @override
-  bool shouldRepaint(_ThroughputPainter old) =>
-      old.samples.length != samples.length;
+  bool shouldRepaint(_ThroughputPainter old) => true;
 }
 
 // ---------------------------------------------------------------------------
@@ -675,12 +728,36 @@ final unifiThroughputWidgetType = DashboardWidgetType(
   name: 'WAN throughput',
   description:
       'Live up and down rates on the internet connection, graphed over about '
-      'an hour. $_needsKey',
+      'the chosen window. $_needsKey',
   glyph: '📈',
   defaultWidth: 4,
   defaultHeight: 3,
   minWidth: 3,
   minHeight: 2,
+  options: const [
+    WidgetOption(
+      key: 'window',
+      label: 'Show',
+      kind: OptionKind.choice,
+      defaultValue: '1h',
+      choices: {
+        '5m': 'Last 5 minutes',
+        '15m': 'Last 15 minutes',
+        '1h': 'Last hour',
+        '6h': 'Last 6 hours',
+        '24h': 'Last 24 hours',
+      },
+      help: 'Ten minutes and under is drawn from the per-second samples and '
+          'moves as you watch. Longer spans use per-minute peaks. How far back '
+          'history is kept at all is set in Settings → UniFi.',
+    ),
+    WidgetOption(
+      key: 'showVolume',
+      label: 'Show total moved',
+      kind: OptionKind.boolean,
+      defaultValue: true,
+    ),
+  ],
   preview: const [
     PreviewLine('↓ 24.1 Mb/s      ↑ 1.2 Mb/s', scale: 0.14, accent: true),
     PreviewLine('▁▂▅▇▆▃▂▁▂▄▆▇▅▂▁', scale: 0.20, centre: true),

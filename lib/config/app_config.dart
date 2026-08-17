@@ -428,12 +428,28 @@ class UnifiSettings {
   /// put a real certificate on the console.
   bool allowSelfSignedCert;
 
+  /// How often to sample WAN throughput, in seconds.
+  ///
+  /// Its own interval because it is its own request: one small call for the
+  /// gateway's statistics, rather than the whole device-and-client sweep. A
+  /// second is comfortable; the floor exists because below that the console
+  /// returns the same figures twice and it is pure load for no data.
+  int throughputPollSeconds;
+
+  /// How long to keep throughput history, in hours.
+  ///
+  /// Kept as per-minute aggregates rather than raw samples, so a day costs
+  /// 1,440 entries instead of 86,400.
+  int throughputHours;
+
   UnifiSettings({
     this.enabled = false,
     this.host = '192.168.1.1',
     this.apiKey = '',
     this.siteId = '',
     this.allowSelfSignedCert = true,
+    this.throughputPollSeconds = 1,
+    this.throughputHours = 24,
   });
 
   bool get isConfigured => enabled && host.isNotEmpty && apiKey.isNotEmpty;
@@ -446,6 +462,10 @@ class UnifiSettings {
         apiKey: j['apiKey'] as String? ?? '',
         siteId: j['siteId'] as String? ?? '',
         allowSelfSignedCert: j['allowSelfSignedCert'] as bool? ?? true,
+        throughputPollSeconds:
+            ((j['throughputPollSeconds'] as num?)?.toInt() ?? 1).clamp(1, 60),
+        throughputHours:
+            ((j['throughputHours'] as num?)?.toInt() ?? 24).clamp(1, 72),
       );
 
   Map<String, dynamic> toJson() => {
@@ -454,6 +474,8 @@ class UnifiSettings {
         'apiKey': apiKey,
         'siteId': siteId,
         'allowSelfSignedCert': allowSelfSignedCert,
+        'throughputPollSeconds': throughputPollSeconds,
+        'throughputHours': throughputHours,
       };
 }
 

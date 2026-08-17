@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../config/app_config.dart' show UnifiSettings;
 import 'config_service.dart';
 import 'retry_schedule.dart';
+import 'throughput_history.dart';
 import 'unifi_models.dart';
 
 /// Reads a UniFi console — a Dream Router, Dream Machine or Cloud Key.
@@ -70,17 +71,17 @@ class UnifiService extends ChangeNotifier {
     return g == null ? const UnifiStats() : statsFor(g.id);
   }
 
-  /// A rolling window of uplink readings, for the throughput graph.
+  /// WAN throughput over time.
   ///
-  /// Kept here rather than in the widget so the history survives paging away
-  /// from it — a graph that empties every time you look at another page is
-  /// not a graph.
-  final List<ThroughputSample> _throughput = [];
-  List<ThroughputSample> get throughput => List.unmodifiable(_throughput);
+  /// A notifier of its own, so sampling every second rebuilds the graph and
+  /// not the client list, the device list and the health panel alongside it.
+  /// Lives here rather than in the widget so the history survives paging away
+  /// from the graph — a graph that empties whenever you look at another page
+  /// is not a graph.
+  late final ThroughputHistory history = ThroughputHistory(
+      retention: Duration(hours: settings.throughputHours));
 
-  /// About an hour at the default poll. Long enough to show the shape of an
-  /// evening, short enough not to grow without bound.
-  static const int _maxSamples = 180;
+  Timer? _fastTimer;
 
   bool get hasContent => _devices.isNotEmpty || _clients.isNotEmpty;
 
@@ -130,6 +131,7 @@ class UnifiService extends ChangeNotifier {
     _dio?.close(force: true);
     _dio = null;
     _retry.reset();
+    _startFastSampler();
     _scheduleNext(immediately: true);
   }
 
@@ -176,7 +178,7 @@ class UnifiService extends ChangeNotifier {
           debugPrint('UniFi: stats for ${d.name} failed: $e');
         }
       }
-      _recordThroughput();
+      _startFastSampler();
       await _readIspTest();
 
       _error = null;
@@ -241,13 +243,43 @@ class UnifiService extends ChangeNotifier {
     }
   }
 
-  void _recordThroughput() {
-    final s = gatewayStats;
-    if (s.txRateBps == null && s.rxRateBps == null) return;
-    _throughput.add(ThroughputSample(
-        DateTime.now(), s.txRateBps ?? 0, s.rxRateBps ?? 0));
-    if (_throughput.length > _maxSamples) {
-      _throughput.removeRange(0, _throughput.length - _maxSamples);
+  /// Samples only the gateway's statistics — one small call, on its own timer.
+  ///
+  /// Separate from [refresh] because the graph wants a reading a second and
+  /// nothing else does: doing the whole sweep that often would be four or more
+  /// requests a second at the console for data that changes by the minute.
+  void _startFastSampler() {
+    _fastTimer?.cancel();
+    if (!settings.isConfigured) return;
+    history.retention = Duration(hours: settings.throughputHours);
+    _fastTimer = Timer.periodic(
+      Duration(seconds: settings.throughputPollSeconds),
+      (_) => unawaited(_sampleThroughput()),
+    );
+  }
+
+  bool _sampling = false;
+
+  Future<void> _sampleThroughput() async {
+    // A slow response must not queue up behind itself — at one call a second
+    // an eight-second timeout would otherwise build a backlog.
+    if (_sampling || _disposed) return;
+    final g = gateway;
+    if (g == null || settings.siteId.isEmpty) return;
+    _sampling = true;
+    try {
+      final raw = await _get(
+          '/sites/${settings.siteId}/devices/${g.id}/statistics/latest');
+      final s = UnifiStats.parse(raw);
+      _stats[g.id] = s;
+      if (s.txRateBps != null || s.rxRateBps != null) {
+        history.add(s.txRateBps ?? 0, s.rxRateBps ?? 0);
+      }
+    } catch (e) {
+      // Silent: at one a second, logging every failure during an outage would
+      // fill the log faster than anything else in the app.
+    } finally {
+      _sampling = false;
     }
   }
 
@@ -282,6 +314,8 @@ class UnifiService extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _fastTimer?.cancel();
+    history.dispose();
     _dio?.close(force: true);
     super.dispose();
   }
