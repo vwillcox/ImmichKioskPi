@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:xml/xml.dart';
 
+import 'retry_schedule.dart';
+
 /// One entry from an RSS or Atom feed.
 class FeedItem {
   final String title;
@@ -63,12 +65,38 @@ class FeedService extends ChangeNotifier {
   final Set<String> _inFlight = {};
   Timer? _timer;
 
+  /// Retries quickly until something has been fetched, then settles.
+  ///
+  /// A fixed periodic timer meant a feed that failed at boot — which is most
+  /// of them, since the panel starts before the network — stayed empty for the
+  /// whole interval.
+  late final RetrySchedule _retry = RetrySchedule(settled: _refreshInterval);
+
+  bool _disposed = false;
+
+  /// Whether anything at all has been fetched. Per-service rather than
+  /// per-feed: the question being asked is "is this panel working yet", and
+  /// one feed answering is enough to say the network is up.
+  bool get hasAnyContent =>
+      _feeds.values.any((c) => c.items.isNotEmpty) ||
+      _calendars.values.any((c) => c.items.isNotEmpty);
+
   void start() {
-    _timer ??= Timer.periodic(_refreshInterval, (_) => refreshAll());
+    if (_timer != null) return;
+    _scheduleNext();
+  }
+
+  void _scheduleNext() {
+    _timer?.cancel();
+    _timer = Timer(_retry.next(hasContent: hasAnyContent), () {
+      refreshAll();
+      if (!_disposed) _scheduleNext();
+    });
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _timer?.cancel();
     _dio.close(force: true);
     super.dispose();

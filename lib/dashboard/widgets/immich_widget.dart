@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/immich_models.dart';
 import '../../services/immich_service.dart';
+import '../../services/retry_schedule.dart';
 import '../../widgets/remote_image.dart';
 import '../widget_registry.dart';
 
@@ -30,8 +31,15 @@ class _DashboardImmichWidgetState extends State<DashboardImmichWidget> {
   List<Asset> _pool = const [];
   int _index = 0;
   Timer? _timer;
+  Timer? _retryTimer;
   bool _loading = true;
   String? _error;
+
+  /// Keeps asking while there is nothing to show. The panel starts before the
+  /// network is up, so the first fetch usually fails; without this the tile
+  /// said "could not reach Immich" until something else rebuilt it.
+  final RetrySchedule _retry =
+      RetrySchedule(settled: const Duration(minutes: 10));
 
   /// What the pool was fetched for. A changed source means the pool is stale
   /// however recently it was filled.
@@ -61,7 +69,21 @@ class _DashboardImmichWidgetState extends State<DashboardImmichWidget> {
   @override
   void dispose() {
     _timer?.cancel();
+    _retryTimer?.cancel();
     super.dispose();
+  }
+
+  /// Books another attempt when the tile has no photo yet.
+  ///
+  /// Only while empty: once there is a photo on screen, a later failure is not
+  /// worth retrying hard for — the picture is still there and the ordinary
+  /// change timer will come round again.
+  void _scheduleRetry() {
+    _retryTimer?.cancel();
+    if (_pool.isNotEmpty) return;
+    _retryTimer = Timer(_retry.next(hasContent: false), () {
+      if (mounted) unawaited(_load());
+    });
   }
 
   void _restartTimer() {
@@ -92,12 +114,16 @@ class _DashboardImmichWidgetState extends State<DashboardImmichWidget> {
         _index = images.isEmpty ? 0 : _rng.nextInt(images.length);
         _loading = false;
       });
+      // An empty album is not a network failure, but it is still nothing to
+      // show, so it is worth looking again — someone may be adding photos.
+      _scheduleRetry();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = '$e';
       });
+      _scheduleRetry();
     }
   }
 
@@ -134,10 +160,22 @@ class _DashboardImmichWidgetState extends State<DashboardImmichWidget> {
 
     if (_error != null && _pool.isEmpty) {
       return Center(
-        child: Text(
-          'Could not reach Immich',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: t.textSecondary, fontSize: 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Waiting for Immich…',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: t.textSecondary, fontSize: 15),
+            ),
+            const SizedBox(height: 4),
+            // Says it is still trying rather than presenting a dead end. At
+                // boot this is usually a network that is seconds away.
+            Text(
+              _retry.failures > 3 ? 'still trying' : 'connecting',
+              style: TextStyle(color: t.textSecondary, fontSize: 12),
+            ),
+          ],
         ),
       );
     }

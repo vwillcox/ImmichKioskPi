@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
 import 'config_service.dart';
+import 'retry_schedule.dart';
 
 /// One day in the 7-day forecast.
 class DailyForecast {
@@ -136,8 +137,25 @@ String weatherCodeDescription(int code) {
 class WeatherService extends ChangeNotifier {
   final ConfigService config;
   WeatherService(this.config) {
-    _timer = Timer.periodic(const Duration(minutes: 15), (_) => refresh());
+    _scheduleNext();
   }
+
+  /// Retries quickly while there is no forecast, then settles to a quarter of
+  /// an hour. The panel starts before the network is up, so the first fetch
+  /// usually fails — on a fixed fifteen-minute timer that left "could not
+  /// reach the forecast" on the wall long after the network came good.
+  final RetrySchedule _retry =
+      RetrySchedule(settled: const Duration(minutes: 15));
+
+  void _scheduleNext() {
+    _timer?.cancel();
+    _timer = Timer(_retry.next(hasContent: _weather != null), () async {
+      await refresh();
+      if (!_disposed) _scheduleNext();
+    });
+  }
+
+  bool _disposed = false;
 
   Weather? _weather;
   Weather? get weather => _weather;
@@ -153,6 +171,7 @@ class WeatherService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _timer?.cancel();
     super.dispose();
   }
