@@ -180,6 +180,31 @@ class DashboardWidgetType {
     this.live,
   });
 
+  /// How much to shrink this widget's contents at [width]x[height] cells.
+  ///
+  /// Widgets declare a default size that their fixed font sizes and paddings
+  /// suit. Placed smaller than that — and every widget can now go down to
+  /// 1x1 — those sizes no longer fit, so text is scaled by however much the
+  /// tile has shrunk.
+  ///
+  /// Taken from whichever dimension shrank *most*, since text that fits the
+  /// width but not the height is no better off.
+  ///
+  /// Only ever shrinks. Growing the text on a larger tile sounds symmetrical
+  /// and is not: widgets that should fill a big tile already do it themselves
+  /// with FittedBox or a LayoutBuilder, and scaling their fixed sizes up on
+  /// top of that would overflow layouts that were fine.
+  ///
+  /// Floored, because past a point smaller text stops being readable and the
+  /// honest answer is that the widget is too small — better to clip something
+  /// legible than to render everything at two points.
+  double contentScale(int width, int height) {
+    final byWidth = width / (defaultWidth <= 0 ? 1 : defaultWidth);
+    final byHeight = height / (defaultHeight <= 0 ? 1 : defaultHeight);
+    final smallest = byWidth < byHeight ? byWidth : byHeight;
+    return smallest.clamp(0.45, 1.0);
+  }
+
   Map<String, dynamic> toJson() => {
         'type': type,
         'name': name,

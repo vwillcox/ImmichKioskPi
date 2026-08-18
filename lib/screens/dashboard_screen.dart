@@ -272,11 +272,17 @@ class _Tile extends StatelessWidget {
     // its own; the scale goes through the text scaler, which is the only
     // thing that also reaches the explicit font sizes widgets set on
     // themselves.
+    // How much the tile has been shrunk below the size this widget's fixed
+    // font sizes and paddings were written for. Every widget can now be
+    // placed at 1x1, where a 17-point heading and 16 pixels of padding on
+    // each side simply do not fit.
+    final fit = type?.contentScale(config.width, config.height) ?? 1.0;
+
     final media = MediaQuery.of(context);
     return MediaQuery(
       data: media.copyWith(
         textScaler: TextScaler.linear(
-          media.textScaler.scale(1) * config.fontScale,
+          media.textScaler.scale(1) * config.fontScale * fit,
         ),
       ),
       child: DefaultTextStyle(
@@ -290,7 +296,9 @@ class _Tile extends StatelessWidget {
             radius: settings.radiusOver(theme.cornerRadius),
             withShadow: settings.shadowOver(theme.shadow),
           ),
-          padding: const EdgeInsets.all(16),
+          // Padding shrinks with the text. At 1x1 the old fixed 16 took a
+          // fifth of the tile before anything was drawn in it.
+          padding: EdgeInsets.all(16 * fit),
           clipBehavior: Clip.antiAlias,
           child: child,
         ),
