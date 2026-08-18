@@ -234,8 +234,8 @@ final speedtestWidgetType = DashboardWidgetType(
   glyph: '📶',
   defaultWidth: 4,
   defaultHeight: 4,
-  minWidth: 2,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   options: const [
     WidgetOption(
       key: 'maxMbps',

@@ -129,7 +129,7 @@ final clockWidgetType = DashboardWidgetType(
   glyph: '🕰',
   defaultWidth: 4,
   defaultHeight: 2,
-  minWidth: 2,
+  minWidth: 1,
   options: const [
     WidgetOption(
       key: 'twentyFourHour',

@@ -243,8 +243,8 @@ final weatherWidgetType = DashboardWidgetType(
   glyph: '⛅',
   defaultWidth: 4,
   defaultHeight: 3,
-  minWidth: 2,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   options: const [
     WidgetOption(
       key: 'forecastDays',

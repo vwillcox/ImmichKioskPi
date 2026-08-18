@@ -637,8 +637,8 @@ final unifiHealthWidgetType = DashboardWidgetType(
   glyph: '🛜',
   defaultWidth: 4,
   defaultHeight: 3,
-  minWidth: 3,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   preview: const [
     PreviewLine('Network healthy', scale: 0.16, accent: true),
     PreviewLine('↓ 24.1 Mb/s   ↑ 1.2 Mb/s', scale: 0.13),
@@ -656,8 +656,8 @@ final unifiPresenceWidgetType = DashboardWidgetType(
   glyph: '🏠',
   defaultWidth: 3,
   defaultHeight: 4,
-  minWidth: 2,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   options: const [
     WidgetOption(
       key: 'watch',
@@ -693,8 +693,8 @@ final unifiDevicesWidgetType = DashboardWidgetType(
   glyph: '📡',
   defaultWidth: 4,
   defaultHeight: 3,
-  minWidth: 3,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   preview: const [
     PreviewLine('Dream Router 7', scale: 0.14),
     PreviewLine('UDR7 · 5.1.19 · up 57d', scale: 0.10, muted: true),
@@ -713,8 +713,8 @@ final unifiClientsWidgetType = DashboardWidgetType(
   glyph: '🔌',
   defaultWidth: 4,
   defaultHeight: 4,
-  minWidth: 3,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   preview: const [
     PreviewLine('Vincents-Mini        Dream Router 7', scale: 0.11),
     PreviewLine('Hisense Vision       USW Flex 2.5G', scale: 0.11),
@@ -732,8 +732,8 @@ final unifiThroughputWidgetType = DashboardWidgetType(
   glyph: '📈',
   defaultWidth: 4,
   defaultHeight: 3,
-  minWidth: 3,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   options: const [
     WidgetOption(
       key: 'window',
@@ -877,8 +877,8 @@ final unifiIspWidgetType = DashboardWidgetType(
   glyph: '🚀',
   defaultWidth: 3,
   defaultHeight: 2,
-  minWidth: 2,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   preview: const [
     PreviewLine('ISP speed test', scale: 0.14),
     PreviewLine('↓ 941 Mb/s   ↑ 93 Mb/s', scale: 0.16, accent: true),

@@ -202,8 +202,8 @@ final newsWidgetType = DashboardWidgetType(
   glyph: '📰',
   defaultWidth: 4,
   defaultHeight: 3,
-  minWidth: 3,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   options: const [
     WidgetOption(
       key: 'sources',

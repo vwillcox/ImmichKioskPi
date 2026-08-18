@@ -72,6 +72,18 @@
     display: flex; flex-direction: column; gap: 2px; user-select: none;
   }
   .tile.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The tile under the finger goes above the others. Without this it is drawn
+     in configuration order, so dragging one over an earlier tile hides it
+     behind the thing it is being moved past — which is exactly when you need
+     to see it. The lift and shadow say which one is being moved. */
+  .tile.dragging {
+    z-index: 5;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .55);
+    cursor: grabbing;
+  }
+  /* Selected sits above the rest too, just below whatever is being dragged,
+     so the tile you are editing is not obscured while you set it up. */
+  .tile.selected { z-index: 3; }
   .tile.clash { outline: 2px solid var(--danger); outline-offset: 2px; }
   .tile .glyph { font-size: 18px; line-height: 1; }
   .tile .name {
@@ -384,7 +396,8 @@ function render() {
   for (const w of widgetsOnPage()) {
     const t = typeOf(w.type);
     const el = document.createElement("div");
-    el.className = "tile" + (w.id === state.selectedId ? " selected" : "");
+    el.className = "tile" + (w.id === state.selectedId ? " selected" : "") +
+      (drag && drag.widget.id === w.id ? " dragging" : "");
     el.style.left = (gapX + w.x * (cellW + gapX)) + "%";
     el.style.top = (gapY + w.y * (cellH + gapY)) + "%";
     el.style.width = (w.width * cellW + (w.width - 1) * gapX) + "%";
@@ -524,7 +537,13 @@ canvas.addEventListener("pointermove", (e) => {
   render();
 });
 
-function endDrag() { if (drag) { drag = null; } }
+function endDrag() {
+  if (!drag) return;
+  drag = null;
+  // Re-rendered so the dragged tile drops back into the normal stacking
+  // order rather than staying raised until something else redraws.
+  render();
+}
 canvas.addEventListener("pointerup", endDrag);
 canvas.addEventListener("pointercancel", endDrag);
 

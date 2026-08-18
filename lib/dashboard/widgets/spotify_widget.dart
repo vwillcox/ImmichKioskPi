@@ -333,8 +333,8 @@ final spotifyWidgetType = DashboardWidgetType(
   glyph: '🎵',
   defaultWidth: 5,
   defaultHeight: 2,
-  minWidth: 3,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   options: const [
     WidgetOption(
       key: 'showArtwork',
