@@ -937,3 +937,33 @@ No code was copied from Stack Overflow, blog posts or other projects.
 ## Licence
 
 [MIT](LICENSE) — do what you like with it, no warranty.
+
+### LAN speed test
+
+Speed between the panel and another machine on your own network, using a
+self-hosted [OpenSpeedTest](https://openspeedtest.com/selfhosted-speedtest)
+server. Tap the widget to run.
+
+The companion to the Ookla widget rather than a replacement. That one measures
+the path to the internet; this measures your own wiring. When the internet test
+disappoints, this is what tells you whether the line or the house is at fault.
+
+Run the server on whichever machine you want to test against:
+
+```bash
+docker run -d --restart=unless-stopped --name openspeedtest \
+  -p 3000:3000 -p 3001:3001 openspeedtest/latest
+```
+
+Then put its address — `http://<that machine>:3000` — in the widget's settings.
+
+**Measured directly rather than by opening OpenSpeedTest's own page.** The page
+would work, but on a Pi with no hardware acceleration it would measure
+*Chromium's* throughput and report the browser's limits as the network's. The
+widget reads the same `/downloading` and `/upload` endpoints itself.
+
+Two details that matter for the numbers being true. It uses **four parallel
+connections**, because a single TCP stream is limited by window size and
+round-trip time long before a 2.5 Gb link is busy. And each phase runs for
+**six seconds**: a single 30 MiB fetch completes in about a third of a second
+on a fast LAN, which measures TCP slow start rather than the rate.

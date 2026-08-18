@@ -21,6 +21,7 @@ import 'services/now_playing_service.dart';
 import 'services/screen_idle_service.dart';
 import 'services/share_inbox_service.dart';
 import 'services/spotify_service.dart';
+import 'services/lan_speedtest_service.dart';
 import 'services/speedtest_service.dart';
 import 'services/tts_service.dart';
 import 'services/tv_service.dart';
@@ -142,6 +143,7 @@ void main() async {
         // page away from the widget, and the result is still there when
         // you come back.
         ChangeNotifierProvider(create: (_) => SpeedtestService()),
+        ChangeNotifierProvider(create: (_) => LanSpeedtestService()),
       ],
       child: const ImmichKioskPiApp(),
     ),
