@@ -114,8 +114,12 @@ Work in progress on `pullMessages`, not yet merged to `main`.
   isn't upstream.
 
 **Deployment**
-- `deploy/labwc-autostart` doesn't start `vidaa_remote.service`, which a live
-  install may rely on. Merge rather than overwrite if you use the TV remote.
+- Both TV remotes need **different device UUIDs**. The standalone app and the
+  dashboard widget each derive their MQTT client id from `tv.uuid`, and the
+  television allows one session per id — sharing one puts them in a reconnect
+  loop where each displaces the other. Give the second a UUID of its own and
+  pair it once; token files are named per identity, so they no longer overwrite
+  each other either.
 - Nothing on the Pi keeps a journal for user units, so the app's output is
   discarded unless a `StandardOutput=` drop-in is added — see
   [Development](#development).
