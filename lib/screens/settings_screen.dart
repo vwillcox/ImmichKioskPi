@@ -627,6 +627,35 @@ class _NowPlayingSettingsTile extends StatelessWidget {
           ),
         if (s.enabled)
           ListTile(
+            leading: const Icon(Icons.graphic_eq),
+            title: const Text('Visualiser'),
+            subtitle: Text(
+              s.playAudioHere
+                  ? 'Drawn in the full-screen player, between the scrubber '
+                      'and the transport controls.'
+                  : 'Needs the audio playing on this device — with it staying '
+                      'on the phone there is no sound here to draw.',
+            ),
+            isThreeLine: !s.playAudioHere,
+            trailing: DropdownButton<VisualiserStyle>(
+              value: s.visualiser,
+              underline: const SizedBox.shrink(),
+              items: VisualiserStyle.values
+                  .map((v) => DropdownMenuItem(
+                        value: v,
+                        child: Text(visualiserLabel(v)),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  s.visualiser = v;
+                  config.save();
+                }
+              },
+            ),
+          ),
+        if (s.enabled)
+          ListTile(
             leading: const Icon(Icons.picture_in_picture_alt),
             title: const Text('Position'),
             subtitle: const Text('Which corner the player sits in'),

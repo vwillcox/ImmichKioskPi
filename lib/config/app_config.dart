@@ -162,6 +162,29 @@ class WeatherSettings {
 }
 
 
+/// What the full-screen player draws between the scrubber and the transport.
+enum VisualiserStyle { off, bars, wave }
+
+String visualiserToString(VisualiserStyle v) => v.name;
+
+String visualiserLabel(VisualiserStyle v) {
+  switch (v) {
+    case VisualiserStyle.off:
+      return 'Off';
+    case VisualiserStyle.bars:
+      return 'Bars';
+    case VisualiserStyle.wave:
+      return 'Waveform';
+  }
+}
+
+VisualiserStyle _visualiserFromString(String? s) {
+  return VisualiserStyle.values.firstWhere(
+    (v) => v.name == s,
+    orElse: () => VisualiserStyle.bars,
+  );
+}
+
 /// Now-playing overlay (what the paired phone is playing, via Bluetooth AVRCP).
 class NowPlayingSettings {
   bool enabled;
@@ -172,10 +195,18 @@ class NowPlayingSettings {
   /// remote control. Metadata and transport keep working either way.
   bool playAudioHere;
 
+  /// The visualiser in the expanded player.
+  ///
+  /// It draws what is coming out of *this* device's speaker, so it only has
+  /// anything to show while [playAudioHere] is on, or while Spotify is playing
+  /// through the Pi rather than through some other speaker.
+  VisualiserStyle visualiser;
+
   NowPlayingSettings({
     this.enabled = true,
     this.corner = OverlayCorner.bottomLeft,
     this.playAudioHere = true,
+    this.visualiser = VisualiserStyle.bars,
   });
 
   factory NowPlayingSettings.fromJson(Map<String, dynamic> j) {
@@ -183,6 +214,7 @@ class NowPlayingSettings {
       enabled: j['enabled'] as bool? ?? true,
       corner: _cornerFromString(j['corner'] as String?),
       playAudioHere: j['playAudioHere'] as bool? ?? true,
+      visualiser: _visualiserFromString(j['visualiser'] as String?),
     );
   }
 
@@ -190,6 +222,7 @@ class NowPlayingSettings {
         'enabled': enabled,
         'corner': cornerToString(corner),
         'playAudioHere': playAudioHere,
+        'visualiser': visualiserToString(visualiser),
       };
 }
 

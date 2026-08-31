@@ -114,6 +114,12 @@ const List<Credit> kSystemLibraries = [
     licence: 'LGPL-2.1+',
     url: 'https://www.gtk.org',
   ),
+  Credit(
+    name: 'PipeWire',
+    purpose: 'Audio routing, and the sink monitor the visualiser reads',
+    licence: 'MIT',
+    url: 'https://pipewire.org',
+  ),
 ];
 
 /// Network services the app talks to.

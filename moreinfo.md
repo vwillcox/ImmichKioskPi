@@ -200,6 +200,48 @@ artist and track name. Searching by track is markedly more reliable than by
 album, because AVRCP album strings often carry suffixes like
 `(Deluxe Version) [Explicit]`.
 
+#### The visualiser
+
+The expanded player draws a spectrum (or a waveform) between the scrubber and
+the transport controls. **Settings → Now playing → Visualiser** switches between
+bars, waveform and off.
+
+It shows what is genuinely coming out of this device's speaker. `pw-record`
+captures the default sink's **monitor**, the mix on its way out, so it hears the
+phone over Bluetooth, librespot, and the spoken notifications, at the level they
+are actually playing at:
+
+```bash
+PIPEWIRE_PROPS='{ stream.capture.sink=true }' pw-record --channels=1 \
+  --rate=16000 --format=s16 --latency=20ms -
+```
+
+`stream.capture.sink` is the whole trick. Without it `pw-record` opens the
+default *source*, which on this Pi is the USB speaker's microphone, and the bars
+would dance to the room instead of the music. With no `--target` it follows
+whatever the default sink is at the time, so changing output does not need the
+capture restarting.
+
+**It is silent when the audio is not on this device.** With "play the audio on
+this device" off, or with Spotify handed to another speaker, the music never
+passes through this sink and there is nothing here to draw. That is the
+mechanism, not a fault.
+
+Nothing runs unless something is looking at it. The capture process, the FFT and
+the repainting only exist while the player is expanded *and* the track is
+playing: collapsing it, pausing, paging away or setting the visualiser to off
+all stop the subprocess outright. A silence stops the repainting too — the bars
+settle to their floor and then nothing is pushed at the screen until sound
+returns.
+
+The bar heights follow the music rather than a fixed scale, so turning the
+speaker down makes the bars smaller without emptying them. The window rises
+quickly to meet a loud entry and falls back slowly, and it does not move at all
+during a silence — letting it drift down through the gap between tracks is how a
+visualiser ends up screaming at the first note of the next one. Its range was
+measured off this panel rather than guessed: five seconds of ordinary music put
+the median band about 17 dB below the peaks, which is why `rangeDb` is 34.
+
 ### Spotify
 
 Two independent features — set up either or both.
@@ -667,7 +709,8 @@ Tap the gear icon on the home screen:
 - **Connection** — Immich server URL and API key
 - **Locked Folder** — whether the account login is configured
 - **Weather** — on/off, location, screen corner, °C/°F
-- **Now playing** — what the paired phone is playing, and which corner
+- **Now playing** — what the paired phone is playing, which corner, and the
+  visualiser style in the expanded player
 - **Spotify** — Client ID, connect/reconnect, the Connect device
 - **Camera** — address, credentials, stream size, corner
 - **Share Inbox** — listen port, senders and their tokens, chime volume
@@ -762,6 +805,8 @@ lib/
     media_cache.dart           # on-disk image cache + memory tuning
     weather_service.dart       # Open-Meteo forecast and geocoding
     now_playing_service.dart   # BlueZ AVRCP over D-Bus + artwork lookup
+    audio_levels_service.dart  # captures the sink monitor for the visualiser
+    audio_analyser.dart        # FFT, bands and waveform for the visualiser
     spotify_service.dart       # Web API control, OAuth PKCE
     camera_service.dart        # IP Webcam control endpoints
     share_inbox_service.dart   # the HTTP listener for shares

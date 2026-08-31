@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'models/immich_models.dart';
 import 'dashboard/live_preview.dart';
 import 'dashboard/widgets/widgets.dart';
+import 'services/audio_levels_service.dart';
 import 'services/camera_service.dart';
 import 'services/config_service.dart';
 import 'services/dashboard_service.dart';
@@ -144,6 +145,9 @@ void main() async {
         // you come back.
         ChangeNotifierProvider(create: (_) => SpeedtestService()),
         ChangeNotifierProvider(create: (_) => LanSpeedtestService()),
+        // Idle until the visualiser asks it for something: creating it costs
+        // nothing, and it starts no capture until a widget attaches.
+        ChangeNotifierProvider(create: (_) => AudioLevelsService()),
       ],
       child: const ImmichKioskPiApp(),
     ),
