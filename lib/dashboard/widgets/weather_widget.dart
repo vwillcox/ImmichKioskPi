@@ -88,7 +88,15 @@ class DashboardWeatherWidget extends StatelessWidget {
       ),
     );
 
-    final hasForecast = days > 0 && weather.daily.isNotEmpty;
+    // With the current reading switched off, today is dropped from the
+    // forecast too. Otherwise the panel still leads with "Today", which is
+    // the very thing that was turned off — and on a tile paired with a
+    // separate current-conditions widget, says it twice.
+    final daily = showCurrent
+        ? weather.daily
+        : weather.daily.where((d) => !_isToday(d.date)).toList();
+
+    final hasForecast = days > 0 && daily.isNotEmpty;
 
     return LayoutBuilder(
       builder: (context, c) {
@@ -98,7 +106,7 @@ class DashboardWeatherWidget extends StatelessWidget {
         // reading on one tile and a week's outlook on another.
         if (!showCurrent) {
           return _Forecast(
-            days: weather.daily.take(days).toList(),
+            days: daily.take(days).toList(),
             theme: t,
             // A long forecast on a wide tile reads better as columns; on a
             // narrow one, as rows down the tile.
@@ -111,7 +119,7 @@ class DashboardWeatherWidget extends StatelessWidget {
         // belongs underneath, which is how a forecast is usually read.
         final beside = c.maxWidth / c.maxHeight > 2.2;
         final forecast = _Forecast(
-          days: weather.daily.take(days).toList(),
+          days: daily.take(days).toList(),
           theme: t,
           vertical: beside,
         );
@@ -140,13 +148,13 @@ class DashboardWeatherWidget extends StatelessWidget {
   static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 
-  static String dayLabel(DateTime d) {
-    final today = DateTime.now();
-    if (d.year == today.year && d.month == today.month && d.day == today.day) {
-      return 'Today';
-    }
-    return _days[d.weekday - 1];
+  static bool _isToday(DateTime d) {
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
   }
+
+  static String dayLabel(DateTime d) =>
+      _isToday(d) ? 'Today' : _days[d.weekday - 1];
 }
 
 /// The next few days, as a row of columns or a column of rows.
@@ -235,8 +243,8 @@ final weatherWidgetType = DashboardWidgetType(
   glyph: '⛅',
   defaultWidth: 4,
   defaultHeight: 3,
-  minWidth: 2,
-  minHeight: 2,
+  minWidth: 1,
+  minHeight: 1,
   options: const [
     WidgetOption(
       key: 'forecastDays',
@@ -259,7 +267,8 @@ final weatherWidgetType = DashboardWidgetType(
       kind: OptionKind.boolean,
       defaultValue: true,
       help: 'Turn off for a forecast-only tile, so one widget can be a '
-          'reading in one place and a week’s outlook in another.',
+          'reading in one place and a week’s outlook in another. Today is '
+          'left out of the forecast when this is off.',
     ),
     WidgetOption(
       key: 'showFeelsLike',

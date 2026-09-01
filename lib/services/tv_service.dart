@@ -45,15 +45,22 @@ class TvService extends ChangeNotifier {
   String? _accessToken;
   String? _refreshToken;
 
-  /// Predictable, easy-to-seed location: $HOME/.config/vidaa/vidaa_token.json
-  /// (override with $VIDAA_TOKEN_FILE).
+  /// Where the session token lives, under $HOME/.config/vidaa (override the
+  /// whole path with $VIDAA_TOKEN_FILE).
+  ///
+  /// The file name carries the UUID, because a token belongs to the identity
+  /// that obtained it. The standalone remote app stores its own alongside
+  /// this one, and a shared file meant whichever paired last overwrote the
+  /// other's token — leaving the first to re-pair, which re-pairs the second,
+  /// and so on.
   File get _tokenFileSync {
     final override = Platform.environment['VIDAA_TOKEN_FILE'];
     if (override != null && override.isNotEmpty) return File(override);
     final home = Platform.environment['HOME'] ?? '.';
     final dir = Directory('$home/.config/vidaa');
     if (!dir.existsSync()) dir.createSync(recursive: true);
-    return File('${dir.path}/vidaa_token.json');
+    final safe = uuid.replaceAll(RegExp(r'[^0-9a-zA-Z]'), '');
+    return File('${dir.path}/vidaa_token_$safe.json');
   }
 
   Future<File> get _tokenFile async => _tokenFileSync;

@@ -627,6 +627,35 @@ class _NowPlayingSettingsTile extends StatelessWidget {
           ),
         if (s.enabled)
           ListTile(
+            leading: const Icon(Icons.graphic_eq),
+            title: const Text('Visualiser'),
+            subtitle: Text(
+              s.playAudioHere
+                  ? 'Drawn in the full-screen player, between the scrubber '
+                      'and the transport controls.'
+                  : 'Needs the audio playing on this device — with it staying '
+                      'on the phone there is no sound here to draw.',
+            ),
+            isThreeLine: !s.playAudioHere,
+            trailing: DropdownButton<VisualiserStyle>(
+              value: s.visualiser,
+              underline: const SizedBox.shrink(),
+              items: VisualiserStyle.values
+                  .map((v) => DropdownMenuItem(
+                        value: v,
+                        child: Text(visualiserLabel(v)),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  s.visualiser = v;
+                  config.save();
+                }
+              },
+            ),
+          ),
+        if (s.enabled)
+          ListTile(
             leading: const Icon(Icons.picture_in_picture_alt),
             title: const Text('Position'),
             subtitle: const Text('Which corner the player sits in'),
@@ -665,6 +694,7 @@ class _HomeAssistantSettingsTile extends StatelessWidget {
     final temp = TextEditingController(text: s.temperatureEntity);
     final hum = TextEditingController(text: s.humidityEntity);
     final batt = TextEditingController(text: s.batteryEntity);
+    var enabled = s.enabled;
 
     Widget field(String label, TextEditingController c, {String? hint}) =>
         Padding(
@@ -698,6 +728,24 @@ class _HomeAssistantSettingsTile extends StatelessWidget {
                   style: TextStyle(color: Colors.white70, fontSize: 14),
                 ),
                 const SizedBox(height: 14),
+                // A switch rather than clearing the fields: turning the
+                // reading off should not cost you a long-lived token you then
+                // have to re-issue in Home Assistant.
+                StatefulBuilder(
+                  builder: (context, setLocal) => SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Read the indoor sensor',
+                        style: TextStyle(fontSize: 18)),
+                    subtitle: const Text(
+                      'Off stops polling Home Assistant and hides the indoor '
+                      'reading, keeping these settings for later.',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    value: enabled,
+                    onChanged: (v) => setLocal(() => enabled = v),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 field('Server', url, hint: 'http://localhost:8123'),
                 field('Long-lived access token', token),
                 field('Temperature entity', temp,
@@ -722,6 +770,7 @@ class _HomeAssistantSettingsTile extends StatelessWidget {
     );
 
     if (saved != true) return;
+    s.enabled = enabled;
     s.baseUrl = url.text.trim().replaceAll(RegExp(r'/+$'), '');
     s.token = token.text.trim();
     s.temperatureEntity = temp.text.trim();
@@ -964,6 +1013,9 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
   late final TextEditingController _port;
   late List<SenderToken> _tokens;
   late double _volume;
+  late bool _speak;
+  late bool _speakSender;
+  late double _speechVolume;
   final _newName = TextEditingController();
 
   static final _rand = Random.secure();
@@ -979,6 +1031,9 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
     final s = widget.config.config.shareInbox;
     _port = TextEditingController(text: s.listenPort.toString());
     _volume = s.notificationVolume;
+    _speak = s.speakNotes;
+    _speakSender = s.speakSender;
+    _speechVolume = s.speechVolume;
     _tokens = s.senderTokens
         .map((t) => SenderToken(name: t.name, token: t.token))
         .toList();
@@ -1016,6 +1071,9 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
     final s = widget.config.config.shareInbox;
     s.listenPort = port;
     s.notificationVolume = _volume;
+    s.speakNotes = _speak;
+    s.speakSender = _speakSender;
+    s.speechVolume = _speechVolume;
     s.senderTokens = _tokens;
     await widget.config.save();
     await widget.shareInbox.refreshFromSettings();
@@ -1072,6 +1130,53 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
                 "won't affect what's playing.",
                 style: TextStyle(color: Colors.white54, fontSize: 13),
               ),
+              const SizedBox(height: 18),
+
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Read notes aloud',
+                    style: TextStyle(color: Colors.white)),
+                subtitle: const Text(
+                  'Text notes only. Photos have nothing to read, and a link '
+                  'read out is a stream of letters nobody can follow.',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+                value: _speak,
+                onChanged: (v) => setState(() => _speak = v),
+              ),
+              if (_speak) ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Say who it is from first',
+                      style: TextStyle(color: Colors.white)),
+                  value: _speakSender,
+                  onChanged: (v) => setState(() => _speakSender = v),
+                ),
+                Row(
+                  children: [
+                    const Icon(Icons.record_voice_over,
+                        color: Colors.white70, size: 20),
+                    const SizedBox(width: 10),
+                    const Text('Speech volume',
+                        style: TextStyle(color: Colors.white)),
+                    const Spacer(),
+                    Text('${_speechVolume.round()}%',
+                        style: const TextStyle(color: Colors.white54)),
+                  ],
+                ),
+                Slider(
+                  value: _speechVolume,
+                  max: 100,
+                  divisions: 20,
+                  onChanged: (v) => setState(() => _speechVolume = v),
+                ),
+                const Text(
+                  'Kept below the music by default. A voice at the same level '
+                  'is startling in a quiet room — it arrives unannounced '
+                  'rather than being something you chose to play.',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              ],
               const SizedBox(height: 18),
               const Text('Senders',
                   style: TextStyle(

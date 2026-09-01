@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'audio_visualiser.dart';
 import 'burn_in_drift.dart';
 
 import '../config/app_config.dart';
@@ -409,6 +410,8 @@ class _DetailContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final n = service.now;
+    final visualiser =
+        context.watch<ConfigService>().config.nowPlaying.visualiser;
     return Padding(
       padding: const EdgeInsets.fromLTRB(40, 30, 40, 30),
       child: Column(
@@ -524,6 +527,25 @@ class _DetailContent extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          // Full width, under the scrubber and above the transport. Only
+          // drawn while the music is actually playing on this device — see
+          // AudioLevelsService for why a paused track stops the capture dead
+          // rather than painting a flat line thirty times a second.
+          //
+          // Touching it cycles bars, waveform, off, and the choice is written
+          // to the config straight away, so whatever it was left showing is
+          // what comes back after a restart.
+          const SizedBox(height: 18),
+          AudioVisualiser(
+            style: visualiser,
+            height: 112,
+            active: n.status == 'playing',
+            onTap: () {
+              final config = context.read<ConfigService>();
+              config.config.nowPlaying.visualiser = nextVisualiser(visualiser);
+              config.save();
+            },
           ),
           // Its own full-width bar rather than squeezed into the text
           // column: bigger buttons, spread out, so they're quick and

@@ -29,6 +29,11 @@
   }
   button.primary { background: var(--accent); color: #06232e; border-color: transparent; font-weight: 600; }
   button.danger { color: var(--danger); }
+  #pageBar { display: inline-flex; align-items: center; gap: 6px; }
+  #pageBar button { min-width: 36px; }
+  #pageLabel { color: var(--muted); font-size: 13px; min-width: 84px;
+               text-align: center; }
+  #pageSeconds { width: 64px; }
   button:disabled { opacity: .5; cursor: default; }
   #status { color: var(--muted); font-size: 13px; min-width: 8ch; }
   .toggle {
@@ -67,6 +72,18 @@
     display: flex; flex-direction: column; gap: 2px; user-select: none;
   }
   .tile.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The tile under the finger goes above the others. Without this it is drawn
+     in configuration order, so dragging one over an earlier tile hides it
+     behind the thing it is being moved past — which is exactly when you need
+     to see it. The lift and shadow say which one is being moved. */
+  .tile.dragging {
+    z-index: 5;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .55);
+    cursor: grabbing;
+  }
+  /* Selected sits above the rest too, just below whatever is being dragged,
+     so the tile you are editing is not obscured while you set it up. */
+  .tile.selected { z-index: 3; }
   .tile.clash { outline: 2px solid var(--danger); outline-offset: 2px; }
   .tile .glyph { font-size: 18px; line-height: 1; }
   .tile .name {
@@ -82,6 +99,11 @@
   .tile .line {
     line-height: 1.1; white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; color: var(--t-text);
+    /* Never squashed. As flex children these shrank to fit the body instead
+       of overflowing it, which made lines overlap and — worse — made
+       scrollHeight equal clientHeight, so nothing could detect that the
+       content did not fit. */
+    flex: 0 0 auto;
   }
   .tile .line.muted { color: var(--t-muted); }
   .tile .line.accent { color: var(--t-accent); }
@@ -95,7 +117,13 @@
     opacity: .8; border-bottom-right-radius: 9px;
   }
 
-  aside { display: flex; flex-direction: column; gap: 14px; }
+  aside {
+    display: flex; flex-direction: column; gap: 14px;
+    /* Sticky and scrollable, so the settings for the widget being edited
+       stay reachable however long the canvas is. */
+    position: sticky; top: 18px; max-height: calc(100vh - 36px);
+    overflow-y: auto;
+  }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
   .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
   .palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
@@ -110,6 +138,23 @@
   textarea { min-height: 76px; resize: vertical; }
   .row { display: flex; align-items: center; gap: 10px; }
   .row input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
+  /* Collapsible panels. The header stays put and the body is what folds, so
+     a collapsed panel is still a labelled target you can find and reopen. */
+  .panelHead {
+    cursor: pointer; user-select: none; display: flex; align-items: center;
+    gap: 8px; margin: 0;
+  }
+  .panelHead .chev {
+    display: inline-block; transition: transform .15s ease;
+    font-size: 12px; color: var(--muted);
+  }
+  .card.collapsed .panelHead { margin: 0; }
+  .card.collapsed .panelHead .chev { transform: rotate(-90deg); }
+  .card.collapsed .panelBody { display: none; }
+  .panelBody { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .field { font-size: 12px; color: var(--muted); }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .row #pageLabel { flex: 1; }
   .help { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .empty { color: var(--muted); font-size: 14px; }
   .warn { color: var(--danger); font-size: 13px; margin-top: 8px; }
@@ -119,9 +164,6 @@
 <header>
   <h1>Kiosk dashboard</h1>
   <span id="status">Loading…</span>
-  <select id="theme" title="Theme"></select>
-  <label class="toggle"><input type="checkbox" id="roundedCorners"> Rounded corners</label>
-  <label class="toggle"><input type="checkbox" id="tileShadows"> Shadows</label>
   <button id="revert">Revert</button>
   <button id="save" class="primary">Save</button>
 </header>
@@ -133,14 +175,55 @@
   </div>
 
   <aside>
-    <div class="card">
-      <h2>Add a widget</h2>
-      <div class="palette" id="palette"></div>
-    </div>
-    <div class="card" id="settingsCard">
-      <h2>Widget settings</h2>
-      <div id="settings"><p class="empty">Select a widget to change its settings.</p></div>
-    </div>
+    <!-- Every panel collapses to its own header. On a laptop the sidebar is
+         taller than the window once all three are open, and the settings for
+         the widget you are actually editing are the ones at the bottom. -->
+    <section class="card" data-panel="dashboard">
+      <h2 class="panelHead"><span class="chev">▾</span>Dashboard</h2>
+      <div class="panelBody">
+        <label class="field">Theme</label>
+        <select id="theme" title="Theme"></select>
+
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="roundedCorners"> Rounded corners</label>
+          <label class="toggle"><input type="checkbox" id="tileShadows"> Shadows</label>
+        </div>
+
+        <label class="field">Pages</label>
+        <div class="row" id="pageBar">
+          <button id="pagePrev" title="Previous page">‹</button>
+          <span id="pageLabel">Page 1 / 1</span>
+          <button id="pageNext" title="Next page">›</button>
+        </div>
+        <div class="row">
+          <button id="pageAdd" title="Add a page">+ Page</button>
+          <button id="pageDel" title="Delete this page" class="danger">− Page</button>
+        </div>
+
+        <div class="row">
+          <label class="toggle" title="0 leaves paging manual">
+            Flip every <input type="number" id="pageSeconds" min="0" max="3600" step="1"> s
+          </label>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="tapToFlip"> Tap to flip</label>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" data-panel="palette">
+      <h2 class="panelHead"><span class="chev">▾</span>Add a widget</h2>
+      <div class="panelBody">
+        <div class="palette" id="palette"></div>
+      </div>
+    </section>
+
+    <section class="card" data-panel="settings" id="settingsCard">
+      <h2 class="panelHead"><span class="chev">▾</span>Widget settings</h2>
+      <div class="panelBody">
+        <div id="settings"><p class="empty">Select a widget to change its settings.</p></div>
+      </div>
+    </section>
   </aside>
 </main>
 
@@ -152,6 +235,11 @@ const state = {
   dashboard: null,
   selectedId: null,
   dirty: false,
+  // Which page is being edited, and how many the user has opened up. The
+  // latter is separate because an empty new page has no widgets to infer it
+  // from and would otherwise disappear the moment it was added.
+  page: 0,
+  pagesShown: 1,
   // What each widget is showing on the panel right now, keyed by widget id.
   live: {},
 };
@@ -257,12 +345,24 @@ function previewBody(w, t, el) {
   // canvas, so a preview stays honest as either is resized. Container query
   // units do that arithmetic in CSS rather than here.
   const canvasRows = state.schema.grid.rows;
-  const scale = (w.fontScale || 1);
+  // The same shrink the panel applies, so a tile dragged small previews as it
+  // will actually look. Mirrors DashboardWidgetType.contentScale: the
+  // dimension that shrank most, never above 1, floored at 0.45.
+  const fit = t
+    ? Math.max(0.45, Math.min(1,
+        Math.min(w.width / (t.defaultWidth || 1),
+                 w.height / (t.defaultHeight || 1))))
+    : 1;
+  const scale = (w.fontScale || 1) * fit;
   let html = '<div class="body">';
   for (const line of lines) {
     const size = (line.scale * (w.height / canvasRows) * 100 * scale);
+    // The asked-for size is kept on the element because fitting shrinks it,
+    // and a second fit must start from the original rather than from the
+    // already-shrunk value — otherwise repeated renders creep towards zero.
     html += '<div class="line' + (line.muted ? " muted" : "") +
-      (line.accent ? " accent" : "") + '" style="font-size:' + size +
+      (line.accent ? " accent" : "") + '" data-cqh="' + size +
+      '" style="font-size:' + size +
       "cqh;text-align:" + (line.centre ? "center" : "left") + '">' +
       escapeHtml(substitute(line.text)) + "</div>";
   }
@@ -288,6 +388,7 @@ function escapeHtml(s) {
 
 function render() {
   const { columns, rows } = state.schema.grid;
+  renderPageBar();
   const t = currentTheme();
   // Exactly the arithmetic the kiosk lays out with, so what you drag here is
   // where it lands — including the gap between tiles and around the edges.
@@ -300,17 +401,18 @@ function render() {
   for (const el of [...canvas.querySelectorAll(".tile")]) el.remove();
   let anyClash = false;
 
-  for (const w of state.dashboard.widgets) {
+  for (const w of widgetsOnPage()) {
     const t = typeOf(w.type);
     const el = document.createElement("div");
-    el.className = "tile" + (w.id === state.selectedId ? " selected" : "");
+    el.className = "tile" + (w.id === state.selectedId ? " selected" : "") +
+      (drag && drag.widget.id === w.id ? " dragging" : "");
     el.style.left = (gapX + w.x * (cellW + gapX)) + "%";
     el.style.top = (gapY + w.y * (cellH + gapY)) + "%";
     el.style.width = (w.width * cellW + (w.width - 1) * gapX) + "%";
     el.style.height = (w.height * cellH + (w.height - 1) * gapY) + "%";
     el.dataset.id = w.id;
 
-    const clash = state.dashboard.widgets.some(o => o.id !== w.id && overlaps(w, o));
+    const clash = widgetsOnPage().some(o => o.id !== w.id && overlaps(w, o));
     if (clash) { el.classList.add("clash"); anyClash = true; }
 
     el.innerHTML =
@@ -326,8 +428,69 @@ function render() {
     canvas.appendChild(el);
   }
 
+  // Only measurable once the tiles are laid out, so this is a second pass
+  // rather than part of building them.
+  fitAllPreviews();
+
   document.getElementById("clashWarning").hidden = !anyClash;
   renderSettings();
+}
+
+/* Shrink preview text that does not fit its tile.
+
+   The sizes in a widget's preview are given as a fraction of the tile's
+   *height*, which says nothing about whether the text fits across it. A wide
+   line in a narrow tile was therefore sized correctly and then ellipsised —
+   "10:34" showing as "10:…" — and several lines in a short tile overflowed
+   the bottom. Both looked like the preview was broken rather than that the
+   text was too big for the space.
+
+   Measured and scaled rather than solved in CSS: how wide a string renders
+   depends on the font, and the editor offers twenty of them. */
+function fitPreview(tile) {
+  const body = tile.querySelector(".body");
+  if (!body) return;
+  const lines = [...body.querySelectorAll(".line")];
+  if (!lines.length) return;
+
+  // Start from the asked-for sizes, so fitting twice gives the same answer as
+  // fitting once rather than creeping towards zero.
+  for (const line of lines) {
+    const base = parseFloat(line.dataset.cqh);
+    if (base) line.style.fontSize = base + "cqh";
+  }
+
+  // Across: one factor for the whole tile, from whichever line overflows
+  // worst, so the relative sizes of the lines survive. Floored, past which a
+  // line ellipsises — which is what the widget does on the panel anyway.
+  let across = 1;
+  for (const line of lines) {
+    if (line.clientWidth > 0 && line.scrollWidth > line.clientWidth) {
+      across = Math.min(across, line.clientWidth / line.scrollWidth);
+    }
+  }
+  across = Math.max(across, lines.length === 1 ? 0.15 : 0.5);
+
+  // Down: only worth shrinking for a modest overrun. A news tile is handed
+  // twenty lines and is never going to fit them; squeezing it until they all
+  // show would leave text far too small to read, when what the widget really
+  // does is draw items until it runs out of room and clip the rest. So this
+  // absorbs a little overflow and lets anything beyond that be clipped.
+  let down = 1;
+  if (body.clientHeight > 0 && body.scrollHeight > body.clientHeight) {
+    down = Math.max(body.clientHeight / body.scrollHeight, 0.7);
+  }
+
+  const factor = Math.min(across, down) * 0.98;
+  if (factor >= 1) return;
+  for (const line of lines) {
+    const base = parseFloat(line.dataset.cqh);
+    if (base) line.style.fontSize = (base * factor) + "cqh";
+  }
+}
+
+function fitAllPreviews() {
+  for (const tile of canvas.querySelectorAll(".tile")) fitPreview(tile);
 }
 
 /* ---------- dragging and resizing ---------- */
@@ -382,7 +545,13 @@ canvas.addEventListener("pointermove", (e) => {
   render();
 });
 
-function endDrag() { if (drag) { drag = null; } }
+function endDrag() {
+  if (!drag) return;
+  drag = null;
+  // Re-rendered so the dragged tile drops back into the normal stacking
+  // order rather than staying raised until something else redraws.
+  render();
+}
 canvas.addEventListener("pointerup", endDrag);
 canvas.addEventListener("pointercancel", endDrag);
 
@@ -407,7 +576,7 @@ function firstFreeSlot(width, height) {
   for (let y = 0; y <= rows - height; y++) {
     for (let x = 0; x <= columns - width; x++) {
       const candidate = { x, y, width, height };
-      if (!state.dashboard.widgets.some(w => overlaps(candidate, w))) return { x, y };
+      if (!widgetsOnPage().some(w => overlaps(candidate, w))) return { x, y };
     }
   }
   return null;
@@ -424,6 +593,7 @@ function addWidget(t) {
     id, type: t.type,
     x: slot.x, y: slot.y,
     width: t.defaultWidth, height: t.defaultHeight,
+    page: state.page,
     fontFamily: "", fontScale: 1,
     options,
   });
@@ -472,6 +642,35 @@ function renderSettings() {
   const rule = document.createElement("hr");
   rule.style.cssText = "border:none;border-top:1px solid var(--line);margin:16px 0 4px";
   host.appendChild(rule);
+
+  // Moving a widget between pages. Without this a widget could only ever be
+  // created on a page, never moved off it, and dragging across a page break
+  // is not a gesture this canvas has.
+  const pageLabel = document.createElement("label");
+  pageLabel.textContent = "Page";
+  host.appendChild(pageLabel);
+  const pageSel = document.createElement("select");
+  for (let i = 0; i < pageCount(); i++) {
+    const o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = "Page " + (i + 1);
+    pageSel.appendChild(o);
+  }
+  pageSel.value = String(w.page || 0);
+  pageSel.onchange = () => {
+    w.page = parseInt(pageSel.value, 10) || 0;
+    // It may well land on top of something over there, so drop it into the
+    // first free slot on the page it is moving to rather than keeping
+    // coordinates that were only free on the page it left.
+    const was = state.page;
+    state.page = w.page;
+    const slot = firstFreeSlot(w.width, w.height);
+    state.page = was;
+    if (slot) { w.x = slot.x; w.y = slot.y; }
+    markDirty();
+    goToPage(w.page);
+  };
+  host.appendChild(pageSel);
 
   const fontLabel = document.createElement("label");
   fontLabel.textContent = "Font";
@@ -650,7 +849,15 @@ function field(w, o) {
       input.oninput = () => { w.options[o.key] = input.value; markDirty(); render(); };
     } else if (o.kind === "choice") {
       input = document.createElement("select");
-      for (const [k, name] of Object.entries(o.choices || {})) {
+      // A list the kiosk supplies — which albums exist, say — rather than one
+      // written into the widget. Falls back to the declared choices, so a
+      // list that could not be fetched leaves a usable field rather than an
+      // empty dropdown.
+      const dynamic = o.choicesFrom ? (state.schema.lists || {})[o.choicesFrom] : null;
+      const entries = dynamic && Object.keys(dynamic).length
+        ? dynamic
+        : (o.choices || {});
+      for (const [k, name] of Object.entries(entries)) {
         const opt = document.createElement("option");
         opt.value = k; opt.textContent = name;
         input.appendChild(opt);
@@ -697,6 +904,118 @@ function installFonts() {
   const style = document.createElement("style");
   style.textContent = css;
   document.head.appendChild(style);
+}
+
+/// Widgets on the page being edited. Everything in the canvas — drawing,
+/// clash detection, finding a free slot — works from this rather than the
+/// whole list, so two widgets on different pages are not treated as
+/// overlapping when they can never be on screen together.
+function widgetsOnPage() {
+  return state.dashboard.widgets.filter(w => (w.page || 0) === state.page);
+}
+
+function pageCount() {
+  let highest = 0;
+  for (const w of state.dashboard.widgets) highest = Math.max(highest, w.page || 0);
+  // At least one more than the highest in use when the user has added an
+  // empty page to fill, so a new page does not vanish before anything is
+  // put on it.
+  return Math.max(highest + 1, state.pagesShown || 1);
+}
+
+function goToPage(i) {
+  const count = pageCount();
+  state.page = ((i % count) + count) % count;
+  state.selectedId = null;
+  render();
+}
+
+function renderPageBar() {
+  const count = pageCount();
+  document.getElementById("pageLabel").textContent =
+    "Page " + (state.page + 1) + " / " + count;
+  document.getElementById("pagePrev").onclick = () => goToPage(state.page - 1);
+  document.getElementById("pageNext").onclick = () => goToPage(state.page + 1);
+  document.getElementById("pageAdd").onclick = () => {
+    state.pagesShown = count + 1;
+    goToPage(count);
+  };
+  const del = document.getElementById("pageDel");
+  del.disabled = count <= 1;
+  del.onclick = () => {
+    const onThis = widgetsOnPage();
+    if (onThis.length &&
+        !confirm("Delete page " + (state.page + 1) + " and its " +
+                 onThis.length + " widget(s)?")) return;
+    // Everything above this page shuffles down, so the numbering stays
+    // contiguous instead of leaving a gap that renders as a blank page.
+    state.dashboard.widgets = state.dashboard.widgets
+      .filter(w => (w.page || 0) !== state.page)
+      .map(w => ({ ...w, page: (w.page || 0) > state.page ? (w.page || 0) - 1 : (w.page || 0) }));
+    state.pagesShown = Math.max(1, count - 1);
+    markDirty();
+    goToPage(Math.min(state.page, state.pagesShown - 1));
+  };
+}
+
+/* Collapsing the sidebar panels.
+
+   Which are open is remembered in localStorage rather than in the dashboard
+   config: it is a preference of whoever is looking at this browser, not part
+   of what the panel displays, and it should not make the config dirty or
+   travel to the kiosk. */
+const PANEL_KEY = "kiosk.editor.collapsed";
+
+function collapsedPanels() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(PANEL_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function installPanels() {
+  const collapsed = collapsedPanels();
+  for (const card of document.querySelectorAll("aside .card[data-panel]")) {
+    const name = card.dataset.panel;
+    if (collapsed.has(name)) card.classList.add("collapsed");
+    const head = card.querySelector(".panelHead");
+    if (!head) continue;
+    head.onclick = () => {
+      card.classList.toggle("collapsed");
+      const now = collapsedPanels();
+      if (card.classList.contains("collapsed")) now.add(name);
+      else now.delete(name);
+      try {
+        localStorage.setItem(PANEL_KEY, JSON.stringify([...now]));
+      } catch {
+        // Private browsing, or storage full. Collapsing still works for this
+        // visit; it just will not be remembered.
+      }
+      // The canvas does not change size, but a panel opening can change the
+      // sidebar's scroll height — refit so nothing is left measured wrong.
+      fitAllPreviews();
+    };
+  }
+}
+
+function renderPaging() {
+  const secs = document.getElementById("pageSeconds");
+  secs.value = state.dashboard.pageSeconds || 0;
+  secs.onchange = () => {
+    const v = parseInt(secs.value, 10);
+    // Matches the model: 0 is manual, anything else is floored at 3s so a
+    // typo cannot make the panel strobe.
+    state.dashboard.pageSeconds = (!v || v <= 0) ? 0 : Math.min(3600, Math.max(3, v));
+    secs.value = state.dashboard.pageSeconds;
+    markDirty();
+  };
+  const tap = document.getElementById("tapToFlip");
+  tap.checked = !!state.dashboard.tapToFlip;
+  tap.onchange = () => {
+    state.dashboard.tapToFlip = tap.checked;
+    markDirty();
+  };
 }
 
 function renderOverrides() {
@@ -762,10 +1081,17 @@ async function load(quiet) {
     state.dashboard = dashboard;
     state.selectedId = null;
     state.dirty = false;
+    state.page = 0;
+    state.pagesShown = Math.max(
+      1,
+      ...state.dashboard.widgets.map(w => (w.page || 0) + 1),
+    );
     installFonts();
+    installPanels();
     renderPalette();
     renderThemes();
     renderOverrides();
+    renderPaging();
     render();
     setStatus("Ready");
   } catch (e) {
@@ -787,6 +1113,21 @@ async function refreshLive() {
 
 load().then(refreshLive);
 setInterval(refreshLive, 20000);
+
+/* The fitted sizes are measured, so they go stale whenever the measurement
+   would come out differently. Two cases, both easy to miss:
+
+   - The canvas changes width when the browser window does. Text is sized as
+     a fraction of *height*, so a wider canvas does not change the size but
+     does change whether it fits.
+   - The dashboard fonts arrive after the page does. Anything measured before
+     they land was measured in the fallback face, which is a different width. */
+if (window.ResizeObserver) {
+  new ResizeObserver(() => fitAllPreviews()).observe(canvas);
+}
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => fitAllPreviews());
+}
 </script>
 </body>
 </html>

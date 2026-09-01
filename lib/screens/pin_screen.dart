@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/numeric_keypad.dart';
+
 /// Numeric PIN entry. Returns the entered PIN string via [onSubmit]-style
 /// Navigator.pop(pin), or pop(null) on cancel. Use [title]/[subtitle] to
 /// repurpose for "unlock", "set new PIN", or "confirm PIN".
@@ -104,61 +106,11 @@ class _PinScreenState extends State<PinScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              _Keypad(onDigit: _press, onBackspace: _backspace, onEnter: _submit),
+              NumericKeypad(onDigit: _press, onBackspace: _backspace, onEnter: _submit),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-class _Keypad extends StatelessWidget {
-  final void Function(String) onDigit;
-  final VoidCallback onBackspace;
-  final VoidCallback onEnter;
-  const _Keypad({
-    required this.onDigit,
-    required this.onBackspace,
-    required this.onEnter,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    Widget key(Widget child, VoidCallback onTap, {Color? color}) {
-      return Padding(
-        padding: const EdgeInsets.all(8),
-        child: Material(
-          color: color ?? const Color(0xFF1B1E27),
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onTap,
-            child: SizedBox(width: 88, height: 88, child: Center(child: child)),
-          ),
-        ),
-      );
-    }
-
-    Widget digit(String d) => key(
-          Text(d, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w500)),
-          () => onDigit(d),
-        );
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(mainAxisSize: MainAxisSize.min, children: [digit('1'), digit('2'), digit('3')]),
-        Row(mainAxisSize: MainAxisSize.min, children: [digit('4'), digit('5'), digit('6')]),
-        Row(mainAxisSize: MainAxisSize.min, children: [digit('7'), digit('8'), digit('9')]),
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          key(const Icon(Icons.backspace_outlined, size: 28), onBackspace),
-          digit('0'),
-          key(const Icon(Icons.check, size: 30, color: Colors.white),
-              onEnter,
-              color: Theme.of(context).colorScheme.primary),
-        ]),
-      ],
     );
   }
 }

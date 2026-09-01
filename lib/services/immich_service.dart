@@ -148,6 +148,33 @@ class ImmichService with ImmichUrls implements MediaSource {
     return raw.map(Asset.fromJson).toList();
   }
 
+  /// A handful of random photos from the whole library.
+  ///
+  /// Asked of the server rather than fetched-and-shuffled here: picking at
+  /// random from one album's worth of assets is not the same thing, and
+  /// pulling the whole library to choose locally is not something a Pi should
+  /// be doing.
+  ///
+  /// Deliberately not cached. A cached random photo is the same photo, which
+  /// defeats the point.
+  Future<List<Asset>> getRandomAssets({int count = 12}) async {
+    final r = await _dio().post('/api/search/random', data: {
+      'size': count,
+      // Videos have no still to show in a tile, and a widget that sometimes
+      // renders nothing looks broken rather than empty.
+      'type': 'IMAGE',
+      'withPeople': false,
+    });
+    final data = r.data;
+    // This endpoint answers with a bare array, unlike /search/metadata which
+    // wraps its results in an assets object.
+    if (data is! List) return const [];
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map(Asset.fromJson)
+        .toList();
+  }
+
   /// Disk-cached album contents, for an instant paint before the refresh lands.
   Future<List<Asset>?> getCachedAlbumAssets(
     String albumId, {

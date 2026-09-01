@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'models/immich_models.dart';
 import 'dashboard/live_preview.dart';
 import 'dashboard/widgets/widgets.dart';
+import 'services/audio_levels_service.dart';
 import 'services/camera_service.dart';
 import 'services/config_service.dart';
 import 'services/dashboard_service.dart';
@@ -21,7 +22,11 @@ import 'services/now_playing_service.dart';
 import 'services/screen_idle_service.dart';
 import 'services/share_inbox_service.dart';
 import 'services/spotify_service.dart';
+import 'services/lan_speedtest_service.dart';
+import 'services/speedtest_service.dart';
+import 'services/tts_service.dart';
 import 'services/tv_service.dart';
+import 'services/unifi_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
 import 'screens/album_screen.dart';
@@ -66,7 +71,11 @@ void main() async {
 
   // Lets the companion phone app share a photo/GIF/video/link/note to the
   // kiosk directly — no separate relay, just a small HTTP listener here.
-  final shareInbox = ShareInboxService(config);
+  // Reads shared notes aloud. Built here and handed over rather than owned by
+  // the inbox, so speech being unavailable is not the inbox's problem.
+  final speech = TtsService();
+
+  final shareInbox = ShareInboxService(config)..speech = speech;
   unawaited(shareInbox.start());
 
   // Widget types have to be registered before anything reads the dashboard:
@@ -78,6 +87,16 @@ void main() async {
   // widgets on the same feed cost one fetch.
   final feeds = FeedService()..start();
 
+  // One instance, shared with the provider below rather than created twice:
+  // it holds the album and asset caches, and a second copy would warm its own
+  // from scratch.
+  final immich = ImmichService(config);
+
+  // Reads the UniFi console for the network widgets. One service, one poll,
+  // five widgets — none of them should cost their own round trip.
+  final unifi = UnifiService(config);
+  unawaited(unifi.start());
+
   final dashboard = DashboardService(
     config,
     // Resolved on each request so the editor's preview reflects the moment
@@ -87,6 +106,11 @@ void main() async {
       feeds: feeds,
       playback: spotify.available ? spotify : nowPlaying,
     ),
+    // For the Immich widget's album picker. Cached by the service it calls,
+    // so opening the editor does not hammer the server.
+    albums: () async => {
+      for (final a in await immich.getAlbums()) a.id: a.name,
+    },
   );
   unawaited(dashboard.start());
 
@@ -103,7 +127,8 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: config),
-        Provider<ImmichService>(create: (_) => ImmichService(config)),
+        Provider<ImmichService>.value(value: immich),
+        ChangeNotifierProvider.value(value: unifi),
         ChangeNotifierProvider(create: (_) => LockedFolderService(config)),
         ChangeNotifierProvider.value(value: weather),
         ChangeNotifierProvider.value(value: nowPlaying),
@@ -115,6 +140,14 @@ void main() async {
         ChangeNotifierProvider.value(value: feeds),
         ChangeNotifierProvider.value(value: dashboard),
         ChangeNotifierProvider(create: (_) => TvService(config)),
+        // Owned above the dashboard so a test keeps running while you
+        // page away from the widget, and the result is still there when
+        // you come back.
+        ChangeNotifierProvider(create: (_) => SpeedtestService()),
+        ChangeNotifierProvider(create: (_) => LanSpeedtestService()),
+        // Idle until the visualiser asks it for something: creating it costs
+        // nothing, and it starts no capture until a widget attaches.
+        ChangeNotifierProvider(create: (_) => AudioLevelsService()),
       ],
       child: const ImmichKioskPiApp(),
     ),

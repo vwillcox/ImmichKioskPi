@@ -18,8 +18,13 @@ systemctl --user restart immich_kiosk_pi.service
 systemctl --user restart librespot.service
 systemctl --user restart screen-control.service
 
-# The standalone VIDAA remote is deliberately NOT started here. The
-# television allows one control session per UUID, and the kiosk's own TV
-# widget now holds it — running both makes them displace each other in a
-# reconnect loop. Start it by hand if you want the full-screen remote, and
-# expect the widget to lose the set while it is up.
+# The standalone VIDAA remote, alongside the kiosk's own TV widget.
+#
+# These used to fight: the television allows one control session per device
+# UUID, and both clients derived theirs from the same one, so each connection
+# displaced the other in a reconnect loop. They now use different UUIDs and
+# separate token files (the token belongs to the identity that obtained it),
+# so both hold a session at once and both work.
+#
+# Give the second identity its own pairing once — the set shows a PIN.
+systemctl --user restart vidaa_remote.service

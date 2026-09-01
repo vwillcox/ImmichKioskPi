@@ -27,6 +27,15 @@ class WidgetOption {
   /// For [OptionKind.choice]: the allowed values, and what to call them.
   final Map<String, String> choices;
 
+  /// For [OptionKind.choice]: the name of a list the *kiosk* supplies, rather
+  /// than one written here — currently only `albums`.
+  ///
+  /// Needed because some choices are not knowable when the widget is
+  /// declared: which albums exist is a property of somebody's Immich server,
+  /// changes without this app being rebuilt, and cannot be a const map.
+  /// The editor fills these from the schema at render time.
+  final String? choicesFrom;
+
   /// Shown under the field. Say what the setting is for, not what it is.
   final String? help;
 
@@ -38,6 +47,7 @@ class WidgetOption {
 
   const WidgetOption({
     required this.key,
+    this.choicesFrom,
     required this.label,
     this.kind = OptionKind.text,
     this.defaultValue,
@@ -53,6 +63,7 @@ class WidgetOption {
         'kind': kind.name,
         'default': defaultValue,
         'choices': choices,
+        'choicesFrom': choicesFrom,
         'help': help,
         'fields': fields.map((f) => f.toJson()).toList(),
         'addLabel': addLabel,
@@ -168,6 +179,31 @@ class DashboardWidgetType {
     this.preview = const [],
     this.live,
   });
+
+  /// How much to shrink this widget's contents at [width]x[height] cells.
+  ///
+  /// Widgets declare a default size that their fixed font sizes and paddings
+  /// suit. Placed smaller than that — and every widget can now go down to
+  /// 1x1 — those sizes no longer fit, so text is scaled by however much the
+  /// tile has shrunk.
+  ///
+  /// Taken from whichever dimension shrank *most*, since text that fits the
+  /// width but not the height is no better off.
+  ///
+  /// Only ever shrinks. Growing the text on a larger tile sounds symmetrical
+  /// and is not: widgets that should fill a big tile already do it themselves
+  /// with FittedBox or a LayoutBuilder, and scaling their fixed sizes up on
+  /// top of that would overflow layouts that were fine.
+  ///
+  /// Floored, because past a point smaller text stops being readable and the
+  /// honest answer is that the widget is too small — better to clip something
+  /// legible than to render everything at two points.
+  double contentScale(int width, int height) {
+    final byWidth = width / (defaultWidth <= 0 ? 1 : defaultWidth);
+    final byHeight = height / (defaultHeight <= 0 ? 1 : defaultHeight);
+    final smallest = byWidth < byHeight ? byWidth : byHeight;
+    return smallest.clamp(0.45, 1.0);
+  }
 
   Map<String, dynamic> toJson() => {
         'type': type,

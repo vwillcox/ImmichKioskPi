@@ -3,7 +3,11 @@ import 'calendar_widget.dart';
 import 'clock_widget.dart';
 import 'news_widget.dart';
 import 'spotify_widget.dart';
+import 'immich_widget.dart';
+import 'lan_speedtest_widget.dart';
+import 'speedtest_widget.dart';
 import 'tv_widget.dart';
+import 'unifi_widgets.dart';
 import 'weather_widget.dart';
 
 /// Every widget type the dashboard ships with.
@@ -20,5 +24,14 @@ void registerBuiltInWidgets() {
     calendarWidgetType,
     newsWidgetType,
     tvWidgetType,
+    speedtestWidgetType,
+    lanSpeedtestWidgetType,
+    immichWidgetType,
+    unifiHealthWidgetType,
+    unifiPresenceWidgetType,
+    unifiDevicesWidgetType,
+    unifiClientsWidgetType,
+    unifiThroughputWidgetType,
+    unifiIspWidgetType,
   ]);
 }

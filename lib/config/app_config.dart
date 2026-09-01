@@ -162,6 +162,33 @@ class WeatherSettings {
 }
 
 
+/// What the full-screen player draws between the scrubber and the transport.
+enum VisualiserStyle { off, bars, wave }
+
+String visualiserToString(VisualiserStyle v) => v.name;
+
+String visualiserLabel(VisualiserStyle v) {
+  switch (v) {
+    case VisualiserStyle.off:
+      return 'Off';
+    case VisualiserStyle.bars:
+      return 'Bars';
+    case VisualiserStyle.wave:
+      return 'Waveform';
+  }
+}
+
+/// The next style in the cycle, for tapping the visualiser itself.
+VisualiserStyle nextVisualiser(VisualiserStyle v) =>
+    VisualiserStyle.values[(v.index + 1) % VisualiserStyle.values.length];
+
+VisualiserStyle _visualiserFromString(String? s) {
+  return VisualiserStyle.values.firstWhere(
+    (v) => v.name == s,
+    orElse: () => VisualiserStyle.bars,
+  );
+}
+
 /// Now-playing overlay (what the paired phone is playing, via Bluetooth AVRCP).
 class NowPlayingSettings {
   bool enabled;
@@ -172,10 +199,18 @@ class NowPlayingSettings {
   /// remote control. Metadata and transport keep working either way.
   bool playAudioHere;
 
+  /// The visualiser in the expanded player.
+  ///
+  /// It draws what is coming out of *this* device's speaker, so it only has
+  /// anything to show while [playAudioHere] is on, or while Spotify is playing
+  /// through the Pi rather than through some other speaker.
+  VisualiserStyle visualiser;
+
   NowPlayingSettings({
     this.enabled = true,
     this.corner = OverlayCorner.bottomLeft,
     this.playAudioHere = true,
+    this.visualiser = VisualiserStyle.bars,
   });
 
   factory NowPlayingSettings.fromJson(Map<String, dynamic> j) {
@@ -183,6 +218,7 @@ class NowPlayingSettings {
       enabled: j['enabled'] as bool? ?? true,
       corner: _cornerFromString(j['corner'] as String?),
       playAudioHere: j['playAudioHere'] as bool? ?? true,
+      visualiser: _visualiserFromString(j['visualiser'] as String?),
     );
   }
 
@@ -190,6 +226,7 @@ class NowPlayingSettings {
         'enabled': enabled,
         'corner': cornerToString(corner),
         'playAudioHere': playAudioHere,
+        'visualiser': visualiserToString(visualiser),
       };
 }
 
@@ -200,6 +237,14 @@ class NowPlayingSettings {
 /// keeps one radio owner instead of two, and Home Assistant's history is better
 /// than anything this app kept on its own.
 class HomeAssistantSettings {
+  /// Whether to read the indoor sensor at all.
+  ///
+  /// Separate from whether it is *configured*, so the feature can be switched
+  /// off without discarding the URL, token and entity ids — a long-lived
+  /// token is not something you want to have to re-issue because you turned
+  /// a reading off for a week.
+  bool enabled;
+
   /// Base URL, no trailing slash. Home Assistant runs on the same Pi.
   String baseUrl;
 
@@ -212,6 +257,7 @@ class HomeAssistantSettings {
   String batteryEntity;
 
   HomeAssistantSettings({
+    this.enabled = true,
     this.baseUrl = 'http://localhost:8123',
     this.token = '',
     this.temperatureEntity = '',
@@ -219,11 +265,25 @@ class HomeAssistantSettings {
     this.batteryEntity = '',
   });
 
+  /// Everything needed to read the sensor, and permission to.
+  ///
+  /// The service polls on this alone, so switching [enabled] off stops the
+  /// timers and clears the reading by the same path as never having set it
+  /// up — no second code path to get wrong.
   bool get isConfigured =>
-      baseUrl.isNotEmpty && token.isNotEmpty && temperatureEntity.isNotEmpty;
+      enabled &&
+      baseUrl.isNotEmpty &&
+      token.isNotEmpty &&
+      temperatureEntity.isNotEmpty;
+
+  /// Set up, but deliberately switched off.
+  bool get isPaused =>
+      !enabled && baseUrl.isNotEmpty && token.isNotEmpty;
 
   factory HomeAssistantSettings.fromJson(Map<String, dynamic> j) =>
       HomeAssistantSettings(
+        // Absent means on, so an existing config keeps working.
+        enabled: j['enabled'] as bool? ?? true,
         baseUrl: (j['baseUrl'] as String? ?? 'http://localhost:8123')
             .replaceAll(RegExp(r'/+$'), ''),
         token: j['token'] as String? ?? '',
@@ -233,6 +293,7 @@ class HomeAssistantSettings {
       );
 
   Map<String, dynamic> toJson() => {
+        'enabled': enabled,
         'baseUrl': baseUrl,
         'token': token,
         'temperatureEntity': temperatureEntity,
@@ -376,6 +437,85 @@ class CameraSettings {
 /// a session — the MQTT client id is derived from the UUID — so if you also
 /// run the standalone remote app, give one of them a different UUID or they
 /// will displace each other.
+/// A UniFi console — a Dream Router, Dream Machine or Cloud Key.
+class UnifiSettings {
+  bool enabled;
+
+  /// The console's address. UniFi OS serves everything over HTTPS on 443,
+  /// including the Network application under /proxy/network.
+  String host;
+
+  /// An API key from Network → Settings → Control Plane → Integrations.
+  ///
+  /// Keys inherit the role of the admin that created them, so one made under
+  /// a read-only admin can report the network but not restart it — which is
+  /// all any of these widgets need.
+  String apiKey;
+
+  /// Which site to read. UniFi's own default site is literally called
+  /// "default"; the id is discovered on first use and cached here.
+  String siteId;
+
+  /// Trust the console's certificate even though it is self-signed.
+  ///
+  /// A UniFi console on a home LAN presents a certificate for its
+  /// `.id.ui.direct` name, not for its address, so a strict check fails
+  /// against the very device you are holding. Defaults on because the
+  /// alternative is the feature simply not working; turn it off if you have
+  /// put a real certificate on the console.
+  bool allowSelfSignedCert;
+
+  /// How often to sample WAN throughput, in seconds.
+  ///
+  /// Its own interval because it is its own request: one small call for the
+  /// gateway's statistics, rather than the whole device-and-client sweep. A
+  /// second is comfortable; the floor exists because below that the console
+  /// returns the same figures twice and it is pure load for no data.
+  int throughputPollSeconds;
+
+  /// How long to keep throughput history, in hours.
+  ///
+  /// Kept as per-minute aggregates rather than raw samples, so a day costs
+  /// 1,440 entries instead of 86,400.
+  int throughputHours;
+
+  UnifiSettings({
+    this.enabled = false,
+    this.host = '192.168.1.1',
+    this.apiKey = '',
+    this.siteId = '',
+    this.allowSelfSignedCert = true,
+    this.throughputPollSeconds = 1,
+    this.throughputHours = 24,
+  });
+
+  bool get isConfigured => enabled && host.isNotEmpty && apiKey.isNotEmpty;
+
+  factory UnifiSettings.fromJson(Map<String, dynamic> j) => UnifiSettings(
+        enabled: j['enabled'] as bool? ?? false,
+        host: (j['host'] as String? ?? '192.168.1.1')
+            .replaceAll(RegExp(r'^https?://'), '')
+            .replaceAll(RegExp(r'/+$'), ''),
+        apiKey: j['apiKey'] as String? ?? '',
+        siteId: j['siteId'] as String? ?? '',
+        allowSelfSignedCert: j['allowSelfSignedCert'] as bool? ?? true,
+        throughputPollSeconds:
+            ((j['throughputPollSeconds'] as num?)?.toInt() ?? 1).clamp(1, 60),
+        throughputHours:
+            ((j['throughputHours'] as num?)?.toInt() ?? 24).clamp(1, 72),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        'host': host,
+        'apiKey': apiKey,
+        'siteId': siteId,
+        'allowSelfSignedCert': allowSelfSignedCert,
+        'throughputPollSeconds': throughputPollSeconds,
+        'throughputHours': throughputHours,
+      };
+}
+
 class TvSettings {
   bool enabled;
 
@@ -477,6 +617,19 @@ class ShareInboxSettings {
   /// volume — turning music down (or up) doesn't touch this. 0-100.
   double notificationVolume;
 
+  /// Read incoming text notes aloud.
+  bool speakNotes;
+
+  /// Say who sent it before reading the note.
+  bool speakSender;
+
+  /// How loud speech is, 0–100.
+  ///
+  /// Deliberately below the chime's default. A voice at the level of music
+  /// is startling in a quiet room — it is speech arriving unannounced, not
+  /// something you chose to play.
+  double speechVolume;
+
   List<SenderToken> senderTokens;
 
   /// Refuse anything that arrives unencrypted.
@@ -491,6 +644,9 @@ class ShareInboxSettings {
     this.listenPort = 8081,
     this.dndMuted = false,
     this.notificationVolume = 80,
+    this.speakNotes = false,
+    this.speakSender = true,
+    this.speechVolume = 45,
     this.requireEncryption = false,
     List<SenderToken>? senderTokens,
   }) : senderTokens = senderTokens ?? [];
@@ -501,6 +657,10 @@ class ShareInboxSettings {
       requireEncryption: j['requireEncryption'] as bool? ?? false,
       dndMuted: j['dndMuted'] as bool? ?? false,
       notificationVolume: (j['notificationVolume'] as num?)?.toDouble() ?? 80,
+      speakNotes: j['speakNotes'] as bool? ?? false,
+      speakSender: j['speakSender'] as bool? ?? true,
+      speechVolume:
+          ((j['speechVolume'] as num?)?.toDouble() ?? 45).clamp(0, 100),
       senderTokens: (j['senderTokens'] as List?)
               ?.map((t) => SenderToken.fromJson(t as Map<String, dynamic>))
               .toList() ??
@@ -513,6 +673,9 @@ class ShareInboxSettings {
         'requireEncryption': requireEncryption,
         'dndMuted': dndMuted,
         'notificationVolume': notificationVolume,
+        'speakNotes': speakNotes,
+        'speakSender': speakSender,
+        'speechVolume': speechVolume,
         'senderTokens': senderTokens.map((t) => t.toJson()).toList(),
       };
 }
@@ -533,6 +696,7 @@ class AppConfig {
   CameraSettings camera;
   DashboardSettings dashboard;
   TvSettings tv;
+  UnifiSettings unifi;
 
   /// Video player volume (0-100) and mute, remembered between videos.
   double videoVolume;
@@ -553,6 +717,7 @@ class AppConfig {
     CameraSettings? camera,
     DashboardSettings? dashboard,
     TvSettings? tv,
+    UnifiSettings? unifi,
     this.videoVolume = 100,
     this.videoMuted = false,
   })  : slideshow = slideshow ?? SlideshowSettings(),
@@ -564,7 +729,8 @@ class AppConfig {
         screen = screen ?? ScreenSettings(),
         camera = camera ?? CameraSettings(),
         dashboard = dashboard ?? DashboardSettings(),
-        tv = tv ?? TvSettings();
+        tv = tv ?? TvSettings(),
+        unifi = unifi ?? UnifiSettings();
 
   bool get isConfigured => immichUrl.isNotEmpty && apiKey.isNotEmpty;
 
@@ -663,6 +829,9 @@ class AppConfig {
       tv: j['tv'] is Map<String, dynamic>
           ? TvSettings.fromJson(j['tv'] as Map<String, dynamic>)
           : TvSettings(),
+      unifi: j['unifi'] is Map<String, dynamic>
+          ? UnifiSettings.fromJson(j['unifi'] as Map<String, dynamic>)
+          : UnifiSettings(),
       videoVolume: (j['videoVolume'] as num?)?.toDouble() ?? 100,
       videoMuted: j['videoMuted'] as bool? ?? false,
     );
@@ -683,6 +852,7 @@ class AppConfig {
         'camera': camera.toJson(),
         'dashboard': dashboard.toJson(),
         'tv': tv.toJson(),
+        'unifi': unifi.toJson(),
         'videoVolume': videoVolume,
         'videoMuted': videoMuted,
       };

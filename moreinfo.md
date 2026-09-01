@@ -114,8 +114,12 @@ Work in progress on `pullMessages`, not yet merged to `main`.
   isn't upstream.
 
 **Deployment**
-- `deploy/labwc-autostart` doesn't start `vidaa_remote.service`, which a live
-  install may rely on. Merge rather than overwrite if you use the TV remote.
+- Both TV remotes need **different device UUIDs**. The standalone app and the
+  dashboard widget each derive their MQTT client id from `tv.uuid`, and the
+  television allows one session per id — sharing one puts them in a reconnect
+  loop where each displaces the other. Give the second a UUID of its own and
+  pair it once; token files are named per identity, so they no longer overwrite
+  each other either.
 - Nothing on the Pi keeps a journal for user units, so the app's output is
   discarded unless a `StandardOutput=` drop-in is added — see
   [Development](#development).
@@ -195,6 +199,67 @@ Album artwork isn't part of AVRCP, so it's looked up from the free
 artist and track name. Searching by track is markedly more reliable than by
 album, because AVRCP album strings often carry suffixes like
 `(Deluxe Version) [Explicit]`.
+
+#### The visualiser
+
+The expanded player draws a spectrum (or a waveform) between the scrubber and
+the transport controls. **Settings → Now playing → Visualiser** switches between
+bars, waveform and off.
+
+**Touch it to change style** — bars, waveform, off, and round again. The choice
+is written to the config as you tap, so whatever it was left showing is what
+comes back after a restart. Off leaves a slim strip with a faint equaliser mark
+rather than vanishing, because a control that disappears when you switch it off
+is a control you cannot switch on again.
+
+Colour maps pitch: the sweep runs violet through blue, cyan and green to amber
+and pink across the bars, bass on the left, and each bar brightens towards its
+own tip so a peak reads as a peak rather than a longer block of flat colour.
+The waveform uses the same stops laid across the width, so changing style
+changes the shape rather than the whole look of the player.
+
+The waveform is an envelope — the peak of each slice, not the mean, since
+averaging a waveform mostly averages it away — and it is scaled to fill the
+band on the same terms as the bars. Drawing raw sample values would give a
+sliver: measured off this panel during ordinary playback, the median frame
+peaks at 0.05 of full scale, which in a 112px band is about six pixels. Scaled,
+the same music sits around 0.90.
+
+It shows what is genuinely coming out of this device's speaker. `pw-record`
+captures the default sink's **monitor**, the mix on its way out, so it hears the
+phone over Bluetooth, librespot, and the spoken notifications, at the level they
+are actually playing at:
+
+```bash
+PIPEWIRE_PROPS='{ stream.capture.sink=true }' pw-record --channels=1 \
+  --rate=16000 --format=s16 --latency=20ms -
+```
+
+`stream.capture.sink` is the whole trick. Without it `pw-record` opens the
+default *source*, which on this Pi is the USB speaker's microphone, and the bars
+would dance to the room instead of the music. With no `--target` it follows
+whatever the default sink is at the time, so changing output does not need the
+capture restarting.
+
+**It is silent when the audio is not on this device.** With "play the audio on
+this device" off, or with Spotify handed to another speaker, the music never
+passes through this sink and there is nothing here to draw. That is the
+mechanism, not a fault.
+
+Nothing runs unless something is looking at it. The capture process, the FFT and
+the repainting only exist while the player is expanded *and* the track is
+playing: collapsing it, pausing, paging away or setting the visualiser to off
+all stop the subprocess outright. A silence stops the repainting too — the bars
+settle to their floor and then nothing is pushed at the screen until sound
+returns.
+
+The bar heights follow the music rather than a fixed scale, so turning the
+speaker down makes the bars smaller without emptying them. The window rises
+quickly to meet a loud entry and falls back slowly, and it does not move at all
+during a silence — letting it drift down through the gap between tracks is how a
+visualiser ends up screaming at the first note of the next one. Its range was
+measured off this panel rather than guessed: five seconds of ordinary music put
+the median band about 17 dB below the peaks, which is why `rangeDb` is 34.
 
 ### Spotify
 
@@ -285,6 +350,69 @@ placeholders, so what you lay out is what appears on the panel.
   feed can't crowd out the rest; tap an item to read it.
 - **Spotify** — artwork that repositions with the tile's shape, a fade like the
   full player's, and transport controls sized for a quick tap.
+- **Speed test** — see below.
+
+#### Pages
+
+A dashboard can have several pages. Use **+ Page** in the editor, then move a
+widget across with the **Page** dropdown in its settings — dragging does not
+cross a page break.
+
+Two ways to turn them, and they combine:
+
+- **Flip every _n_ seconds** turns the page on a timer. 0 leaves it manual, and
+  anything under 3 is floored, since a config typo would otherwise make the
+  panel strobe.
+- **Tap to flip** turns the page when you tap the background. Off by default:
+  a dashboard full of tappable widgets would otherwise change page every time
+  you pressed one. The tap only counts when it lands on empty grid — the
+  widget under your finger gets it first.
+
+Swiping sideways always works regardless of either setting, and the dots along
+the bottom show where you are and jump straight to a page. A manual turn
+restarts the timer, so a page you just chose is not whipped away.
+
+Pages are inferred from the widgets rather than stored as a count, so a page
+cannot claim to exist after its last widget has been deleted or moved off it.
+
+#### Speed test
+
+Runs [Ookla's speedtest CLI](https://www.speedtest.net/apps/cli) and shows it
+happening: ping first, then download on the outer ring of the dial, upload on
+the inner one, with the live figure in the middle. Tap to start, tap again to
+cancel.
+
+Both speeds share **one dial**, because the pair is the interesting thing — a
+line is "200 down, 20 up", and reading that off two gauges makes you do the
+comparison yourself.
+
+The scale is **logarithmic**, one power of ten per equal sweep. A linear dial
+calibrated for a gigabit line squashes everything under about 50 Mbps into the
+first few degrees, so 20 Mbps and 2 Mbps look identical — which is exactly when
+you are looking at it.
+
+Install the CLI first. It needs no root:
+
+```bash
+curl -fsSL -o /tmp/st.tgz \
+  https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-aarch64.tgz
+mkdir -p ~/.local/bin && tar xzf /tmp/st.tgz -C /tmp speedtest
+install -m755 /tmp/speedtest ~/.local/bin/speedtest
+```
+
+> Use Ookla's own binary, not Debian's `speedtest-cli` package. That is a
+> different program with different output entirely, and this widget reads
+> Ookla's `--format=jsonl` stream — one JSON object per line as the test runs,
+> which is what makes a live display possible. Ookla's `--format=json` prints
+> nothing at all until the test has finished.
+
+Bandwidth arrives as **bytes per second** and is converted to megabits here.
+Getting that wrong is the classic way to report a line as an eighth of its real
+speed.
+
+Set **Run automatically every (hours)** to have it test on its own; 0 leaves it
+manual. Each run moves a few hundred megabytes, so keep it well spaced on a
+metered connection.
 
 ### Share Inbox
 
@@ -310,6 +438,53 @@ already run. The kiosk only needs to know which local port to bind.
 
 The chime plays through its own player, so its volume is independent of whatever
 else is playing. A **Do Not Disturb** switch in the top bar mutes it.
+
+#### Reading notes aloud
+
+**Settings → Share Inbox → Read notes aloud** speaks incoming text notes, with
+"Message from <name>" first unless you turn that off.
+
+Text only. A photo has nothing to read, and a link spoken aloud is a stream of
+letters nobody can follow — the chime already says something arrived and the
+screen says what it was. A URL inside a note becomes "a link", and anything
+past 600 characters is cut short with "and there is more on screen" rather
+than trapping you in a recital.
+
+Speech has its own volume, defaulting to **45%** — deliberately below the
+chime and the music. A voice at the same level as music is startling in a
+quiet room: it arrives unannounced rather than being something you chose to
+play. Do Not Disturb silences it along with the chime.
+
+It uses [piper](https://github.com/rhasspy/piper), a neural text-to-speech
+engine that runs locally — measured on this Pi 5 at a real-time factor of
+about 0.16, so a sentence is synthesised in roughly a sixth of the time it
+takes to say. Local rather than a cloud voice for the same reason as
+everything else here: a note somebody shares to this panel is private, and
+reading it out should not mean sending it anywhere.
+
+Install it and a voice; neither needs root:
+
+```bash
+mkdir -p ~/.local/share/piper ~/.local/bin && cd ~/.local/share/piper
+curl -fsSL -o piper.tgz \
+  https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_aarch64.tar.gz
+tar xzf piper.tgz && rm piper.tgz
+ln -sf ~/.local/share/piper/piper/piper ~/.local/bin/piper
+
+V=https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/jenny_dioco/medium
+curl -fsSL -o voice.onnx      $V/en_GB-jenny_dioco-medium.onnx
+curl -fsSL -o voice.onnx.json $V/en_GB-jenny_dioco-medium.onnx.json
+```
+
+That is a British female voice. Any piper voice works — swap the two files,
+keeping the names `voice.onnx` and `voice.onnx.json`. Without them the setting
+does nothing and the panel carries on as before; speech is a nicety, not a
+dependency.
+
+> Do **not** `apt install piper`. Debian's package of that name is a GTK
+> configurator for gaming mice, which shares the name and does nothing useful
+> here. Debian does package `espeak-ng`, which is a real synthesiser but plainly
+> robotic — acceptable in a headset, less so read aloud in a room.
 
 #### End-to-end encryption
 
@@ -553,7 +728,8 @@ Tap the gear icon on the home screen:
 - **Connection** — Immich server URL and API key
 - **Locked Folder** — whether the account login is configured
 - **Weather** — on/off, location, screen corner, °C/°F
-- **Now playing** — what the paired phone is playing, and which corner
+- **Now playing** — what the paired phone is playing, which corner, and the
+  visualiser style in the expanded player
 - **Spotify** — Client ID, connect/reconnect, the Connect device
 - **Camera** — address, credentials, stream size, corner
 - **Share Inbox** — listen port, senders and their tokens, chime volume
@@ -648,6 +824,8 @@ lib/
     media_cache.dart           # on-disk image cache + memory tuning
     weather_service.dart       # Open-Meteo forecast and geocoding
     now_playing_service.dart   # BlueZ AVRCP over D-Bus + artwork lookup
+    audio_levels_service.dart  # captures the sink monitor for the visualiser
+    audio_analyser.dart        # FFT, bands and waveform for the visualiser
     spotify_service.dart       # Web API control, OAuth PKCE
     camera_service.dart        # IP Webcam control endpoints
     share_inbox_service.dart   # the HTTP listener for shares
@@ -827,3 +1005,33 @@ No code was copied from Stack Overflow, blog posts or other projects.
 ## Licence
 
 [MIT](LICENSE) — do what you like with it, no warranty.
+
+### LAN speed test
+
+Speed between the panel and another machine on your own network, using a
+self-hosted [OpenSpeedTest](https://openspeedtest.com/selfhosted-speedtest)
+server. Tap the widget to run.
+
+The companion to the Ookla widget rather than a replacement. That one measures
+the path to the internet; this measures your own wiring. When the internet test
+disappoints, this is what tells you whether the line or the house is at fault.
+
+Run the server on whichever machine you want to test against:
+
+```bash
+docker run -d --restart=unless-stopped --name openspeedtest \
+  -p 3000:3000 -p 3001:3001 openspeedtest/latest
+```
+
+Then put its address — `http://<that machine>:3000` — in the widget's settings.
+
+**Measured directly rather than by opening OpenSpeedTest's own page.** The page
+would work, but on a Pi with no hardware acceleration it would measure
+*Chromium's* throughput and report the browser's limits as the network's. The
+widget reads the same `/downloading` and `/upload` endpoints itself.
+
+Two details that matter for the numbers being true. It uses **four parallel
+connections**, because a single TCP stream is limited by window size and
+round-trip time long before a 2.5 Gb link is busy. And each phase runs for
+**six seconds**: a single 30 MiB fetch completes in about a third of a second
+on a fast LAN, which measures TCP slow start rather than the rate.

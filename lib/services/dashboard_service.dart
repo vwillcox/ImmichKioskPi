@@ -25,11 +25,20 @@ import 'config_service.dart';
 /// than written into the page. That is what makes a new widget or theme show
 /// up in the browser without the editor being touched.
 class DashboardService extends ChangeNotifier {
-  DashboardService(this._config, {PreviewData Function()? previewData})
-      : _previewData = previewData,
+  DashboardService(
+    this._config, {
+    PreviewData Function()? previewData,
+    Future<Map<String, String>> Function()? albums,
+  })  : _previewData = previewData,
+        _albums = albums,
         themes = ThemeRepository(ThemeRepository.defaultDirectory());
 
   final ConfigService _config;
+
+  /// The albums on the Immich server, id to name, for options that let you
+  /// pick one. A function rather than a list because which albums exist is
+  /// the server's business and changes without this app restarting.
+  final Future<Map<String, String>> Function()? _albums;
 
   /// Read fresh each time rather than held, so the editor's preview shows the
   /// weather and the track as they are now, not as they were at startup.
@@ -150,6 +159,9 @@ class DashboardService extends ChangeNotifier {
               .toList(),
           'fonts': kDashboardFonts.map((f) => f.toJson()).toList(),
           'fontScales': kFontScales,
+          // Choice lists the widgets cannot declare for themselves, keyed by
+          // the name an option asks for with `choicesFrom`.
+          'lists': {'albums': await _albumChoices()},
         });
       }
       if (path == '/api/preview' && request.method == 'GET') {
@@ -370,11 +382,29 @@ class DashboardService extends ChangeNotifier {
     current.themeId = incoming.themeId;
     current.roundedCorners = incoming.roundedCorners;
     current.tileShadows = incoming.tileShadows;
+    current.pageSeconds = incoming.pageSeconds;
+    current.tapToFlip = incoming.tapToFlip;
     current.widgets = incoming.widgets;
     await _config.save();
     notifyListeners();
 
     await _json(request, {'ok': true, 'widgets': current.widgets.length});
+  }
+
+  /// Album names for the editor, or nothing if they cannot be fetched.
+  ///
+  /// A failure here must not take the whole schema down with it: without the
+  /// list the album picker falls back to its declared choices, but without a
+  /// schema the editor cannot draw itself at all.
+  Future<Map<String, String>> _albumChoices() async {
+    final fetch = _albums;
+    if (fetch == null) return const {};
+    try {
+      return await fetch();
+    } catch (e) {
+      debugPrint('Dashboard: could not list albums for the editor: $e');
+      return const {};
+    }
   }
 
   @override

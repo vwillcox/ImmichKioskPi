@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_kiosk_pi/services/feed_service.dart';
 
 void main() {
+  _entities();
   group('RSS and Atom', () {
     test('reads RSS items, newest first', () {
       final items = FeedService.parseFeed('''
@@ -122,6 +123,50 @@ void mixTests() {
       final a = [for (var i = 0; i < 20; i++) item('a$i', old: Duration(hours: i))];
       final b = [for (var i = 0; i < 20; i++) item('b$i', old: Duration(hours: i))];
       expect(FeedService.mix([a, b], max: 4, now: now).length, 4);
+    });
+  });
+}
+
+/// Entities in feed titles.
+///
+/// Note what the XML parser already does: a well-formed `&#038;` is decoded
+/// to `&` before this code ever sees it. The case that reaches [_unescape] is
+/// **double** encoding — `&amp;#038;` in the document, which XML turns into
+/// the literal text `&#038;` — and that is what was showing on the panel.
+void _entities() {
+  String titleOf(String rawXml) => FeedService.parseFeed(
+        '<rss><channel><item><title>$rawXml</title></item></channel></rss>',
+      ).single.title;
+
+  group('HTML entities in feed titles', () {
+    test('double-encoded numeric entities are decoded', () {
+      // The one seen on the wall: "Simpsons: Hit &#038; Run".
+      expect(titleOf('Simpsons: Hit &amp;#038; Run'), 'Simpsons: Hit & Run');
+    });
+
+    test('the punctuation feeds actually use', () {
+      expect(titleOf('It&amp;#8217;s here'), 'It\u2019s here');
+      expect(titleOf('Nine &amp;#8211; ten'), 'Nine \u2013 ten');
+    });
+
+    test('hex entities too', () {
+      expect(titleOf('A &amp;#x26; B'), 'A & B');
+    });
+
+    test('plain named entities still work', () {
+      expect(titleOf('Fish &amp;amp; chips'), 'Fish & chips');
+    });
+
+    test('an ampersand-first pass would break escaped markup', () {
+      // "&amp;lt;" is a literal "&lt;", not a "<". Decoding the ampersand
+      // before the angle brackets would silently turn one into the other.
+      expect(titleOf('&amp;amp;lt;'), '&lt;');
+    });
+
+    test('nonsense is left alone rather than mangled', () {
+      expect(titleOf('100&amp;#; off'), '100&#; off');
+      // Beyond the Unicode range — decoding this would throw.
+      expect(titleOf('&amp;#99999999;'), '&#99999999;');
     });
   });
 }
