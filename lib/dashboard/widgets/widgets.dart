@@ -2,6 +2,7 @@ import '../widget_registry.dart';
 import 'calendar_widget.dart';
 import 'clock_widget.dart';
 import 'news_widget.dart';
+import 'omarchy_widget.dart';
 import 'spotify_widget.dart';
 import 'immich_widget.dart';
 import 'lan_speedtest_widget.dart';
@@ -27,6 +28,7 @@ void registerBuiltInWidgets() {
     speedtestWidgetType,
     lanSpeedtestWidgetType,
     immichWidgetType,
+    omarchyWidgetType,
     unifiHealthWidgetType,
     unifiPresenceWidgetType,
     unifiDevicesWidgetType,

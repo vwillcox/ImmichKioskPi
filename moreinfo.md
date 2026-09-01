@@ -351,6 +351,7 @@ placeholders, so what you lay out is what appears on the panel.
 - **Spotify** — artwork that repositions with the tile's shape, a fade like the
   full player's, and transport controls sized for a quick tap.
 - **Speed test** — see below.
+- **Omarchy hotkeys** — see below.
 
 #### Pages
 
@@ -413,6 +414,49 @@ speed.
 Set **Run automatically every (hours)** to have it test on its own; 0 leaves it
 manual. Each run moves a few hundred megabytes, so keep it well spaced on a
 metered connection.
+
+### Omarchy hotkeys
+
+All 224 shortcuts from [omarchy.org/manual/hotkeys](https://omarchy.org/manual/hotkeys/),
+as a cheat sheet sized for a page of its own — drop it in at 12×8 and give it
+a dashboard page to itself.
+
+They will not all fit on a screen at a size anybody can read from across a
+room, so it does not try. It shows one of twenty sections at a time, and there
+are three ways to move:
+
+- **Tap a section tab.** The strip scrolls, and it follows the selection, so
+  the highlight is never off the side where you cannot see which one you are
+  on.
+- **Tap the sheet** to turn the page; past the last page of a section it moves
+  to the next one. The whole sheet is the target, not the rows — most of a
+  short section is empty space.
+- **A timer**, off by default. Under three seconds is treated as three, for the
+  same reason the dashboard's own page timer has a floor.
+
+Combinations are drawn as keycaps, split on the manual's own notation: ` + `
+between the keys of one combination, ` or ` between alternatives, so
+`Super + W or Super + Q` reads as two ways of doing the same thing rather than
+a four-key chord. Anything else — `1/2/3/4`, `Print Screen`, `CapsLock M S` —
+is left exactly as written and goes on one cap, because that is the manual's
+own shorthand and rewriting it would invent notation you have never seen on
+the page you are trying to memorise.
+
+Columns, rows and page count are all worked out from the tile, so **larger
+text means more pages rather than smaller rows**. Three sizes; the largest is
+meant to be read from a sofa. On a tile too small for the page dots to mean
+anything they become a `3 / 12` counter instead.
+
+The list is **baked into the build**, not fetched. This is a cheat sheet on a
+wall: it has to be right when the network is not, and scraping a documentation
+page would put the panel one redesign away from showing nothing. The cost is
+that it goes stale quietly, so `omarchyHotkeysFetched` in
+`lib/dashboard/widgets/omarchy_hotkeys.dart` records when it was taken. Re-read
+the manual and update that file when Omarchy changes.
+
+> The **Quick emojis** section is transcribed verbatim, and one of its entries
+> is crude. Pin the widget to a different section, or edit
+> `omarchy_hotkeys.dart`, if the panel is somewhere that matters.
 
 ### Share Inbox
 
@@ -795,6 +839,7 @@ screenshots or testing a screen in isolation. Inert unless set.
 | `IMMICH_KIOSK_TEST_LOCKED_VIDEO=<pin>` | the first locked video |
 | `IMMICH_KIOSK_TEST_ABOUT=1` | the About screen |
 | `IMMICH_KIOSK_TEST_NOWPLAYING=1` | the now-playing panel on a blank background |
+| `IMMICH_KIOSK_TEST_DASHBOARD=<page>` | the dashboard, opened at that page |
 
 ### Screen burn-in
 

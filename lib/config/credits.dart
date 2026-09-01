@@ -161,6 +161,14 @@ class SourceCredit {
 
 const List<SourceCredit> kSourceCredits = [
   SourceCredit(
+    what: 'Omarchy hotkeys',
+    detail:
+        'The shortcuts in the Omarchy hotkeys widget are transcribed from the '
+        'Omarchy manual — the list is theirs, not this project\'s. Omarchy is '
+        'by DHH and contributors, MIT.',
+    url: 'https://omarchy.org/manual/hotkeys/',
+  ),
+  SourceCredit(
     what: 'Flutter project scaffolding',
     detail:
         'linux/runner/*, .metadata, analysis_options.yaml and the initial '

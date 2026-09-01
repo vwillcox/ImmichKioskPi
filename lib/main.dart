@@ -30,6 +30,7 @@ import 'services/unifi_service.dart';
 import 'services/weather_service.dart';
 import 'screens/about_screen.dart';
 import 'screens/album_screen.dart';
+import 'screens/dashboard_screen.dart';
 import 'screens/gallery_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/locked_folder_screen.dart';
@@ -222,6 +223,7 @@ class _RootGate extends StatelessWidget {
     //   IMMICH_KIOSK_TEST_SLIDESHOW=<albumId>   boot into the slideshow
     //   IMMICH_KIOSK_TEST_GALLERY=<albumId>     boot into the photo gallery
     //   IMMICH_KIOSK_TEST_WEATHER=expanded      open the weather detail card
+    //   IMMICH_KIOSK_TEST_DASHBOARD=<page>      open the dashboard at a page
     final immich = context.read<ImmichService>();
     final testVideo = Platform.environment['IMMICH_KIOSK_TEST_VIDEO'];
     if (testVideo != null && testVideo.isNotEmpty) {
@@ -269,6 +271,10 @@ class _RootGate extends StatelessWidget {
     }
     if ((Platform.environment['IMMICH_KIOSK_TEST_ABOUT'] ?? '').isNotEmpty) {
       return const AboutScreen();
+    }
+    final testDashboard = Platform.environment['IMMICH_KIOSK_TEST_DASHBOARD'];
+    if (testDashboard != null && testDashboard.isNotEmpty) {
+      return DashboardScreen(initialPage: int.tryParse(testDashboard) ?? 0);
     }
     if ((Platform.environment['IMMICH_KIOSK_TEST_NOWPLAYING'] ?? '').isNotEmpty) {
       return const Scaffold(

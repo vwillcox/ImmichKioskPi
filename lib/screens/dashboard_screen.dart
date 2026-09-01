@@ -17,7 +17,11 @@ import '../services/screen_idle_service.dart';
 /// wall-mounted touchscreen with no keyboard is miserable, and a phone is
 /// already in your hand.
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({super.key, this.initialPage = 0});
+
+  /// Which page to open on. Only used by the debug launch hook — the panel
+  /// itself always opens on the first page.
+  final int initialPage;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -26,9 +30,10 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   ScreenIdleService? _screenIdle;
 
-  final PageController _pages = PageController();
+  late final PageController _pages =
+      PageController(initialPage: widget.initialPage);
   Timer? _flip;
-  int _page = 0;
+  late int _page = widget.initialPage;
 
   @override
   void initState() {
