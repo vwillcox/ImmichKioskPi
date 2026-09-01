@@ -40,6 +40,7 @@ class AudioVisualiser extends StatefulWidget {
     this.palette = kVisualiserPalette,
     this.height = 96,
     this.active = true,
+    this.onTap,
   });
 
   final VisualiserStyle style;
@@ -48,6 +49,15 @@ class AudioVisualiser extends StatefulWidget {
   final List<Color> palette;
 
   final double height;
+
+  /// Called when the picture is touched, for cycling the style.
+  ///
+  /// Providing it also changes what [VisualiserStyle.off] looks like. Without
+  /// a handler, off collapses to nothing — there is no reason to hold space
+  /// for a picture nobody can bring back. With one, off leaves a slim dormant
+  /// strip instead, because a control that disappears when you switch it off
+  /// is a control you cannot switch on again.
+  final VoidCallback? onTap;
 
   /// Whether audio is actually playing. False stops the capture but keeps the
   /// space, so the transport controls do not jump when the music pauses.
@@ -105,21 +115,61 @@ class _AudioVisualiserState extends State<AudioVisualiser> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.style == VisualiserStyle.off) return const SizedBox.shrink();
     final service = context.watch<AudioLevelsService>();
     // Nothing to capture with — a machine that isn't the panel. Take the space
     // back rather than reserving it for a picture that will never come.
     if (!service.supported) return const SizedBox.shrink();
 
-    return RepaintBoundary(
-      child: SizedBox(
-        height: widget.height,
-        width: double.infinity,
-        child: CustomPaint(
-          painter: widget.style == VisualiserStyle.wave
-              ? _WavePainter(wave: service.wave, palette: widget.palette)
-              : _BarsPainter(levels: service.levels, palette: widget.palette),
+    if (widget.style == VisualiserStyle.off) {
+      if (widget.onTap == null) return const SizedBox.shrink();
+      return _tappable(
+        label: 'Visualiser off. Tap to turn it on.',
+        // Enough to hit with a thumb without pretending there is a picture.
+        child: SizedBox(
+          height: math.max(36, widget.height * 0.36),
+          width: double.infinity,
+          child: Center(
+            child: Icon(
+              Icons.graphic_eq,
+              size: 22,
+              color: widget.palette.first.withValues(alpha: 0.45),
+            ),
+          ),
         ),
+      );
+    }
+
+    return _tappable(
+      label: widget.style == VisualiserStyle.wave
+          ? 'Visualiser: waveform. Tap to change.'
+          : 'Visualiser: bars. Tap to change.',
+      child: RepaintBoundary(
+        child: SizedBox(
+          height: widget.height,
+          width: double.infinity,
+          child: CustomPaint(
+            painter: widget.style == VisualiserStyle.wave
+                ? _WavePainter(wave: service.wave, palette: widget.palette)
+                : _BarsPainter(levels: service.levels, palette: widget.palette),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Wrap the picture so a touch anywhere on it counts.
+  ///
+  /// Opaque hit testing: most of this band is empty space above short bars,
+  /// and a tap target you have to land on a bar to hit would be useless.
+  Widget _tappable({required String label, required Widget child}) {
+    if (widget.onTap == null) return child;
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: child,
       ),
     );
   }
@@ -225,13 +275,15 @@ class _WavePainter extends CustomPainter {
           [for (var i = 0; i < palette.length; i++) i / (palette.length - 1)],
         );
 
-    canvas.drawPath(path, Paint()..shader = sweep(0.42));
+    canvas.drawPath(path, Paint()..shader = sweep(0.5));
     canvas.drawPath(
       path,
       Paint()
         ..shader = sweep(1.0)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
+        ..strokeWidth = 4
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round,
     );
     // The centre line keeps the band anchored when everything falls silent.
     canvas.drawLine(

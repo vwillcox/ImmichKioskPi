@@ -178,6 +178,10 @@ String visualiserLabel(VisualiserStyle v) {
   }
 }
 
+/// The next style in the cycle, for tapping the visualiser itself.
+VisualiserStyle nextVisualiser(VisualiserStyle v) =>
+    VisualiserStyle.values[(v.index + 1) % VisualiserStyle.values.length];
+
 VisualiserStyle _visualiserFromString(String? s) {
   return VisualiserStyle.values.firstWhere(
     (v) => v.name == s,

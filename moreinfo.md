@@ -206,11 +206,24 @@ The expanded player draws a spectrum (or a waveform) between the scrubber and
 the transport controls. **Settings → Now playing → Visualiser** switches between
 bars, waveform and off.
 
+**Touch it to change style** — bars, waveform, off, and round again. The choice
+is written to the config as you tap, so whatever it was left showing is what
+comes back after a restart. Off leaves a slim strip with a faint equaliser mark
+rather than vanishing, because a control that disappears when you switch it off
+is a control you cannot switch on again.
+
 Colour maps pitch: the sweep runs violet through blue, cyan and green to amber
 and pink across the bars, bass on the left, and each bar brightens towards its
 own tip so a peak reads as a peak rather than a longer block of flat colour.
 The waveform uses the same stops laid across the width, so changing style
 changes the shape rather than the whole look of the player.
+
+The waveform is an envelope — the peak of each slice, not the mean, since
+averaging a waveform mostly averages it away — and it is scaled to fill the
+band on the same terms as the bars. Drawing raw sample values would give a
+sliver: measured off this panel during ordinary playback, the median frame
+peaks at 0.05 of full scale, which in a 112px band is about six pixels. Scaled,
+the same music sits around 0.90.
 
 It shows what is genuinely coming out of this device's speaker. `pw-record`
 captures the default sink's **monitor**, the mix on its way out, so it hears the

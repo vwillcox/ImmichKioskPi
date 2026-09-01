@@ -532,14 +532,21 @@ class _DetailContent extends StatelessWidget {
           // drawn while the music is actually playing on this device — see
           // AudioLevelsService for why a paused track stops the capture dead
           // rather than painting a flat line thirty times a second.
-          if (visualiser != VisualiserStyle.off) ...[
-            const SizedBox(height: 18),
-            AudioVisualiser(
-              style: visualiser,
-              height: 112,
-              active: n.status == 'playing',
-            ),
-          ],
+          //
+          // Touching it cycles bars, waveform, off, and the choice is written
+          // to the config straight away, so whatever it was left showing is
+          // what comes back after a restart.
+          const SizedBox(height: 18),
+          AudioVisualiser(
+            style: visualiser,
+            height: 112,
+            active: n.status == 'playing',
+            onTap: () {
+              final config = context.read<ConfigService>();
+              config.config.nowPlaying.visualiser = nextVisualiser(visualiser);
+              config.save();
+            },
+          ),
           // Its own full-width bar rather than squeezed into the text
           // column: bigger buttons, spread out, so they're quick and
           // forgiving to hit on a touchscreen rather than needing precision.

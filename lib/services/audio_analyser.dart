@@ -17,7 +17,7 @@ class AudioAnalyser {
     this.bands = 28,
     this.sampleRate = 16000,
     this.fftSize = 512,
-    this.wavePoints = 96,
+    this.wavePoints = 128,
   })  : assert(fftSize > 0 && (fftSize & (fftSize - 1)) == 0,
             'fftSize must be a power of two'),
         _levels = Float64List(bands),
@@ -79,6 +79,24 @@ class AudioAnalyser {
   /// How quickly it settles back, in decibels per frame — about 0.6 a second.
   static const double referenceRelease = 0.02;
 
+  /// How much of the band the waveform's peaks fill once it has settled.
+  ///
+  /// The waveform is normalised for the same reason the bars are: raw sample
+  /// values off a speaker at a normal volume rarely pass a third of full
+  /// scale, and drawing them literally gives a thin ribbon down the middle of
+  /// a mostly empty band.
+  static const double waveHeadroom = 0.92;
+
+  /// The quietest peak the waveform will scale up to, as a fraction of full
+  /// scale. Below this it is a silence, not a quiet passage, and stays flat.
+  static const double minWavePeak = 0.02;
+
+  /// How quickly the waveform's scale rises to a loud passage, per frame.
+  static const double waveAttack = 0.3;
+
+  /// And how quickly it settles back — around a second and a half to halve.
+  static const double waveRelease = 0.015;
+
   /// How much each octave of pitch is lifted, in decibels.
   ///
   /// Music loses roughly this much an octave as it climbs, so without the lift
@@ -94,6 +112,7 @@ class AudioAnalyser {
   final Float64List _tilt;
 
   double _reference = defaultReferenceDb;
+  double _waveReference = 0.25;
 
   /// The level the top of the bars currently corresponds to, in tilted dBFS.
   double get referenceDb => _reference;
@@ -207,8 +226,25 @@ class AudioAnalyser {
   /// The peak rather than the mean, for the same reason the throughput chart
   /// keeps peaks: averaging a waveform mostly averages it away, and a quiet
   /// line through the middle of a loud passage is a lie.
+  ///
+  /// Scaled to fill the band, on the same terms as the bars: quick to rise,
+  /// slow to fall, and held still through a silence so the gap between tracks
+  /// does not become gain.
   void _fillWave(Int16List frame) {
     final n = math.min(frame.length, fftSize);
+    var framePeak = 0.0;
+    for (var i = 0; i < n; i++) {
+      final v = frame[i].abs() / 32768.0;
+      if (v > framePeak) framePeak = v;
+    }
+    if (framePeak > _waveReference) {
+      _waveReference += (framePeak - _waveReference) * waveAttack;
+    } else if (framePeak > minWavePeak) {
+      _waveReference -= _waveReference * waveRelease;
+    }
+    _waveReference = _waveReference.clamp(minWavePeak, 1.0);
+
+    final gain = waveHeadroom / _waveReference;
     for (var p = 0; p < wavePoints; p++) {
       final from = (p * n) ~/ wavePoints;
       final to = math.max(from + 1, ((p + 1) * n) ~/ wavePoints);
@@ -216,7 +252,7 @@ class AudioAnalyser {
       for (var i = from; i < to && i < n; i++) {
         if (frame[i].abs() > extreme.abs()) extreme = frame[i];
       }
-      _wave[p] = (extreme / 32768.0).clamp(-1.0, 1.0);
+      _wave[p] = (extreme / 32768.0 * gain).clamp(-1.0, 1.0);
     }
   }
 
@@ -237,6 +273,7 @@ class AudioAnalyser {
     _levels.fillRange(0, _levels.length, 0);
     _wave.fillRange(0, _wave.length, 0);
     _reference = defaultReferenceDb;
+    _waveReference = 0.25;
   }
 
   /// In-place iterative radix-2 Cooley–Tukey.

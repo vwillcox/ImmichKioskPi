@@ -119,13 +119,47 @@ void main() {
       expect(a.levels[band], closeTo(peak, 0.01));
     });
 
-    test('the waveform follows the signal amplitude', () {
-      final full = AudioAnalyser()..analyse(tone(400));
-      final half = AudioAnalyser()..analyse(tone(400, amp: 0.5));
+    test('the waveform fills the band, however loud the source', () {
+      // Raw sample values off a speaker at a normal volume rarely pass a
+      // third of full scale, so the waveform is scaled the way the bars are.
       double loudestOf(List<double> w) =>
           w.map((v) => v.abs()).reduce(math.max);
-      expect(loudestOf(full.wave), closeTo(1.0, 0.05));
-      expect(loudestOf(half.wave), closeTo(0.5, 0.05));
+      for (final amp in [1.0, 0.3, 0.06]) {
+        final a = AudioAnalyser();
+        // Long enough for the slow release to reach a very quiet source; the
+        // rise is quick, so the louder ones settle almost immediately.
+        for (var i = 0; i < 250; i++) {
+          a.analyse(tone(400, amp: amp));
+        }
+        expect(loudestOf(a.wave),
+            closeTo(AudioAnalyser.waveHeadroom, 0.08),
+            reason: 'amplitude $amp should still reach the top');
+      }
+    });
+
+    test('a silence flattens the waveform rather than magnifying it', () {
+      final a = AudioAnalyser();
+      for (var i = 0; i < 40; i++) {
+        a.analyse(tone(400));
+      }
+      for (var i = 0; i < 200; i++) {
+        a.analyse(Int16List(512));
+      }
+      expect(a.wave.every((v) => v == 0), isTrue);
+    });
+
+    test('the loud half of a frame outreaches the quiet half', () {
+      // Scaling must not flatten the shape within a frame.
+      final frame = tone(400);
+      for (var i = frame.length ~/ 2; i < frame.length; i++) {
+        frame[i] = (frame[i] * 0.2).round();
+      }
+      final a = AudioAnalyser()..analyse(frame);
+      double loudestIn(List<double> w, int from, int to) =>
+          w.sublist(from, to).map((v) => v.abs()).reduce(math.max);
+      final n = a.wave.length;
+      expect(loudestIn(a.wave, 0, n ~/ 2),
+          greaterThan(loudestIn(a.wave, n ~/ 2, n) * 2));
     });
 
     test('reset drops everything at once', () {
