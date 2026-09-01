@@ -536,8 +536,7 @@ class _DetailContent extends StatelessWidget {
             const SizedBox(height: 18),
             AudioVisualiser(
               style: visualiser,
-              colour: const Color(0xFF7FB6FF),
-              height: 72,
+              height: 112,
               active: n.status == 'playing',
             ),
           ],

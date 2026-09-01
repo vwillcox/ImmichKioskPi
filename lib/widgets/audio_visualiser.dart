@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -17,17 +18,35 @@ import '../services/audio_levels_service.dart';
 /// [active] is the second half of that. The player stays laid out while a
 /// track is paused, but paused audio produces a flat line, so the claim is
 /// dropped and the capture stops until playing resumes.
+/// The colours the spectrum runs through, bass first.
+///
+/// Pitch is the thing being mapped, so the sweep runs cool to warm across the
+/// bars rather than colouring them all alike: the bass end stays close to the
+/// player's own blue and the treble end lifts away from it, which makes the
+/// shape of the music readable at a glance from across the room.
+const List<Color> kVisualiserPalette = [
+  Color(0xFF7C4DFF),
+  Color(0xFF448AFF),
+  Color(0xFF18E0E8),
+  Color(0xFF4CE07A),
+  Color(0xFFFFC24B),
+  Color(0xFFFF5E8A),
+];
+
 class AudioVisualiser extends StatefulWidget {
   const AudioVisualiser({
     super.key,
     required this.style,
-    required this.colour,
-    this.height = 56,
+    this.palette = kVisualiserPalette,
+    this.height = 96,
     this.active = true,
   });
 
   final VisualiserStyle style;
-  final Color colour;
+
+  /// Colour stops, spread evenly across the bars.
+  final List<Color> palette;
+
   final double height;
 
   /// Whether audio is actually playing. False stops the capture but keeps the
@@ -98,20 +117,29 @@ class _AudioVisualiserState extends State<AudioVisualiser> {
         width: double.infinity,
         child: CustomPaint(
           painter: widget.style == VisualiserStyle.wave
-              ? _WavePainter(wave: service.wave, colour: widget.colour)
-              : _BarsPainter(levels: service.levels, colour: widget.colour),
+              ? _WavePainter(wave: service.wave, palette: widget.palette)
+              : _BarsPainter(levels: service.levels, palette: widget.palette),
         ),
       ),
     );
   }
 }
 
+/// Pick a colour from the stops, [t] running 0–1 across them.
+Color _sample(List<Color> palette, double t) {
+  if (palette.isEmpty) return Colors.white;
+  if (palette.length == 1) return palette.first;
+  final scaled = t.clamp(0.0, 1.0) * (palette.length - 1);
+  final i = scaled.floor().clamp(0, palette.length - 2);
+  return Color.lerp(palette[i], palette[i + 1], scaled - i)!;
+}
+
 /// A spectrum: one bar per band, bass on the left.
 class _BarsPainter extends CustomPainter {
-  _BarsPainter({required this.levels, required this.colour});
+  _BarsPainter({required this.levels, required this.palette});
 
   final List<double> levels;
-  final Color colour;
+  final List<Color> palette;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -120,25 +148,35 @@ class _BarsPainter extends CustomPainter {
     // as noise from across the room; these stay chunky.
     final slot = size.width / levels.length;
     final width = slot * 0.72;
-    final radius = Radius.circular(math.min(width / 2, 4));
+    final radius = Radius.circular(math.min(width / 2, 6));
     // A floor, so a silence is a row of dots rather than an empty rectangle
     // that looks like the widget has failed.
-    final floor = math.min(3.0, size.height);
+    final floor = math.min(4.0, size.height);
+    final span = levels.length == 1 ? 1 : levels.length - 1;
 
     for (var i = 0; i < levels.length; i++) {
       final level = levels[i].clamp(0.0, 1.0);
       final height = math.max(floor, level * size.height);
       final left = i * slot + (slot - width) / 2;
-      final rect = RRect.fromRectAndCorners(
-        Rect.fromLTWH(left, size.height - height, width, height),
-        topLeft: radius,
-        topRight: radius,
-      );
-      // Brighter as it rises: the loud bars carry the eye, the quiet ones sit
-      // back instead of drawing a hard bright line along the bottom.
+      final top = size.height - height;
+      final rect = Rect.fromLTWH(left, top, width, height);
+
+      final base = _sample(palette, i / span);
+      // Hotter at the tip and dimmer at the foot, so a tall bar reads as a
+      // peak rather than a longer block of the same flat colour — and so the
+      // quiet ones recede instead of drawing a hard bright line along the
+      // bottom of the panel.
+      final tip = Color.lerp(base, Colors.white, 0.10 + 0.30 * level)!;
+      final foot = base.withValues(alpha: 0.30 + 0.35 * level);
+
       canvas.drawRRect(
-        rect,
-        Paint()..color = colour.withValues(alpha: 0.35 + 0.65 * level),
+        RRect.fromRectAndCorners(rect, topLeft: radius, topRight: radius),
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(left, top),
+            Offset(left, size.height),
+            [tip, foot],
+          ),
       );
     }
   }
@@ -153,10 +191,10 @@ class _BarsPainter extends CustomPainter {
 
 /// A waveform, mirrored about the centre line.
 class _WavePainter extends CustomPainter {
-  _WavePainter({required this.wave, required this.colour});
+  _WavePainter({required this.wave, required this.palette});
 
   final List<double> wave;
-  final Color colour;
+  final List<Color> palette;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -176,21 +214,32 @@ class _WavePainter extends CustomPainter {
     }
     path.close();
 
-    canvas.drawPath(path, Paint()..color = colour.withValues(alpha: 0.55));
+    // The same sweep the bars use, laid across the width, so switching style
+    // changes the shape rather than the whole look of the player. Built three
+    // times at different strengths: a Paint's own colour is ignored once it
+    // has a shader, so the transparency has to live in the stops.
+    ui.Shader sweep(double alpha) => ui.Gradient.linear(
+          Offset.zero,
+          Offset(size.width, 0),
+          [for (final c in palette) c.withValues(alpha: alpha)],
+          [for (var i = 0; i < palette.length; i++) i / (palette.length - 1)],
+        );
+
+    canvas.drawPath(path, Paint()..shader = sweep(0.42));
     canvas.drawPath(
       path,
       Paint()
+        ..shader = sweep(1.0)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..color = colour,
+        ..strokeWidth = 2.5,
     );
     // The centre line keeps the band anchored when everything falls silent.
     canvas.drawLine(
       Offset(0, middle),
       Offset(size.width, middle),
       Paint()
-        ..strokeWidth = 1
-        ..color = colour.withValues(alpha: 0.25),
+        ..shader = sweep(0.30)
+        ..strokeWidth = 1.5,
     );
   }
 
