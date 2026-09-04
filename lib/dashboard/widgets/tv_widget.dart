@@ -47,8 +47,11 @@ class _DashboardTvWidgetState extends State<DashboardTvWidget> {
       case ConnState.error:
         return _Message(
           theme: t,
-          text: tv.lastError ?? 'Could not reach the television.',
-          action: ('Try again', () => unawaited(tv.connect())),
+          // It is already trying again, so say so rather than leaving a
+          // button as the only way back. The button stays for impatience.
+          text: '${tv.lastError ?? 'Could not reach the television.'}'
+              '${tv.retryPending ? '\nTrying again…' : ''}',
+          action: ('Try now', () => unawaited(tv.connect())),
         );
       case ConnState.disconnected:
         return _Message(

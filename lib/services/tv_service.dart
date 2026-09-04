@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../config/app_config.dart' show TvSettings;
 import 'config_service.dart';
+import 'retry_schedule.dart';
 import 'vidaa_client.dart';
 
 /// Talks to a Hisense VIDAA television.
@@ -18,8 +19,9 @@ import 'vidaa_client.dart';
 ///
 /// Only one client may hold a session: the MQTT client id is derived from the
 /// device UUID, so a second connection using the same UUID displaces the
-/// first and the two then fight over it. That is why the standalone remote is
-/// no longer started at boot — see deploy/labwc-autostart.
+/// first and the two then fight over it. Two remotes therefore need two
+/// UUIDs, which is what the standalone app and this widget now have — see the
+/// TV Remote section of moreinfo.md.
 
 enum ConnState { disconnected, connecting, connected, needsPairing, error }
 
@@ -36,6 +38,35 @@ class TvService extends ChangeNotifier {
   VidaaClient? _client;
   ConnState conn = ConnState.disconnected;
   String? lastError;
+
+  /// Whether a connection is wanted: something asked for one and has not asked
+  /// to stop. Retries only happen while this is true.
+  bool _wanted = false;
+  Timer? _retry;
+
+  /// Backoff between attempts, shared with the widgets that poll the network.
+  ///
+  /// The failure this exists for is the panel's own boot: labwc starts the
+  /// session, the session starts this, and the USB network adapter is still
+  /// waiting on DHCP. The first attempt fails with "network is unreachable"
+  /// and, before this, that was that — the remote sat there looking alive,
+  /// connected to nothing, until somebody thought to restart it. It went
+  /// three days once.
+  ///
+  /// [RetrySchedule.settled] never really applies here: a connection has no
+  /// ordinary refresh interval, and once connected there is no timer at all.
+  /// It matches the ceiling so the backoff is never clamped below it.
+  final RetrySchedule _schedule = RetrySchedule(
+    settled: const Duration(seconds: 60),
+    first: const Duration(seconds: 4),
+    ceiling: const Duration(seconds: 60),
+  );
+
+  /// How many attempts have failed in a row. Zero once connected.
+  int get failedAttempts => _schedule.failures;
+
+  /// Whether another attempt is booked in.
+  bool get retryPending => _retry != null;
 
   final TvState state = TvState();
   bool get isConnected => conn == ConnState.connected;
@@ -141,10 +172,36 @@ class TvService extends ChangeNotifier {
     }));
   }
 
-  void _setConn(ConnState s, {String? err}) {
+  void _setConn(ConnState s, {String? err, bool retry = false}) {
     conn = s;
     lastError = err;
+    if (s == ConnState.connected) {
+      _schedule.reset();
+      _cancelRetry();
+    } else if (retry) {
+      _scheduleRetry();
+    }
     notifyListeners();
+  }
+
+  /// Book another attempt.
+  ///
+  /// Not booked for [ConnState.needsPairing] — that is waiting on a person to
+  /// read a number off the television, and reconnecting underneath them would
+  /// throw the PIN away. Nor for missing credentials, which no amount of
+  /// waiting fixes.
+  void _scheduleRetry() {
+    _cancelRetry();
+    if (!_wanted) return;
+    _retry = Timer(_schedule.next(hasContent: false), () {
+      _retry = null;
+      if (_wanted && conn != ConnState.connected) unawaited(_attempt());
+    });
+  }
+
+  void _cancelRetry() {
+    _retry?.cancel();
+    _retry = null;
   }
 
   /// Build a fresh client (optionally token-authenticated) and connect it.
@@ -163,7 +220,9 @@ class TvService extends ChangeNotifier {
     try {
       return await _client!.connect();
     } catch (e) {
-      _setConn(ConnState.error, err: '$e');
+      // Recorded, not acted on: this is one route out of several the caller
+      // is still working through, and whether to retry is its decision.
+      lastError = '$e';
       return false;
     }
   }
@@ -186,8 +245,42 @@ class TvService extends ChangeNotifier {
   /// [_finishConnected] about what asking costs.
   void refreshSources() => _client?.getSourceList();
 
-  /// Connect with a saved/refreshed token if possible, else fall to pairing.
+  /// Ask for a connection, and keep asking.
+  ///
+  /// Returns once the first attempt has finished, which is not the same as
+  /// being connected: if it failed, another is already booked. Call it as
+  /// often as you like — a second call while one is pending just brings the
+  /// next attempt forward.
   Future<void> connect() async {
+    _wanted = true;
+    _cancelRetry();
+    _schedule.reset();
+    await _attempt();
+  }
+
+  /// Stop trying, and drop any session.
+  ///
+  /// The counterpart to [connect]: without it a service told to stop would
+  /// reconnect itself a few seconds later.
+  void disconnect() {
+    _wanted = false;
+    _cancelRetry();
+    _client?.disconnect();
+    _client = null;
+    _setConn(ConnState.disconnected);
+  }
+
+  /// One attempt: a saved or refreshed token if possible, else pairing.
+  Future<void> _attempt() async {
+    // Nothing to connect to. Checked before anything else so an unconfigured
+    // or switched-off television costs no socket, no timer and no error on
+    // screen — and so the retry loop cannot spin on a blank address.
+    if (!settings.isConfigured) {
+      _wanted = false;
+      _cancelRetry();
+      _setConn(ConnState.disconnected);
+      return;
+    }
     _setConn(ConnState.connecting);
     try {
       await _loadAssets();
@@ -195,6 +288,7 @@ class TvService extends ChangeNotifier {
       // Stops here rather than connecting without them: the handshake would
       // fail anyway, several layers down, with an error naming TLS instead of
       // the thing actually missing.
+      // Not retried: no amount of waiting puts a file on the disk.
       _setConn(ConnState.error,
           err: 'TV client certificate not set up — ${e.message}');
       return;
@@ -220,7 +314,8 @@ class TvService extends ChangeNotifier {
       _setConn(ConnState.needsPairing);
       return;
     }
-    _setConn(ConnState.error, err: 'Could not connect to $host');
+    _setConn(ConnState.error,
+        err: 'Could not connect to $host', retry: true);
   }
 
   /// Renew the access token: connect with dynamic creds (restricted ACL still
@@ -277,6 +372,8 @@ class TvService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _wanted = false;
+    _cancelRetry();
     _client?.disconnect();
     super.dispose();
   }
