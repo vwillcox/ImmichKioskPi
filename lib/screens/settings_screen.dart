@@ -146,6 +146,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [const _ScreenSettingsTile()],
           ),
           GlassSection(
+            title: 'Sound',
+            children: [const _SoundSettingsTile()],
+          ),
+          GlassSection(
             title: 'Dashboard',
             children: [const _DashboardSettingsTile()],
           ),
@@ -1173,10 +1177,8 @@ class _ShareInboxDialog extends StatefulWidget {
 class _ShareInboxDialogState extends State<_ShareInboxDialog> {
   late final TextEditingController _port;
   late List<SenderToken> _tokens;
-  late double _volume;
   late bool _speak;
   late bool _speakSender;
-  late double _speechVolume;
   final _newName = TextEditingController();
 
   static final _rand = Random.secure();
@@ -1191,10 +1193,8 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
     super.initState();
     final s = widget.config.config.shareInbox;
     _port = TextEditingController(text: s.listenPort.toString());
-    _volume = s.notificationVolume;
     _speak = s.speakNotes;
     _speakSender = s.speakSender;
-    _speechVolume = s.speechVolume;
     _tokens = s.senderTokens
         .map((t) => SenderToken(name: t.name, token: t.token))
         .toList();
@@ -1233,10 +1233,8 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
     }
     final s = widget.config.config.shareInbox;
     s.listenPort = port;
-    s.notificationVolume = _volume;
     s.speakNotes = _speak;
     s.speakSender = _speakSender;
-    s.speechVolume = _speechVolume;
     s.senderTokens = _tokens;
     await widget.config.save();
     await widget.shareInbox.refreshFromSettings();
@@ -1271,38 +1269,6 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
                 ),
               ),
               const SizedBox(height: 18),
-              Row(
-                children: [
-                  Icon(
-                    Icons.notifications,
-                    color: context.look.textSecondary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Notification volume',
-                    style: TextStyle(color: context.look.textPrimary),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${_volume.round()}%',
-                    style: TextStyle(color: context.look.textSecondary),
-                  ),
-                ],
-              ),
-              Slider(
-                value: _volume,
-                max: 100,
-                divisions: 20,
-                onChanged: (v) => setState(() => _volume = v),
-              ),
-              Text(
-                "Separate from the music/video volume — turning this down "
-                "won't affect what's playing.",
-                style: TextStyle(color: context.look.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: 18),
-
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(
@@ -1328,40 +1294,6 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
                   onChanged: (v) => setState(() => _speakSender = v),
                 ),
               ],
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(
-                    Icons.record_voice_over,
-                    color: context.look.textSecondary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Speech, reader & timers volume',
-                    style: TextStyle(color: context.look.textPrimary),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${_speechVolume.round()}%',
-                    style: TextStyle(color: context.look.textSecondary),
-                  ),
-                ],
-              ),
-              Slider(
-                value: _speechVolume,
-                max: 100,
-                divisions: 20,
-                onChanged: (v) => setState(() => _speechVolume = v),
-              ),
-              Text(
-                'Notes read aloud, news articles read out, and the kitchen '
-                "timers' sound and voice. Kept below the music by default: a "
-                'voice at the same level is startling in a quiet room — it '
-                'arrives unannounced rather than being something you chose '
-                'to play.',
-                style: TextStyle(color: context.look.textSecondary, fontSize: 13),
-              ),
               const SizedBox(height: 18),
               Text(
                 'Senders',
@@ -1458,6 +1390,80 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
 /// Switching the panel off by itself when there's nothing worth showing.
 /// The switching is done by the same host-side service Alexa drives, so a
 /// touch brings it back — see [ScreenIdleService].
+/// The volumes of the sounds the panel makes by itself, apart from the
+/// music: saved as you drag, so you can judge them by ear. The web editor's
+/// Sound card sets the same two.
+class _SoundSettingsTile extends StatelessWidget {
+  const _SoundSettingsTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final service = context.watch<ConfigService>();
+    final s = service.config.shareInbox;
+
+    Widget slider({
+      required IconData icon,
+      required String title,
+      required String help,
+      required double value,
+      required void Function(double) set,
+    }) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            leading: Icon(icon),
+            title: Text(title),
+            subtitle: Slider(
+              value: value.clamp(0, 100),
+              max: 100,
+              divisions: 20,
+              label: '${value.round()}%',
+              onChanged: (v) {
+                set(v);
+                service.save();
+              },
+            ),
+            trailing: Text('${value.round()}%'),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(72, 0, 16, 12),
+            child: Text(
+              help,
+              style: TextStyle(
+                color: context.look.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        slider(
+          icon: Icons.notifications,
+          title: 'Notifications',
+          help: 'The chime when something is shared to the panel.',
+          value: s.notificationVolume,
+          set: (v) => s.notificationVolume = v,
+        ),
+        slider(
+          icon: Icons.record_voice_over,
+          title: 'Speech, reader & timers',
+          help:
+              'Notes read aloud, news articles read out, and the kitchen '
+              "timers' sound and voice. Kept below the music by default: a "
+              'voice at the same level is startling in a quiet room.',
+          value: s.speechVolume,
+          set: (v) => s.speechVolume = v,
+        ),
+      ],
+    );
+  }
+}
+
 class _ScreenSettingsTile extends StatelessWidget {
   const _ScreenSettingsTile();
 
