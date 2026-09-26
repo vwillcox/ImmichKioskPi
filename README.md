@@ -30,6 +30,7 @@ Built with Flutter as a native Linux app, so it stays smooth on a Pi.
 
 | | |
 |---|---|
+| **[Wiki](https://github.com/vwillcox/HomeCanvas/wiki)** | Start here: installing, what hardware you need, using it, every widget, the FAQ and troubleshooting. Questions go in [Discussions](https://github.com/vwillcox/HomeCanvas/discussions). |
 | **[INSTALL.md](INSTALL.md)** | Setting it up: the hardware, the install, and every optional feature — Spotify, Bluetooth, the camera, the share inbox, the dashboard's widgets, turning the screen off with Alexa. Troubleshooting too. |
 | **[THEMES.md](THEMES.md)** | The sixteen themes, each shown on the real panel, and how to make your own. |
 | **[TECHNICAL.md](TECHNICAL.md)** | How it works: the dashboard's widget registry and editor, the encryption, the visualiser, the APIs it talks to, the project layout, debug hooks and the libraries it is built on. |
