@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/timer_service.dart';
+import '../../services/timer_sounds.dart';
 import '../dashboard_theme.dart';
 import '../widget_registry.dart';
 import 'fit_canvas.dart';
@@ -24,6 +25,9 @@ class TimersWidget extends StatelessWidget {
     final presets = TimerPreset.parse(
       w.option('presets', 'Eggs=7, Pasta=11, 5, 10, 20'),
     );
+    // Read when a timer starts, so each one keeps the sound its tile had.
+    final sound = w.option('sound', 'chime');
+    final speaks = w.option('speak', true);
     final timers = service.timers;
     final now = service.now;
     final latest = timers.where((x) => !x.finished).lastOrNull;
@@ -49,7 +53,12 @@ class TimersWidget extends StatelessWidget {
               height: chipH,
               theme: t,
               filled: true,
-              onTap: () => service.start(p.length, label: p.label),
+              onTap: () => service.start(
+                p.length,
+                label: p.label,
+                sound: sound,
+                speaks: speaks,
+              ),
             ),
         ];
 
@@ -348,9 +357,9 @@ final timersWidgetType = DashboardWidgetType(
   name: 'Timers',
   description:
       'Kitchen timers. Tap a time to start one, tap its ring to '
-      'pause, hold to cancel. When one is done the panel says so out loud; '
-      'tap the ring to stop it. They keep running when you leave the '
-      'dashboard.',
+      'pause, hold to cancel. When one is done it plays a sound and says '
+      'which timer it was; tap the ring to stop it. They keep running when '
+      'you leave the dashboard.',
   glyph: '⏲️',
   defaultWidth: 3,
   defaultHeight: 3,
@@ -366,6 +375,26 @@ final timersWidgetType = DashboardWidgetType(
           'Minutes, separated by commas. Name one with an equals sign — '
           'Eggs=7 — and it is called that when it is done. 90s for seconds, '
           '1h for an hour.',
+    ),
+    WidgetOption(
+      key: 'sound',
+      label: 'Sound when done',
+      kind: OptionKind.choice,
+      defaultValue: 'chime',
+      choices: TimerSounds.defaultChoices,
+      choicesFrom: 'timerSounds',
+      help:
+          'Played before the voice, and again each time it repeats. Upload '
+          'an MP3 of your own to add it to the list.',
+    ),
+    WidgetOption(
+      key: 'speak',
+      label: 'Say which timer is done',
+      kind: OptionKind.boolean,
+      defaultValue: true,
+      help:
+          '"The pasta timer is done", read out by piper after the sound. '
+          'Needs piper installed — see INSTALL.md.',
     ),
   ],
   preview: const [

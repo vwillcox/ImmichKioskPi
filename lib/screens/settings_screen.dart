@@ -1327,38 +1327,41 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
                   value: _speakSender,
                   onChanged: (v) => setState(() => _speakSender = v),
                 ),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.record_voice_over,
-                      color: context.look.textSecondary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Speech volume',
-                      style: TextStyle(color: context.look.textPrimary),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${_speechVolume.round()}%',
-                      style: TextStyle(color: context.look.textSecondary),
-                    ),
-                  ],
-                ),
-                Slider(
-                  value: _speechVolume,
-                  max: 100,
-                  divisions: 20,
-                  onChanged: (v) => setState(() => _speechVolume = v),
-                ),
-                Text(
-                  'Kept below the music by default. A voice at the same level '
-                  'is startling in a quiet room — it arrives unannounced '
-                  'rather than being something you chose to play.',
-                  style: TextStyle(color: context.look.textSecondary, fontSize: 13),
-                ),
               ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.record_voice_over,
+                    color: context.look.textSecondary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Speech, reader & timers volume',
+                    style: TextStyle(color: context.look.textPrimary),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${_speechVolume.round()}%',
+                    style: TextStyle(color: context.look.textSecondary),
+                  ),
+                ],
+              ),
+              Slider(
+                value: _speechVolume,
+                max: 100,
+                divisions: 20,
+                onChanged: (v) => setState(() => _speechVolume = v),
+              ),
+              Text(
+                'Notes read aloud, news articles read out, and the kitchen '
+                "timers' sound and voice. Kept below the music by default: a "
+                'voice at the same level is startling in a quiet room — it '
+                'arrives unannounced rather than being something you chose '
+                'to play.',
+                style: TextStyle(color: context.look.textSecondary, fontSize: 13),
+              ),
               const SizedBox(height: 18),
               Text(
                 'Senders',

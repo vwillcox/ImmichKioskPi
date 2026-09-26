@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -18,6 +19,7 @@ import 'brightness_service.dart';
 import 'config_service.dart';
 import 'notes_service.dart';
 import 'shopping_service.dart';
+import 'timer_sounds.dart';
 
 /// Hosts the dashboard's web editor and the small API behind it.
 ///
@@ -66,6 +68,10 @@ class DashboardService extends ChangeNotifier {
 
   /// The panel's backlight, for the editor's slider. Null in tests.
   BrightnessService? brightness;
+
+  /// The timers' sounds, for the editor's list, its previews and uploads.
+  /// Null in tests.
+  TimerSounds? timerSounds;
 
   /// The photo behind the dashboard now, as JPEG bytes, for the editor to
   /// preview the photo background with. Null in tests.
@@ -217,6 +223,7 @@ class DashboardService extends ChangeNotifier {
             'albums': await _albumChoices(),
             'haEntities': await _haChoices(),
             'voices': await _voiceChoices(),
+            'timerSounds': await _timerSoundChoices(),
           },
         });
       }
@@ -255,6 +262,34 @@ class DashboardService extends ChangeNotifier {
           return;
         }
         return await _brightnessApi(request);
+      }
+      // The volumes the panel makes its own sounds at — live, like the
+      // backlight, since you judge them by ear in the room.
+      if (path == '/api/volume') {
+        if (request.method == 'PUT' &&
+            !sameOrigin(request.headers.value('origin'),
+                request.headers.value(HttpHeaders.hostHeader))) {
+          request.response.statusCode = HttpStatus.forbidden;
+          await request.response.close();
+          return;
+        }
+        return await _volumeApi(request);
+      }
+
+      // The timers' sounds: listed, previewed in the browser, tried on the
+      // panel, uploaded and deleted. Changes only from the editor's own page
+      // on the local network, like the notes board.
+      if (path == '/api/sounds' || path.startsWith('/api/sounds/')) {
+        if (request.method != 'GET') {
+          if (!_requireLocal(request)) return;
+          if (!sameOrigin(request.headers.value('origin'),
+              request.headers.value(HttpHeaders.hostHeader))) {
+            request.response.statusCode = HttpStatus.forbidden;
+            await request.response.close();
+            return;
+          }
+        }
+        return await _soundsApi(request, path);
       }
 
       // The notes board: a page for posting from any phone in the house,
@@ -645,6 +680,32 @@ class DashboardService extends ChangeNotifier {
     });
   }
 
+  /// `notification` is the share chime; `speech` is notes read aloud, the
+  /// news reader, and the timers' sounds and voice. Both 0–100.
+  Future<void> _volumeApi(HttpRequest request) async {
+    final inbox = _config.config.shareInbox;
+    if (request.method == 'PUT') {
+      final data = jsonDecode(await utf8.decoder.bind(request).join());
+      if (data is! Map) {
+        request.response.statusCode = HttpStatus.badRequest;
+        await request.response.close();
+        return;
+      }
+      final n = data['notification'], s = data['speech'];
+      if (n is num) inbox.notificationVolume = n.toDouble().clamp(0, 100);
+      if (s is num) inbox.speechVolume = s.toDouble().clamp(0, 100);
+      await _config.save();
+    } else if (request.method != 'GET') {
+      request.response.statusCode = HttpStatus.methodNotAllowed;
+      await request.response.close();
+      return;
+    }
+    return await _json(request, {
+      'notification': inbox.notificationVolume.round(),
+      'speech': inbox.speechVolume.round(),
+    });
+  }
+
   Future<void> _save(HttpRequest request) async {
     final body = await utf8.decoder.bind(request).join();
     final data = jsonDecode(body);
@@ -709,6 +770,98 @@ class DashboardService extends ChangeNotifier {
     } catch (_) {
       return const {};
     }
+  }
+
+  Future<Map<String, String>> _timerSoundChoices() async {
+    final sounds = timerSounds;
+    if (sounds == null) return TimerSounds.defaultChoices;
+    try {
+      return await sounds.choices();
+    } catch (_) {
+      return TimerSounds.defaultChoices;
+    }
+  }
+
+  Future<void> _soundsApi(HttpRequest request, String path) async {
+    final sounds = timerSounds;
+    if (sounds == null) {
+      request.response.statusCode = HttpStatus.serviceUnavailable;
+      await request.response.close();
+      return;
+    }
+    final id = request.uri.queryParameters['id'] ?? '';
+
+    // The sound itself, for the editor's play button.
+    if (path == '/api/sounds/file' && request.method == 'GET') {
+      final bytes = await sounds.bytes(id);
+      if (bytes == null) {
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+        return;
+      }
+      final ext = id.toLowerCase();
+      request.response.headers.contentType = ext.endsWith('.mp3')
+          ? ContentType('audio', 'mpeg')
+          : ext.endsWith('.ogg')
+          ? ContentType('audio', 'ogg')
+          : ContentType('audio', 'wav');
+      request.response.add(bytes);
+      await request.response.close();
+      return;
+    }
+    // Played on the panel, to hear how loud it is in the room.
+    if (path == '/api/sounds/play' && request.method == 'POST') {
+      unawaited(sounds.play(
+        id,
+        volume: _config.config.shareInbox.notificationVolume,
+      ));
+      return await _json(request, {'playing': id});
+    }
+    if (path != '/api/sounds') {
+      request.response.statusCode = HttpStatus.notFound;
+      await request.response.close();
+      return;
+    }
+
+    switch (request.method) {
+      case 'GET':
+        return await _json(request, {'choices': await sounds.choices()});
+      case 'POST':
+        // The file as the body, its name in the query: no multipart to
+        // unpick, and the browser sends a File exactly like that.
+        final name = request.uri.queryParameters['name'] ?? '';
+        final body = BytesBuilder(copy: false);
+        await for (final chunk in request) {
+          body.add(chunk);
+          if (body.length > TimerSounds.maxUploadBytes) {
+            request.response.statusCode = HttpStatus.requestEntityTooLarge;
+            request.response.write('That file is over 5 MB.');
+            await request.response.close();
+            return;
+          }
+        }
+        try {
+          final saved = await sounds.save(name, body.takeBytes());
+          return await _json(request, {
+            'id': saved,
+            'choices': await sounds.choices(),
+          });
+        } on FormatException catch (e) {
+          request.response.statusCode = HttpStatus.badRequest;
+          request.response.write(e.message);
+          await request.response.close();
+          return;
+        }
+      case 'DELETE':
+        if (!await sounds.delete(id)) {
+          request.response.statusCode = HttpStatus.notFound;
+          await request.response.close();
+          return;
+        }
+        return await _json(request, {'choices': await sounds.choices()});
+    }
+    request.response.statusCode = HttpStatus.methodNotAllowed;
+    await request.response.close();
   }
 
   Future<Map<String, String>> _albumChoices() async {

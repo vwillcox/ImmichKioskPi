@@ -509,6 +509,23 @@
       </div>
     </section>
 
+    <section class="card" data-panel="sound">
+      <h2 class="panelHead">Sound<span class="chev">▾</span></h2>
+      <div class="panelBody">
+        <label class="field" for="volNotification">Notifications</label>
+        <div class="rangeRow">
+          <input type="range" id="volNotification" min="0" max="100" step="5" disabled>
+          <output id="volNotificationValue" for="volNotification">…</output>
+        </div>
+        <label class="field" for="volSpeech">Speech, reader &amp; timers</label>
+        <div class="rangeRow">
+          <input type="range" id="volSpeech" min="0" max="100" step="5" disabled>
+          <output id="volSpeechValue" for="volSpeech">…</output>
+        </div>
+        <p class="help">Separate from the music. Notifications is the chime when something is shared; the other is notes and articles read aloud, and the timers' sound and voice — kept below the music by default. Saved as you drag.</p>
+      </div>
+    </section>
+
     <section class="card" data-panel="dashboard">
       <h2 class="panelHead">Look<span class="chev">▾</span></h2>
       <div class="panelBody">
@@ -1601,9 +1618,14 @@ function field(w, o) {
       // list that could not be fetched leaves a usable field rather than an
       // empty dropdown.
       const dynamic = o.choicesFrom ? (state.schema.lists || {})[o.choicesFrom] : null;
-      const entries = dynamic && Object.keys(dynamic).length
+      const entries = { ...(dynamic && Object.keys(dynamic).length
         ? dynamic
-        : (o.choices || {});
+        : (o.choices || {})) };
+      // An uploaded sound deleted since: shown as missing, not swapped for
+      // the first choice without a word.
+      if (o.choicesFrom === "timerSounds" && value && !(String(value) in entries)) {
+        entries[value] = String(value).replace(/^custom:/, "") + " (not found)";
+      }
       for (const [k, name] of Object.entries(entries)) {
         const opt = document.createElement("option");
         opt.value = k; opt.textContent = name;
@@ -1611,6 +1633,11 @@ function field(w, o) {
       }
       input.value = value != null ? String(value) : "";
       input.onchange = () => { w.options[o.key] = input.value; markDirty(); render(); };
+      if (o.choicesFrom === "timerSounds") {
+        wrap.appendChild(input);
+        wrap.appendChild(soundControls(w, o, input));
+        input = null;
+      }
     } else if (o.kind === "multiline") {
       input = document.createElement("textarea");
       input.value = value != null ? String(value) : "";
@@ -1632,7 +1659,7 @@ function field(w, o) {
         markDirty();
       };
     }
-    wrap.appendChild(input);
+    if (input) wrap.appendChild(input);
   }
 
   if (o.help) {
@@ -1642,6 +1669,96 @@ function field(w, o) {
     wrap.appendChild(help);
   }
   return wrap;
+}
+
+/* A timer's sound: hear it here, hear it on the panel, add an MP3 of your
+   own, or delete one you added. Uploads are kept by the kiosk at once —
+   they are files, not part of the layout — and the list updates for every
+   timer tile. */
+function soundControls(w, o, select) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.style.marginTop = "8px";
+  let audio = null;
+
+  const listen = document.createElement("button");
+  listen.textContent = "▶ Listen";
+  listen.title = "Play it in this browser";
+  listen.onclick = () => {
+    if (!select.value || select.value === "none") return;
+    if (audio) audio.pause();
+    audio = new Audio("/api/sounds/file?id=" + encodeURIComponent(select.value));
+    audio.play().catch(() => setStatus("Couldn't play that here", true));
+  };
+
+  const panel = document.createElement("button");
+  panel.textContent = "Play on panel";
+  panel.title = "Hear how loud it is in the room";
+  panel.onclick = async () => {
+    if (!select.value || select.value === "none") return;
+    try {
+      const res = await fetch("/api/sounds/play?id=" + encodeURIComponent(select.value), { method: "POST" });
+      if (!res.ok) throw new Error(await res.text());
+    } catch (e) {
+      setStatus("Couldn't play it on the panel", true);
+    }
+  };
+
+  const picker = document.createElement("input");
+  picker.type = "file";
+  picker.accept = ".mp3,.wav,.ogg,audio/mpeg,audio/wav,audio/ogg";
+  picker.style.display = "none";
+  const upload = document.createElement("button");
+  upload.textContent = "＋ Upload MP3";
+  upload.onclick = () => picker.click();
+  picker.onchange = async () => {
+    const file = picker.files && picker.files[0];
+    picker.value = "";
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { setStatus("That file is over 5 MB", true); return; }
+    setStatus("Uploading " + file.name + "…");
+    try {
+      const res = await fetch("/api/sounds?name=" + encodeURIComponent(file.name), {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text() || res.statusText);
+      const data = await res.json();
+      state.schema.lists = state.schema.lists || {};
+      state.schema.lists.timerSounds = data.choices;
+      w.options[o.key] = data.id;
+      markDirty();
+      render();
+      setStatus("Uploaded — save to use it", "dirty");
+    } catch (e) {
+      setStatus("Upload failed: " + e.message, true);
+    }
+  };
+
+  const remove = document.createElement("button");
+  remove.className = "danger";
+  remove.textContent = "Delete";
+  remove.title = "Delete this uploaded sound from the kiosk";
+  remove.hidden = !String(select.value).startsWith("custom:");
+  remove.onclick = async () => {
+    const id = select.value;
+    if (!confirm("Delete " + id.slice("custom:".length) + " from the kiosk? Timers using it will fall back to no sound.")) return;
+    try {
+      const res = await fetch("/api/sounds?id=" + encodeURIComponent(id), { method: "DELETE" });
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      state.schema.lists.timerSounds = data.choices;
+      w.options[o.key] = o.default;
+      markDirty();
+      render();
+    } catch (e) {
+      setStatus("Couldn't delete it", true);
+    }
+  };
+
+  row.append(listen, panel, upload, remove, picker);
+  return row;
 }
 
 /* ---------- themes, save, load ---------- */
@@ -2062,10 +2179,48 @@ async function load(quiet) {
     renderPaging();
     render();
     renderBrightness();
+    renderVolumes();
     setStatus("Up to date", "ok");
   } catch (e) {
     setStatus("Could not reach the kiosk", true);
     console.error(e);
+  }
+}
+
+/* The panel's own volumes, sent the way the backlight is: the latest value
+   wins, one request at a time. */
+async function renderVolumes() {
+  const sliders = {
+    notification: document.getElementById("volNotification"),
+    speech: document.getElementById("volSpeech"),
+  };
+  const show = (key, v) => {
+    sliders[key].value = v;
+    document.getElementById(sliders[key].id + "Value").textContent = v + "%";
+  };
+  try {
+    const v = await api.get("/api/volume");
+    for (const key in sliders) { show(key, v[key]); sliders[key].disabled = false; }
+  } catch (e) {
+    for (const key in sliders) document.getElementById(sliders[key].id + "Value").textContent = "—";
+    return;
+  }
+  let sending = false, pending = null;
+  const send = async () => {
+    if (sending || pending == null) return;
+    sending = true;
+    const body = pending; pending = null;
+    try { await api.put("/api/volume", body); }
+    catch (e) { setStatus("Could not set the volume", true); }
+    sending = false;
+    send();
+  };
+  for (const key in sliders) {
+    sliders[key].oninput = () => {
+      show(key, Number(sliders[key].value));
+      pending = { ...(pending || {}), [key]: Number(sliders[key].value) };
+      send();
+    };
   }
 }
 

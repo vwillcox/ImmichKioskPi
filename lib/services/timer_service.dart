@@ -9,11 +9,18 @@ class KioskTimer {
     required this.label,
     required this.total,
     required DateTime now,
+    this.sound = 'none',
+    this.speaks = true,
   }) : _endsAt = now.add(total);
 
   final int id;
   final String label;
   final Duration total;
+
+  /// What it plays when it is done — a [TimerSounds] id — and whether it
+  /// then says which timer it was.
+  final String sound;
+  final bool speaks;
 
   DateTime? _endsAt;
   Duration? _pausedWith;
@@ -41,12 +48,24 @@ class KioskTimer {
 /// running — and still speaks when it is done — after the panel has gone
 /// back to the photos. Ticks only while a timer is running.
 class TimerService extends ChangeNotifier {
-  TimerService({this.speak, this.onFinished, DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now;
+  TimerService({
+    this.speak,
+    this.play,
+    this.silence,
+    this.onFinished,
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now;
 
   /// Says a finished timer out loud. The kiosk's own voice, the one shares
   /// are read in.
   final Future<void> Function(String text)? speak;
+
+  /// Plays a finished timer's sound, returning once it has been heard, so
+  /// the voice comes after it rather than on top of it.
+  final Future<void> Function(String sound)? play;
+
+  /// Stops a sound part-way, when the timer making it is dismissed.
+  final Future<void> Function()? silence;
 
   /// Brings the panel up when a timer goes off.
   final Future<void> Function()? onFinished;
@@ -66,12 +85,19 @@ class TimerService extends ChangeNotifier {
   List<KioskTimer> get timers => List.unmodifiable(_timers);
   DateTime get now => _clock();
 
-  KioskTimer start(Duration length, {String label = ''}) {
+  KioskTimer start(
+    Duration length, {
+    String label = '',
+    String sound = 'none',
+    bool speaks = true,
+  }) {
     final t = KioskTimer(
       id: ++_ids,
       label: label.trim().isEmpty ? describe(length) : label.trim(),
       total: length,
       now: _clock(),
+      sound: sound,
+      speaks: speaks,
     );
     _timers.add(t);
     _ensureTicking();
@@ -113,6 +139,11 @@ class TimerService extends ChangeNotifier {
 
   /// Stop and forget one — a cancel while running, a dismissal once done.
   void remove(int id) {
+    final t = _find(id);
+    // A tap on a ringing timer should stop the ringing, not just the ring.
+    if (t != null && t.finished && t.sound != 'none') {
+      unawaited(silence?.call());
+    }
     _timers.removeWhere((t) => t.id == id);
     _announced.remove(id);
     if (_timers.isEmpty) _stopTicking();
@@ -166,7 +197,22 @@ class TimerService extends ChangeNotifier {
     final due = t.finishedAt!.add(repeatEvery * count);
     if (now.isBefore(due)) return;
     _announced[t.id] = count + 1;
-    unawaited(speak?.call(announcement(t)));
+    unawaited(_announce(t));
+  }
+
+  /// The sound, then the voice. With no sound, the voice starts at once.
+  Future<void> _announce(KioskTimer t) async {
+    final play = this.play;
+    if (play != null && t.sound != 'none') {
+      try {
+        await play(t.sound);
+      } catch (e) {
+        debugPrint('Timer sound: $e');
+      }
+      // Dismissed while it was ringing: nobody needs telling now.
+      if (_find(t.id) == null) return;
+    }
+    if (t.speaks) await speak?.call(announcement(t));
   }
 
   static String announcement(KioskTimer t) {

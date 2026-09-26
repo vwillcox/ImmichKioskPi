@@ -21,6 +21,7 @@ import 'services/rain_service.dart';
 import 'services/notes_service.dart';
 import 'services/shopping_service.dart';
 import 'services/timer_service.dart';
+import 'services/timer_sounds.dart';
 import 'dashboard/widgets/widgets.dart';
 import 'services/audio_levels_service.dart';
 import 'services/kiosk_control_service.dart';
@@ -202,11 +203,23 @@ void main() async {
   unawaited(chores.load());
 
   // Kitchen timers, owned up here so they keep running — and still speak —
-  // after the panel has left the dashboard.
+  // after the panel has left the dashboard. The sound and the voice both
+  // play at the speech volume, the one articles are read at: below the
+  // music, and turned up or down with it from Settings or the editor.
+  final timerSounds = TimerSounds();
   final timers = TimerService(
-    speak: speech.speak,
+    speak: (text) => speech.speak(
+      text,
+      volume: config.config.shareInbox.speechVolume,
+    ),
+    play: (sound) => timerSounds.play(
+      sound,
+      volume: config.config.shareInbox.speechVolume,
+    ),
+    silence: timerSounds.stop,
     onFinished: screenIdle.wakeForNotification,
   );
+  dashboard.timerSounds = timerSounds;
 
   // Bin-day reminders, spoken the evening before whether or not the
   // dashboard is showing.
