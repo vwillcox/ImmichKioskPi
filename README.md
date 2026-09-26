@@ -119,7 +119,7 @@ reorder pages by dragging their tabs.
 | Settings | About |
 |---|---|
 | ![Settings, in tabs](docs/screenshots/settings.jpg) | ![The About screen](docs/screenshots/about.jpg) |
-| In six tabs: Photos, Music, Home, Display, Sharing and System. | Every library the app is built on, with its licence. |
+| In seven tabs: Photos, Music, Home, Display, Volumes, Sharing and System. | Every library the app is built on, with its licence. |
 
 ![A shared link open in Firefox](docs/screenshots/10-firefox-article.jpg)
 
