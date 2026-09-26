@@ -1,8 +1,23 @@
 # HomeCanvas
 
-A touchscreen photo frame, media browser and wall dashboard for your own
-[Immich](https://immich.app) server, built for a Raspberry Pi with a DSI touch
-display.
+**Turn a Raspberry Pi and a touchscreen into a wall display for your home:**
+a photo frame for your own [Immich](https://immich.app) library, a dashboard
+you arrange from your phone, and a speaker for Spotify.
+
+| Photo frame | Dashboard |
+|---|---|
+| ![The slideshow, with the weather and what's playing in the corners](docs/screenshots/slideshow.jpg) | ![The dashboard: clock, weather, TV remote, now playing and the news](docs/screenshots/dashboard.jpg) |
+
+Install on the Pi with one command. It walks you through the rest:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vwillcox/HomeCanvas/main/install.sh | bash
+```
+
+Private by design: your photos stay on your own server, with no account and
+no cloud of ours. ([What it does talk to](#privacy).)
+
+---
 
 It boots straight into a fullscreen kiosk — no desktop, no mouse, no keyboard.
 Browse your albums, pinch to zoom photos, play videos, run a slideshow, and see
