@@ -21,6 +21,7 @@ rsync -az --delete \
   --exclude 'linux/flutter/ephemeral/' \
   --exclude '**/.DS_Store' \
   --exclude 'companion_app/' \
+  --exclude 'assets/certs/*.key' \
   "$HERE"/ "$PI:$PI_DIR"/
 
 echo "Synced $HERE -> $PI:$PI_DIR"

@@ -637,6 +637,20 @@ class ShareInboxSettings {
   /// something you chose to play.
   double speechVolume;
 
+  /// How loud news articles are read out, 0–100.
+  double readerVolume;
+
+  /// How loud a kitchen timer's sound and voice are, 0–100.
+  double timerVolume;
+
+  /// The volumes to actually play at: all nothing while Do Not Disturb is
+  /// on. The levels themselves are left alone, so turning it off brings
+  /// each back to where it was.
+  double get notificationOut => dndMuted ? 0 : notificationVolume;
+  double get speechOut => dndMuted ? 0 : speechVolume;
+  double get readerOut => dndMuted ? 0 : readerVolume;
+  double get timerOut => dndMuted ? 0 : timerVolume;
+
   List<SenderToken> senderTokens;
 
   /// Refuse anything that arrives unencrypted.
@@ -654,11 +668,19 @@ class ShareInboxSettings {
     this.speakNotes = false,
     this.speakSender = true,
     this.speechVolume = 45,
+    this.readerVolume = 45,
+    this.timerVolume = 45,
     this.requireEncryption = false,
     List<SenderToken>? senderTokens,
   }) : senderTokens = senderTokens ?? [];
 
   factory ShareInboxSettings.fromJson(Map<String, dynamic> j) {
+    // The reader and the timers once shared the speech volume, so until they
+    // are set on their own they start where it is.
+    final speech =
+        ((j['speechVolume'] as num?)?.toDouble() ?? 45).clamp(0.0, 100.0);
+    double own(String key) =>
+        ((j[key] as num?)?.toDouble() ?? speech).clamp(0.0, 100.0);
     return ShareInboxSettings(
       listenPort: (j['listenPort'] as num?)?.toInt() ?? 8081,
       requireEncryption: j['requireEncryption'] as bool? ?? false,
@@ -666,8 +688,9 @@ class ShareInboxSettings {
       notificationVolume: (j['notificationVolume'] as num?)?.toDouble() ?? 80,
       speakNotes: j['speakNotes'] as bool? ?? false,
       speakSender: j['speakSender'] as bool? ?? true,
-      speechVolume:
-          ((j['speechVolume'] as num?)?.toDouble() ?? 45).clamp(0, 100),
+      speechVolume: speech,
+      readerVolume: own('readerVolume'),
+      timerVolume: own('timerVolume'),
       senderTokens: (j['senderTokens'] as List?)
               ?.map((t) => SenderToken.fromJson(t as Map<String, dynamic>))
               .toList() ??
@@ -683,6 +706,8 @@ class ShareInboxSettings {
         'speakNotes': speakNotes,
         'speakSender': speakSender,
         'speechVolume': speechVolume,
+        'readerVolume': readerVolume,
+        'timerVolume': timerVolume,
         'senderTokens': senderTokens.map((t) => t.toJson()).toList(),
       };
 }

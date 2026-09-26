@@ -409,7 +409,7 @@ class ShareInboxService extends ChangeNotifier {
     if (parts.isEmpty) return;
     // After the chime rather than over it.
     await Future<void>.delayed(const Duration(milliseconds: 900));
-    await tts.speakAll(parts, volume: _settings.speechVolume);
+    await tts.speakAll(parts, volume: _settings.speechOut);
   }
 
   Future<void> _playChime() async {
@@ -419,7 +419,7 @@ class ShareInboxService extends ChangeNotifier {
       // Its own Player instance, separate from whatever's playing
       // music/video, so this volume is independent of that one.
       final chime = _chime ??= Player();
-      await chime.setVolume(_settings.notificationVolume);
+      await chime.setVolume(_settings.notificationOut);
       await chime.open(Media(path));
     } catch (e) {
       debugPrint('ShareInbox chime error: $e');

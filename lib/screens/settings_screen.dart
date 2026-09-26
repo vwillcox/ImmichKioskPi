@@ -45,12 +45,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ('Music', Icons.music_note_outlined),
     ('Home', Icons.home_outlined),
     ('Display', Icons.tv_outlined),
+    ('Volumes', Icons.volume_up_outlined),
     ('Sharing', Icons.ios_share),
     ('System', Icons.settings_suggest_outlined),
   ];
 
   /// Remembered while the kiosk runs, so Settings opens where it was left.
   static int _lastTab = 0;
+
+  /// How much larger than elsewhere Settings' text is drawn.
+  static const double textScale = 1.3;
   int _tab = _lastTab;
 
   List<Widget> _sectionsFor(
@@ -150,14 +154,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [const _DashboardSettingsTile()],
           ),
         ];
-      case 4: // Sharing
+      case 4: // Volumes
+        return [
+          GlassSection(
+            title: 'Volumes',
+            children: [const _SoundSettingsTile()],
+          ),
+        ];
+      case 5: // Sharing
         return [
           GlassSection(
             title: 'Share Inbox',
             children: [const _ShareInboxSettingsTile()],
           ),
         ];
-      case 5: // System
+      case 6: // System
         return [
           GlassSection(
             title: 'Device',
@@ -300,44 +311,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
             : 'Connected to ${Uri.tryParse(config.immichUrl)?.host ?? config.immichUrl}',
       ),
       // A readable column rather than rows stretched across 1,920 pixels, and
-      // larger type throughout: this is read standing, at arm's length.
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1180),
-          child: ListTileTheme(
-            data: ListTileThemeData(
-              contentPadding: EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-              minVerticalPadding: 12,
-              iconColor: context.look.textSecondary,
-              titleTextStyle: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: context.look.textPrimary,
-              ),
-              subtitleTextStyle: TextStyle(
-                fontSize: 16,
-                height: 1.35,
-                color: context.look.textSecondary,
-              ),
-            ),
-            child: ListView(
-              // A new list per tab, so each opens at the top rather than
-              // wherever the last one was scrolled to.
-              key: ValueKey(_tab),
-              padding: const EdgeInsets.fromLTRB(32, 12, 32, 48),
-              children: [
-                ..._sectionsFor(_tab, config, locked, maskedKey),
-                const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    'HomeCanvas',
-                    style: TextStyle(
-                      color: context.look.wash(0.3),
-                    ),
+      // larger type throughout — every piece of it, section headings and help
+      // text included: this is read standing, often from across the room.
+      // The tabs above keep their size so all of them still fit.
+      body: MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: const TextScaler.linear(textScale)),
+        child: IconTheme.merge(
+          data: const IconThemeData(size: 30),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1440),
+              child: ListTileTheme(
+                data: ListTileThemeData(
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 4,
+                  ),
+                  minVerticalPadding: 12,
+                  iconColor: context.look.textSecondary,
+                  titleTextStyle: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: context.look.textPrimary,
+                  ),
+                  subtitleTextStyle: TextStyle(
+                    fontSize: 16,
+                    height: 1.35,
+                    color: context.look.textSecondary,
                   ),
                 ),
-              ],
+                child: ListView(
+                  // A new list per tab, so each opens at the top rather than
+                  // wherever the last one was scrolled to.
+                  key: ValueKey(_tab),
+                  padding: const EdgeInsets.fromLTRB(32, 12, 32, 48),
+                  children: [
+                    ..._sectionsFor(_tab, config, locked, maskedKey),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        'HomeCanvas',
+                        style: TextStyle(color: context.look.wash(0.3)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -1173,10 +1195,8 @@ class _ShareInboxDialog extends StatefulWidget {
 class _ShareInboxDialogState extends State<_ShareInboxDialog> {
   late final TextEditingController _port;
   late List<SenderToken> _tokens;
-  late double _volume;
   late bool _speak;
   late bool _speakSender;
-  late double _speechVolume;
   final _newName = TextEditingController();
 
   static final _rand = Random.secure();
@@ -1191,10 +1211,8 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
     super.initState();
     final s = widget.config.config.shareInbox;
     _port = TextEditingController(text: s.listenPort.toString());
-    _volume = s.notificationVolume;
     _speak = s.speakNotes;
     _speakSender = s.speakSender;
-    _speechVolume = s.speechVolume;
     _tokens = s.senderTokens
         .map((t) => SenderToken(name: t.name, token: t.token))
         .toList();
@@ -1233,10 +1251,8 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
     }
     final s = widget.config.config.shareInbox;
     s.listenPort = port;
-    s.notificationVolume = _volume;
     s.speakNotes = _speak;
     s.speakSender = _speakSender;
-    s.speechVolume = _speechVolume;
     s.senderTokens = _tokens;
     await widget.config.save();
     await widget.shareInbox.refreshFromSettings();
@@ -1271,38 +1287,6 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
                 ),
               ),
               const SizedBox(height: 18),
-              Row(
-                children: [
-                  Icon(
-                    Icons.notifications,
-                    color: context.look.textSecondary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Notification volume',
-                    style: TextStyle(color: context.look.textPrimary),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${_volume.round()}%',
-                    style: TextStyle(color: context.look.textSecondary),
-                  ),
-                ],
-              ),
-              Slider(
-                value: _volume,
-                max: 100,
-                divisions: 20,
-                onChanged: (v) => setState(() => _volume = v),
-              ),
-              Text(
-                "Separate from the music/video volume — turning this down "
-                "won't affect what's playing.",
-                style: TextStyle(color: context.look.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: 18),
-
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(
@@ -1326,37 +1310,6 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
                   ),
                   value: _speakSender,
                   onChanged: (v) => setState(() => _speakSender = v),
-                ),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.record_voice_over,
-                      color: context.look.textSecondary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Speech volume',
-                      style: TextStyle(color: context.look.textPrimary),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${_speechVolume.round()}%',
-                      style: TextStyle(color: context.look.textSecondary),
-                    ),
-                  ],
-                ),
-                Slider(
-                  value: _speechVolume,
-                  max: 100,
-                  divisions: 20,
-                  onChanged: (v) => setState(() => _speechVolume = v),
-                ),
-                Text(
-                  'Kept below the music by default. A voice at the same level '
-                  'is startling in a quiet room — it arrives unannounced '
-                  'rather than being something you chose to play.',
-                  style: TextStyle(color: context.look.textSecondary, fontSize: 13),
                 ),
               ],
               const SizedBox(height: 18),
@@ -1455,6 +1408,118 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
 /// Switching the panel off by itself when there's nothing worth showing.
 /// The switching is done by the same host-side service Alexa drives, so a
 /// touch brings it back — see [ScreenIdleService].
+/// The volumes of the sounds the panel makes by itself, apart from the
+/// music: saved as you drag, so you can judge them by ear. The web editor's
+/// Sound card sets the same ones.
+///
+/// Do Not Disturb sits at the top because it mutes every one of them. The
+/// sliders keep their levels while it is on, so turning it off puts each
+/// back where it was.
+class _SoundSettingsTile extends StatelessWidget {
+  const _SoundSettingsTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final service = context.watch<ConfigService>();
+    final s = service.config.shareInbox;
+    final muted = s.dndMuted;
+
+    Widget slider({
+      required IconData icon,
+      required String title,
+      required String help,
+      required double value,
+      required void Function(double) set,
+    }) {
+      return Opacity(
+        opacity: muted ? 0.45 : 1,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: Icon(icon),
+              title: Text(title),
+              subtitle: Slider(
+                value: value.clamp(0, 100),
+                max: 100,
+                divisions: 20,
+                label: '${value.round()}%',
+                // Still movable while muted: set it now, hear it later.
+                onChanged: (v) {
+                  set(v);
+                  service.save();
+                },
+              ),
+              trailing: Text(muted ? 'Muted' : '${value.round()}%'),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(80, 0, 24, 12),
+              child: Text(
+                help,
+                style: TextStyle(color: context.look.textSecondary, fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: Icon(
+            muted
+                ? Icons.notifications_off_outlined
+                : Icons.notifications_outlined,
+          ),
+          title: const Text('Do Not Disturb'),
+          subtitle: Text(
+            muted
+                ? 'On — everything below is muted. Turn it off to hear them '
+                      'again at the same levels.'
+                : 'Mutes every sound below at once, and keeps the screen '
+                      'from waking for shares. The same switch as the top bar.',
+          ),
+          value: muted,
+          onChanged: (on) {
+            s.dndMuted = on;
+            service.save();
+          },
+        ),
+        const Divider(height: 1),
+        slider(
+          icon: Icons.notifications,
+          title: 'Notifications',
+          help: 'The chime when something is shared to the panel.',
+          value: s.notificationVolume,
+          set: (v) => s.notificationVolume = v,
+        ),
+        slider(
+          icon: Icons.record_voice_over,
+          title: 'Speech',
+          help: 'Shared notes read aloud, and bin-day reminders.',
+          value: s.speechVolume,
+          set: (v) => s.speechVolume = v,
+        ),
+        slider(
+          icon: Icons.menu_book_outlined,
+          title: 'News reader',
+          help: 'Articles read out from the news widget.',
+          value: s.readerVolume,
+          set: (v) => s.readerVolume = v,
+        ),
+        slider(
+          icon: Icons.timer_outlined,
+          title: 'Timers',
+          help: "A kitchen timer's sound, and its voice saying which it was.",
+          value: s.timerVolume,
+          set: (v) => s.timerVolume = v,
+        ),
+      ],
+    );
+  }
+}
+
 class _ScreenSettingsTile extends StatelessWidget {
   const _ScreenSettingsTile();
 

@@ -60,6 +60,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/sounds/incoming.wav
+    - assets/sounds/timer/
     - assets/dashboard/editor.html
     - assets/dashboard/senders.html
     - assets/dashboard/notes.html

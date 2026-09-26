@@ -239,7 +239,9 @@ Future<void> openLockedFolder(BuildContext context) async {
   }
 }
 
-/// Mutes the incoming-share chime — a "slider" rather than an icon button
+/// Do Not Disturb: mutes every sound the panel makes by itself — the chime,
+/// speech, the news reader and the timers — without changing their volumes.
+/// A "slider" rather than an icon button
 /// since that's specifically what was asked for, kept in the top bar so it's
 /// reachable in one tap rather than buried in Settings.
 class DndSwitch extends StatelessWidget {
