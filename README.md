@@ -15,7 +15,8 @@ curl -fsSL https://raw.githubusercontent.com/vwillcox/HomeCanvas/main/install.sh
 ```
 
 Private by design: your photos stay on your own server, with no account and
-no cloud of ours. ([What it does talk to](#privacy).)
+no cloud of ours. ([What it does talk to](#privacy).) An open-source,
+self-hosted alternative to DAKboard, Skylight and other smart photo frames.
 
 ---
 
@@ -179,6 +180,28 @@ when you leave.
 **Built for a wall** — panels drift slowly against burn-in; the screen turns
 itself off when idle and wakes on touch (or by voice, through Alexa); starts on
 boot and restarts if it crashes; caches aggressively on disk.
+
+---
+
+## How it compares
+
+There are other good ways to put Immich on a screen, and they suit different
+set-ups:
+
+- **[ImmichFrame](https://github.com/immichFrame/ImmichFrame)** and
+  **[Immich Kiosk](https://github.com/damongolding/immich-kiosk)** are
+  slideshows that run in a browser or on a TV, so they work on almost any
+  device. Choose them if you want a photo frame and nothing else.
+- **[Picture Frame](https://github.com/MateEke/picture-frame)** is a light
+  Raspberry Pi photo frame that runs even on a Pi Zero.
+- **DAKboard** and **Skylight** are polished commercial wall displays, with a
+  subscription and your data in their cloud.
+
+HomeCanvas is for a touchscreen you walk up to and use. It's a native app,
+so you browse albums, zoom photos and play video by hand. It adds a
+dashboard of nearly forty widgets you arrange from your phone, and plays
+music. It needs a Pi 4 or 5 (or another 64-bit Linux machine), and it's
+all self-hosted.
 
 ---
 
