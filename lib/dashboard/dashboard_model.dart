@@ -147,6 +147,18 @@ class DashboardSettings {
   /// can be exposed beyond the LAN without the other.
   int editorPort;
 
+  /// WORKAROUND, off unless set: the editor on port 80 as well, so its
+  /// address needs no number — for a Pi whose port 80 is Home Assistant's
+  /// Alexa bridge, passed on through [hueRelay]. 0 leaves the editor on
+  /// [editorPort] alone. See INSTALL.md, "Workaround: the editor on port 80
+  /// with Alexa's Hue bridge".
+  int webPort;
+
+  /// Where Home Assistant's emulated_hue listens once it has given up port
+  /// 80 — `http://192.168.1.57:8300` — for Alexa's requests to be passed on
+  /// to. Empty when there is nothing to pass on.
+  String hueRelay;
+
   /// Applied over whatever the theme says, so a look can be settled once and
   /// kept while trying themes out rather than re-chosen every time one is
   /// swapped.
@@ -200,6 +212,8 @@ class DashboardSettings {
     this.themeId = 'midnight',
     this.showOnLaunch = false,
     this.editorPort = 8090,
+    this.webPort = 0,
+    this.hueRelay = '',
     this.roundedCorners = true,
     this.tileShadows = true,
     this.pageSeconds = 0,
@@ -221,6 +235,8 @@ class DashboardSettings {
         themeId: j['themeId'] as String? ?? 'midnight',
         showOnLaunch: j['showOnLaunch'] as bool? ?? false,
         editorPort: (j['editorPort'] as num?)?.toInt() ?? 8090,
+        webPort: (j['webPort'] as num?)?.toInt() ?? 0,
+        hueRelay: j['hueRelay'] as String? ?? '',
         // Migrated from the three-way settings these replaced.
         roundedCorners:
             j['roundedCorners'] as bool? ??
@@ -260,6 +276,8 @@ class DashboardSettings {
     'themeId': themeId,
     'showOnLaunch': showOnLaunch,
     'editorPort': editorPort,
+    'webPort': webPort,
+    'hueRelay': hueRelay,
     'roundedCorners': roundedCorners,
     'tileShadows': tileShadows,
     'pageSeconds': pageSeconds,

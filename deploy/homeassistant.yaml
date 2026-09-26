@@ -25,6 +25,9 @@ command_line:
 # host_ip must match the Pi's address, and that address must not change: Alexa
 # caches the bridge by IP. Set a DHCP reservation on the router.
 # listen_port must be 80 — Alexa stopped talking to other ports in 2019.
+# (Workaround, limited setups: to give port 80 to the HomeCanvas editor
+# instead, see INSTALL.md, "Workaround: the editor on port 80 with Alexa's
+# Hue bridge" — listen_port moves, advertise_port: 80 stays.)
 emulated_hue:
   host_ip: 192.168.1.176
   listen_port: 80

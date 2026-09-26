@@ -605,6 +605,53 @@ Both Home Assistant blocks are in [`deploy/homeassistant.yaml`](deploy/homeassis
 - **It must be on port 80** — Echoes stopped using other ports in 2019.
 - **Give the Pi a fixed address.** Alexa remembers the bridge by IP.
 
+### Workaround: the editor on port 80 with Alexa's Hue bridge
+
+> **Only for a limited setup.** You need this only if you want the editor at
+> `http://homecanvas.local`, with no port number, **and** Home Assistant's
+> `emulated_hue` already holds port 80 on the same Pi for the Alexa switch
+> above. Everyone else should leave the editor on its own port (8090). This
+> is off unless you turn it on.
+
+HomeCanvas takes port 80 and passes Alexa's Hue requests (`/description.xml`,
+and `/api/...` paths other than the editor's own) through to `emulated_hue`,
+which moves to another port but still tells Alexa to use 80.
+
+1. **Let an ordinary user open port 80** (once, as root):
+
+   ```bash
+   sudo bash deploy/enable-port-80.sh
+   ```
+
+2. **Move `emulated_hue`** in Home Assistant's `configuration.yaml`, keeping
+   what Alexa sees on port 80, then restart Home Assistant:
+
+   ```yaml
+   emulated_hue:
+     host_ip: 192.168.1.57      # the Pi's address
+     listen_port: 8300          # where it really listens now
+     advertise_port: 80         # what it tells Alexa — HomeCanvas relays it
+   ```
+
+3. **Turn it on in HomeCanvas** — in `~/.config/homecanvas/config.json`,
+   under `"dashboard"`, with HomeCanvas stopped:
+
+   ```json
+   "webPort": 80,
+   "hueRelay": "http://192.168.1.57:8300"
+   ```
+
+   Start HomeCanvas again. The editor is now at `http://homecanvas.local` as
+   well as `:8090`.
+
+**Check it:** `curl http://homecanvas.local/description.xml` should return
+the Hue bridge's description, and "Alexa, turn off the kiosk screen" should
+still work. If Home Assistant is down, Alexa's requests get a 502 rather
+than the editor.
+
+**To undo:** set `"webPort": 0`, put `emulated_hue` back on
+`listen_port: 80` without `advertise_port`, and restart both.
+
 ### Turning the screen off by itself
 
 **Settings → Display → "Turn the screen off when idle"**. A touch brings it
