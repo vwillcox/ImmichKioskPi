@@ -497,7 +497,7 @@ through restarts.
 Tap a headline, then **Read aloud**. The kiosk fetches the article, leaves
 out the menus, adverts and "related stories", and reads it in the same voice
 as shared notes. It needs piper installed (see
-[Reading notes aloud](#reading-notes-aloud)) and uses the same speech volume.
+[Reading notes aloud](#reading-notes-aloud)), at its own volume (**Settings → Volumes → News reader**).
 Anything playing pauses while it reads and carries on afterwards. A bar along
 the bottom of the screen shows what is being read, on any screen, with pause,
 next paragraph and stop. If the page can't be read (a paywall, a video
@@ -768,14 +768,15 @@ it.
 
 ### Settings
 
-The gear at the top right. Six tabs:
+The gear at the top right. Seven tabs:
 
 | Tab | What's there |
 |---|---|
 | **Photos** | the Immich connection, Locked Folder, slideshow, photo cache |
 | **Music** | now playing, the visualiser, Spotify |
 | **Home** | weather, Home Assistant, the television, the camera |
-| **Display** | the screen turning off, the dashboard |
+| **Display** | the screen turning off, brightness, the dashboard |
+| **Volumes** | Do Not Disturb, and separate volumes for notifications, speech, the news reader and timers |
 | **Sharing** | the share inbox, senders, reading notes aloud |
 | **System** | restart, power off, and About — every library and its licence |
 
