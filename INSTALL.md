@@ -121,6 +121,19 @@ systemctl --user daemon-reload && systemctl --user restart homecanvas
 tail -f /tmp/kiosk.log
 ```
 
+**9. A plain address for the editor** (recommended) — once HomeCanvas has
+started, run this on the Pi so the dashboard editor is at
+`http://homecanvas.local` with no `:8090`:
+
+```bash
+bash scripts/setup-port-80.sh
+```
+
+It asks for `sudo` once. If Home Assistant's Alexa bridge already has port
+80, it asks before sharing it. Add `--yes` or `--no` to answer that question
+up front (for an unattended install), and use `--undo` to reverse it. The
+details are in [The editor on port 80](#the-editor-on-port-80).
+
 **Upgrading from ImmichKioskPi.** The project was called ImmichKioskPi
 until September 2026. Your settings and cache move to their new folders
 (`~/.config/homecanvas`, `~/.cache/homecanvas`) by themselves on the first
@@ -605,52 +618,52 @@ Both Home Assistant blocks are in [`deploy/homeassistant.yaml`](deploy/homeassis
 - **It must be on port 80** — Echoes stopped using other ports in 2019.
 - **Give the Pi a fixed address.** Alexa remembers the bridge by IP.
 
-### Workaround: the editor on port 80 with Alexa's Hue bridge
+### The editor on port 80
 
-> **Only for a limited setup.** You need this only if you want the editor at
-> `http://homecanvas.local`, with no port number, **and** Home Assistant's
-> `emulated_hue` already holds port 80 on the same Pi for the Alexa switch
-> above. Everyone else should leave the editor on its own port (8090). This
-> is off unless you turn it on.
+The editor is always at `http://homecanvas.local:8090`. Set the Pi up once
+and it's at plain **`http://homecanvas.local`** as well:
 
-HomeCanvas takes port 80 and passes Alexa's Hue requests (`/description.xml`,
-and `/api/...` paths other than the editor's own) through to `emulated_hue`,
-which moves to another port but still tells Alexa to use 80.
+```bash
+bash scripts/setup-port-80.sh          # asks before changing Home Assistant
+bash scripts/setup-port-80.sh --yes    # unattended: share without asking
+bash scripts/setup-port-80.sh --no     # unattended: never touch Home Assistant
+bash scripts/setup-port-80.sh --undo   # reverse the sharing
+```
 
-1. **Let an ordinary user open port 80** (once, as root):
+`pi-setup.sh` runs it too. Home Assistant's bridge can only be shared once
+HomeCanvas has started, so on a new install it tells you to run it again
+then (install step 9).
 
-   ```bash
-   sudo bash deploy/enable-port-80.sh
-   ```
+It asks for `sudo` once, to let an ordinary user open port 80, then looks at
+what already has the port:
 
-2. **Move `emulated_hue`** in Home Assistant's `configuration.yaml`, keeping
-   what Alexa sees on port 80, then restart Home Assistant:
+- **Nothing:** HomeCanvas takes port 80 the next time it starts.
+- **Home Assistant's Alexa bridge** (`emulated_hue`, as in the section above):
+  it **offers** to share the port. Alexa only talks to port 80, so the bridge
+  can't simply move. If you say yes, it:
+  1. backs up Home Assistant's `configuration.yaml` to
+     `~/configuration.yaml.before-port-80`;
+  2. changes `emulated_hue` to `listen_port: 8300` with `advertise_port: 80`,
+     so Alexa is still told port 80, and restarts Home Assistant;
+  3. sets HomeCanvas's `dashboard.hueRelay` to the bridge. HomeCanvas then
+     passes Alexa's requests (`/description.xml`, and `/api/...` paths other
+     than the editor's own) through to it.
 
-   ```yaml
-   emulated_hue:
-     host_ip: 192.168.1.57      # the Pi's address
-     listen_port: 8300          # where it really listens now
-     advertise_port: 80         # what it tells Alexa — HomeCanvas relays it
-   ```
+  Say no, and nothing changes: the editor stays on `:8090`.
+- **Anything else:** it's left alone and the editor stays on `:8090`.
 
-3. **Turn it on in HomeCanvas** — in `~/.config/homecanvas/config.json`,
-   under `"dashboard"`, with HomeCanvas stopped:
+Settings → Display → Dashboard shows the editor's address. When it isn't on
+port 80, Settings says why, and suggests the script when Alexa's bridge is
+the reason.
 
-   ```json
-   "webPort": 80,
-   "hueRelay": "http://192.168.1.57:8300"
-   ```
+**Check the Alexa part:** `curl http://homecanvas.local/description.xml`
+should return the Hue bridge's description, and "Alexa, turn off the kiosk
+screen" should still work. If Home Assistant is down, Alexa's requests get a
+502, not the editor.
 
-   Start HomeCanvas again. The editor is now at `http://homecanvas.local` as
-   well as `:8090`.
-
-**Check it:** `curl http://homecanvas.local/description.xml` should return
-the Hue bridge's description, and "Alexa, turn off the kiosk screen" should
-still work. If Home Assistant is down, Alexa's requests get a 502 rather
-than the editor.
-
-**To undo:** set `"webPort": 0`, put `emulated_hue` back on
-`listen_port: 80` without `advertise_port`, and restart both.
+**To undo the sharing:** `bash scripts/setup-port-80.sh --undo` puts Home
+Assistant's config back from the backup, restarts it, and turns port 80 off
+in HomeCanvas.
 
 ### Turning the screen off by itself
 

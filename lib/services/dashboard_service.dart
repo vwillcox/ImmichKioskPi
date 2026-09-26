@@ -58,6 +58,10 @@ class DashboardService extends ChangeNotifier {
   /// The same editor on [DashboardSettings.webPort] — 80 — when the Pi lets
   /// it have that port; null when it does not.
   HttpServer? _webServer;
+
+  /// Why the editor is not on port 80 and what to do about it, for Settings
+  /// to show under its address. Null when it is, or was never meant to be.
+  String? webPortNote;
   String? _editorHtml;
 
   /// Draws a tile with the real widget, as a PNG. Set by [TileRenderHost]
@@ -174,6 +178,7 @@ class DashboardService extends ChangeNotifier {
   /// below 1024 until it is told otherwise, and the editor still has its own.
   Future<void> _bindWeb() async {
     _webBound = _webKey;
+    webPortNote = null;
     final port = settings.webPort;
     if (port <= 0 || port == settings.editorPort) return;
     final target = Uri.tryParse(settings.hueRelay.trim());
@@ -200,8 +205,51 @@ class DashboardService extends ChangeNotifier {
       });
     } catch (e) {
       debugPrint('Dashboard: could not bind :$port ($e) — the editor stays '
-          'on :${settings.editorPort}. See INSTALL.md, "Workaround: the editor '
-          'on port 80 with Alexa\'s Hue bridge".');
+          'on :${settings.editorPort}.');
+      webPortNote = await _whyNotWebPort(e, port);
+    }
+    notifyListeners();
+  }
+
+  /// Linux keeps ports below 1024 for root until told otherwise; and port 80
+  /// may already be someone else's — on a Pi that also runs Home Assistant,
+  /// most likely its Alexa bridge, which setup can share it with.
+  Future<String> _whyNotWebPort(Object error, int port) async {
+    const setup = 'bash scripts/setup-port-80.sh';
+    final code = error is SocketException ? error.osError?.errorCode : null;
+    if (code == 13) {
+      return 'Not on port $port yet: the Pi needs setting up for it. '
+          'Run $setup on the Pi.';
+    }
+    if (code == 98 && await _hueBridgeOn(port)) {
+      return "Port $port is Home Assistant's Alexa bridge. Run $setup on "
+          'the Pi to share it — Alexa keeps working.';
+    }
+    return 'Port $port is in use by something else, so the editor has its '
+        'own port.';
+  }
+
+  /// Whether a Hue bridge answers on [port] — at this machine's address,
+  /// since emulated_hue listens there rather than on every interface.
+  Future<bool> _hueBridgeOn(int port) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 3);
+    try {
+      for (final host in {?_ip, '127.0.0.1'}) {
+        try {
+          final req = await client.get(host, port, '/description.xml');
+          final res = await req.close().timeout(const Duration(seconds: 3));
+          final body = await utf8.decoder.bind(res).join();
+          if (RegExp('philips|hue bridge|home assistant bridge',
+                  caseSensitive: false)
+              .hasMatch(body)) {
+            return true;
+          }
+        } catch (_) {}
+      }
+      return false;
+    } finally {
+      client.close(force: true);
     }
   }
 

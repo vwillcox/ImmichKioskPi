@@ -147,11 +147,11 @@ class DashboardSettings {
   /// can be exposed beyond the LAN without the other.
   int editorPort;
 
-  /// WORKAROUND, off unless set: the editor on port 80 as well, so its
-  /// address needs no number — for a Pi whose port 80 is Home Assistant's
-  /// Alexa bridge, passed on through [hueRelay]. 0 leaves the editor on
-  /// [editorPort] alone. See INSTALL.md, "Workaround: the editor on port 80
-  /// with Alexa's Hue bridge".
+  /// The editor on port 80 as well, so its address needs no number:
+  /// http://homecanvas.local. Taken when the Pi allows it and nothing else
+  /// has it; otherwise the editor is on [editorPort] alone. 0 turns it off.
+  /// scripts/setup-port-80.sh sets the Pi up, and shares the port with Home
+  /// Assistant's Alexa bridge through [hueRelay] when that is already there.
   int webPort;
 
   /// Where Home Assistant's emulated_hue listens once it has given up port
@@ -212,7 +212,7 @@ class DashboardSettings {
     this.themeId = 'midnight',
     this.showOnLaunch = false,
     this.editorPort = 8090,
-    this.webPort = 0,
+    this.webPort = 80,
     this.hueRelay = '',
     this.roundedCorners = true,
     this.tileShadows = true,
@@ -235,7 +235,7 @@ class DashboardSettings {
         themeId: j['themeId'] as String? ?? 'midnight',
         showOnLaunch: j['showOnLaunch'] as bool? ?? false,
         editorPort: (j['editorPort'] as num?)?.toInt() ?? 8090,
-        webPort: (j['webPort'] as num?)?.toInt() ?? 0,
+        webPort: (j['webPort'] as num?)?.toInt() ?? 80,
         hueRelay: j['hueRelay'] as String? ?? '',
         // Migrated from the three-way settings these replaced.
         roundedCorners:

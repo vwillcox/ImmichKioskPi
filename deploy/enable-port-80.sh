@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# WORKAROUND — only for the port-80 setup in INSTALL.md, "Workaround: the
-# editor on port 80 with Alexa's Hue bridge". Most installs don't need it.
+# Run for you by scripts/setup-port-80.sh, which also deals with anything
+# already on port 80; use that rather than this. See INSTALL.md, "The editor
+# on port 80".
 #
 # Let HomeCanvas serve its editor on port 80, so the address is simply
 # http://homecanvas.local. Linux keeps ports below 1024 for root; this lowers
 # that line to 80 for everyone on the Pi, now and after every reboot.
 # Run on the Pi:  sudo bash deploy/enable-port-80.sh
 #
-# If Home Assistant's emulated_hue (the Alexa screen switch) is on port 80,
-# move it first, as that section describes.
 set -e
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run with sudo: sudo bash $0"

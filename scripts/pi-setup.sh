@@ -46,6 +46,13 @@ echo "==> Setup complete. Verifying doctor (Linux toolchain only):"
 flutter doctor -v || true
 
 echo
+echo "==> The dashboard editor on port 80, so its address needs no number..."
+PORT80="$(dirname "$0")/setup-port-80.sh"
+if [ -f "$PORT80" ]; then
+  bash "$PORT80" || echo "==> Port 80 not set up — run scripts/setup-port-80.sh later."
+fi
+
+echo
 echo "============================================================"
-echo " Setup finished. Tell Claude it's done and it will take over."
+echo " Setup finished. Next: set up the touchscreen — INSTALL.md, step 2."
 echo "============================================================"

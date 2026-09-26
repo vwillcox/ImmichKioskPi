@@ -88,17 +88,17 @@ void main() {
     await front.close(force: true);
   });
 
-  test('off unless asked for, and kept once it is', () {
+  test('port 80 by default with nothing to relay; both kept once set', () {
     final s = DashboardSettings.fromJson({});
-    expect(s.webPort, 0);
+    expect(s.webPort, 80);
     expect(s.hueRelay, '');
     final back = DashboardSettings.fromJson(
       (DashboardSettings.fromJson({})
-            ..webPort = 80
+            ..webPort = 0
             ..hueRelay = 'http://10.0.0.2:8300')
           .toJson(),
     );
-    expect(back.webPort, 80);
+    expect(back.webPort, 0);
     expect(back.hueRelay, 'http://10.0.0.2:8300');
   });
 }

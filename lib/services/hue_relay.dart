@@ -3,15 +3,16 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-/// WORKAROUND, for a limited setup: passes Alexa's Hue requests on to Home
-/// Assistant, so the editor can have port 80 without the Alexa screen switch
-/// losing it. Nothing uses it unless `webPort` and `hueRelay` are set.
+/// Passes Alexa's Hue requests on to Home Assistant, so the editor can have
+/// port 80 without the Alexa screen switch losing it. Only for a Pi whose
+/// port 80 was Home Assistant's emulated_hue; nothing uses it unless
+/// `hueRelay` is set, which scripts/setup-port-80.sh offers to do.
 ///
 /// Home Assistant's emulated_hue is what Alexa sees as a Hue bridge, and
 /// Alexa only ever talks to a bridge on port 80. With emulated_hue moved to
 /// another port — `listen_port: 8300`, `advertise_port: 80` — this kiosk
 /// answers on 80 and forwards anything shaped like the Hue API to it. See
-/// INSTALL.md, "Workaround: the editor on port 80 with Alexa's Hue bridge".
+/// INSTALL.md, "The editor on port 80".
 class HueRelay {
   HueRelay(this.target);
 

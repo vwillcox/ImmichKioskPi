@@ -1845,10 +1845,14 @@ class _DashboardSettingsTile extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.open_in_browser),
             title: const Text('Arrange it in a browser'),
-            isThreeLine: dashboard.editorIpAddress != null,
-            subtitle: Text(dashboard.editorIpAddress == null
-                ? dashboard.editorAddress
-                : '${dashboard.editorAddress}\nor ${dashboard.editorIpAddress}'),
+            isThreeLine: dashboard.editorIpAddress != null ||
+                dashboard.webPortNote != null,
+            subtitle: Text([
+              dashboard.editorAddress,
+              if (dashboard.editorIpAddress != null)
+                'or ${dashboard.editorIpAddress}',
+              ?dashboard.webPortNote,
+            ].join('\n')),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _editPort(context),
           ),
