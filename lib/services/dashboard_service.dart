@@ -17,6 +17,7 @@ import '../config/app_config.dart' show SenderToken;
 import '../dashboard/widget_registry.dart';
 import 'brightness_service.dart';
 import 'config_service.dart';
+import 'hue_relay.dart';
 import 'notes_service.dart';
 import 'shopping_service.dart';
 import 'timer_sounds.dart';
@@ -53,6 +54,14 @@ class DashboardService extends ChangeNotifier {
   final ThemeRepository themes;
 
   HttpServer? _server;
+
+  /// The same editor on [DashboardSettings.webPort] — 80 — when the Pi lets
+  /// it have that port; null when it does not.
+  HttpServer? _webServer;
+
+  /// Why the editor is not on port 80 and what to do about it, for Settings
+  /// to show under its address. Null when it is, or was never meant to be.
+  String? webPortNote;
   String? _editorHtml;
 
   /// Draws a tile with the real widget, as a PNG. Set by [TileRenderHost]
@@ -87,12 +96,17 @@ class DashboardService extends ChangeNotifier {
   /// survives the router handing out a new lease — otherwise the IP address.
   String _host = 'this device';
   String? _ip;
-  String get editorAddress => 'http://$_host:${settings.editorPort}';
+  String get editorAddress => 'http://$_host$_portSuffix';
+
+  /// Nothing when the editor has port 80, which a browser assumes.
+  String get _portSuffix => _webServer?.port == 80 && settings.enabled
+      ? ''
+      : ':${settings.editorPort}';
 
   /// The same editor by IP address, for a browser that can't resolve .local
   /// names (some Android versions). Null when [editorAddress] already is it.
   String? get editorIpAddress =>
-      _ip == null || _ip == _host ? null : 'http://$_ip:${settings.editorPort}';
+      _ip == null || _ip == _host ? null : 'http://$_ip$_portSuffix';
 
   Future<void> start() async {
     await themes.load();
@@ -118,32 +132,124 @@ class DashboardService extends ChangeNotifier {
     }
   }
 
-  /// Rebinds when the port changes; otherwise leaves a working server alone.
+  /// Rebinds when a port or the relay changes; otherwise leaves working
+  /// servers alone.
   Future<void> refreshFromSettings() async {
-    if (_server != null && _server!.port == settings.editorPort) {
-      if (!settings.enabled) await _stop();
-      return;
-    }
+    final same = (_server != null) == settings.enabled &&
+        (_server == null || _server!.port == settings.editorPort) &&
+        _webBound == _webKey;
+    if (same) return;
     await _bind();
   }
+
+  /// What port 80 was last set up for — its port and relay — so a port the
+  /// Pi refused is not tried again on every save.
+  String? _webBound;
+  String get _webKey => '${settings.webPort}|${settings.hueRelay.trim()}';
 
   Future<void> _stop() async {
     await _server?.close(force: true);
     _server = null;
+    await _webServer?.close(force: true);
+    _webServer = null;
+    _webBound = null;
   }
 
   Future<void> _bind() async {
     await _stop();
-    if (!settings.enabled) return;
+    if (settings.enabled) {
+      try {
+        _server = await HttpServer.bind(
+            InternetAddress.anyIPv4, settings.editorPort, shared: true);
+        debugPrint('Dashboard editor on :${settings.editorPort}');
+        _server!.listen(_handle, onError: (Object e) {
+          debugPrint('Dashboard: server error: $e');
+        });
+      } catch (e) {
+        debugPrint('Dashboard: could not bind ${settings.editorPort}: $e');
+      }
+    }
+    // Port 80 even with the editor off: Alexa's requests still come to it.
+    await _bindWeb();
+  }
+
+  /// Port 80 as well, so the address needs no number. Quietly left alone
+  /// when the Pi will not give it up — an ordinary user may not open ports
+  /// below 1024 until it is told otherwise, and the editor still has its own.
+  Future<void> _bindWeb() async {
+    _webBound = _webKey;
+    webPortNote = null;
+    final port = settings.webPort;
+    if (port <= 0 || port == settings.editorPort) return;
+    final target = Uri.tryParse(settings.hueRelay.trim());
+    final relay = target != null && target.hasAuthority
+        ? HueRelay(target)
+        : null;
     try {
-      _server = await HttpServer.bind(
-          InternetAddress.anyIPv4, settings.editorPort, shared: true);
-      debugPrint('Dashboard editor on :${settings.editorPort}');
-      _server!.listen(_handle, onError: (Object e) {
-        debugPrint('Dashboard: server error: $e');
+      _webServer = await HttpServer.bind(
+          InternetAddress.anyIPv4, port, shared: true);
+      debugPrint('Dashboard editor also on :$port'
+          '${relay == null ? '' : ', passing Hue on to ${relay.target}'}');
+      _webServer!.listen((request) {
+        // Alexa, for the Hue bridge that used to have this port.
+        if (relay != null && HueRelay.handles(request.uri.path)) {
+          unawaited(relay.forward(request));
+        } else if (settings.enabled) {
+          unawaited(_handle(request));
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+          unawaited(request.response.close());
+        }
+      }, onError: (Object e) {
+        debugPrint('Dashboard: server error on :$port: $e');
       });
     } catch (e) {
-      debugPrint('Dashboard: could not bind ${settings.editorPort}: $e');
+      debugPrint('Dashboard: could not bind :$port ($e) — the editor stays '
+          'on :${settings.editorPort}.');
+      webPortNote = await _whyNotWebPort(e, port);
+    }
+    notifyListeners();
+  }
+
+  /// Linux keeps ports below 1024 for root until told otherwise; and port 80
+  /// may already be someone else's — on a Pi that also runs Home Assistant,
+  /// most likely its Alexa bridge, which setup can share it with.
+  Future<String> _whyNotWebPort(Object error, int port) async {
+    const setup = 'bash scripts/setup-port-80.sh';
+    final code = error is SocketException ? error.osError?.errorCode : null;
+    if (code == 13) {
+      return 'Not on port $port yet: the Pi needs setting up for it. '
+          'Run $setup on the Pi.';
+    }
+    if (code == 98 && await _hueBridgeOn(port)) {
+      return "Port $port is Home Assistant's Alexa bridge. Run $setup on "
+          'the Pi to share it — Alexa keeps working.';
+    }
+    return 'Port $port is in use by something else, so the editor has its '
+        'own port.';
+  }
+
+  /// Whether a Hue bridge answers on [port] — at this machine's address,
+  /// since emulated_hue listens there rather than on every interface.
+  Future<bool> _hueBridgeOn(int port) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 3);
+    try {
+      for (final host in {?_ip, '127.0.0.1'}) {
+        try {
+          final req = await client.get(host, port, '/description.xml');
+          final res = await req.close().timeout(const Duration(seconds: 3));
+          final body = await utf8.decoder.bind(res).join();
+          if (RegExp('philips|hue bridge|home assistant bridge',
+                  caseSensitive: false)
+              .hasMatch(body)) {
+            return true;
+          }
+        } catch (_) {}
+      }
+      return false;
+    } finally {
+      client.close(force: true);
     }
   }
 
