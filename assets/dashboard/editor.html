@@ -517,12 +517,23 @@
           <input type="range" id="volNotification" min="0" max="100" step="5" disabled>
           <output id="volNotificationValue" for="volNotification">…</output>
         </div>
-        <label class="field" for="volSpeech">Speech, reader &amp; timers</label>
+        <label class="field" for="volSpeech">Speech</label>
         <div class="rangeRow">
           <input type="range" id="volSpeech" min="0" max="100" step="5" disabled>
           <output id="volSpeechValue" for="volSpeech">…</output>
         </div>
-        <p class="help">Separate from the music. Notifications is the chime when something is shared; the other is notes and articles read aloud, and the timers' sound and voice — kept below the music by default. Saved as you drag.</p>
+        <label class="field" for="volReader">News reader</label>
+        <div class="rangeRow">
+          <input type="range" id="volReader" min="0" max="100" step="5" disabled>
+          <output id="volReaderValue" for="volReader">…</output>
+        </div>
+        <label class="field" for="volTimer">Timers</label>
+        <div class="rangeRow">
+          <input type="range" id="volTimer" min="0" max="100" step="5" disabled>
+          <output id="volTimerValue" for="volTimer">…</output>
+        </div>
+        <p class="help" id="volDnd" hidden>🔕 Do Not Disturb is on, so all of these are muted. They come back at these levels when it is turned off.</p>
+        <p class="help">Separate from the music. Notifications is the chime when something is shared; Speech is notes and bin reminders read aloud; News reader is articles read out; Timers is a timer's sound and voice. Saved as you drag.</p>
       </div>
     </section>
 
@@ -2193,6 +2204,8 @@ async function renderVolumes() {
   const sliders = {
     notification: document.getElementById("volNotification"),
     speech: document.getElementById("volSpeech"),
+    reader: document.getElementById("volReader"),
+    timer: document.getElementById("volTimer"),
   };
   const show = (key, v) => {
     sliders[key].value = v;
@@ -2201,6 +2214,7 @@ async function renderVolumes() {
   try {
     const v = await api.get("/api/volume");
     for (const key in sliders) { show(key, v[key]); sliders[key].disabled = false; }
+    document.getElementById("volDnd").hidden = !v.dnd;
   } catch (e) {
     for (const key in sliders) document.getElementById(sliders[key].id + "Value").textContent = "—";
     return;

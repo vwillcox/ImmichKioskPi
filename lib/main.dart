@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
+import 'config/app_config.dart' show ShareInboxSettings;
 import 'models/immich_models.dart';
 import 'dashboard/live_preview.dart';
 import 'dashboard/photo_backdrop.dart';
@@ -112,7 +113,9 @@ void main() async {
     output: PiperSpeechOutput(speech),
     voiceFor: speech.voiceFor,
     voiceId: speech.voiceId,
-    volume: () => config.config.shareInbox.speechVolume,
+    // Nothing while Do Not Disturb is on — read at, not paused: turning it
+    // off mid-article brings the voice straight back.
+    volume: () => config.config.shareInbox.readerOut,
     onStart: () {
       for (final PlaybackSource p in [spotify, nowPlaying]) {
         if (p.available && p.now.isPlaying) {
@@ -203,19 +206,20 @@ void main() async {
   unawaited(chores.load());
 
   // Kitchen timers, owned up here so they keep running — and still speak —
-  // after the panel has left the dashboard. The sound and the voice both
-  // play at the speech volume, the one articles are read at: below the
-  // music, and turned up or down with it from Settings or the editor.
+  // after the panel has left the dashboard. The sound and the voice play at
+  // the timers' own volume, and not at all while Do Not Disturb is on — the
+  // ring on screen still says it is done.
   final timerSounds = TimerSounds();
+  ShareInboxSettings inbox() => config.config.shareInbox;
   final timers = TimerService(
-    speak: (text) => speech.speak(
-      text,
-      volume: config.config.shareInbox.speechVolume,
-    ),
-    play: (sound) => timerSounds.play(
-      sound,
-      volume: config.config.shareInbox.speechVolume,
-    ),
+    speak: (text) async {
+      if (inbox().dndMuted) return;
+      await speech.speak(text, volume: inbox().timerOut);
+    },
+    play: (sound) async {
+      if (inbox().dndMuted) return;
+      await timerSounds.play(sound, volume: inbox().timerOut);
+    },
     silence: timerSounds.stop,
     onFinished: screenIdle.wakeForNotification,
   );
@@ -223,7 +227,13 @@ void main() async {
 
   // Bin-day reminders, spoken the evening before whether or not the
   // dashboard is showing.
-  final bins = BinsService(config, speak: speech.speak)..start();
+  final bins = BinsService(
+    config,
+    speak: (text) async {
+      if (inbox().dndMuted) return;
+      await speech.speak(text, volume: inbox().speechOut);
+    },
+  )..start();
 
   // Home Assistant entities for the dashboard, over the connection set up
   // for the indoor sensor. Idle until a widget asks; the editor's entity

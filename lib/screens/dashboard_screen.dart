@@ -61,9 +61,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   /// up its TickerMode through an element that is already gone.
   late final AnimationController _turn;
 
-  /// Paused from the page dots. Holds until tapped again or the dashboard
-  /// is left; coming back starts turning again.
-  bool _paused = false;
+  /// Paused from the page dots. Holds until they are tapped again — through
+  /// leaving the dashboard and through a restart, since it is saved.
+  late bool _paused =
+      context.read<ConfigService>().config.dashboard.pagesPaused;
   bool _turning = false;
   int _pageCount = 1;
 
@@ -204,6 +205,9 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   void _togglePause() {
     setState(() => _paused = !_paused);
+    final config = context.read<ConfigService>();
+    config.config.dashboard.pagesPaused = _paused;
+    unawaited(config.save());
     if (_paused) {
       _turn.stop();
     } else if (_turning && !_player.isOpen.value) {

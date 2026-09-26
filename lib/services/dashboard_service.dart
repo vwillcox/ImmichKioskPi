@@ -680,8 +680,9 @@ class DashboardService extends ChangeNotifier {
     });
   }
 
-  /// `notification` is the share chime; `speech` is notes read aloud, the
-  /// news reader, and the timers' sounds and voice. Both 0–100.
+  /// `notification` is the share chime, `speech` notes and reminders read
+  /// aloud, `reader` news articles, `timer` the kitchen timers — each 0–100.
+  /// `dnd` is Do Not Disturb, which mutes them all without changing them.
   Future<void> _volumeApi(HttpRequest request) async {
     final inbox = _config.config.shareInbox;
     if (request.method == 'PUT') {
@@ -691,9 +692,17 @@ class DashboardService extends ChangeNotifier {
         await request.response.close();
         return;
       }
-      final n = data['notification'], s = data['speech'];
-      if (n is num) inbox.notificationVolume = n.toDouble().clamp(0, 100);
-      if (s is num) inbox.speechVolume = s.toDouble().clamp(0, 100);
+      double? level(String key) {
+        final v = data[key];
+        return v is num ? v.toDouble().clamp(0, 100) : null;
+      }
+
+      inbox.notificationVolume =
+          level('notification') ?? inbox.notificationVolume;
+      inbox.speechVolume = level('speech') ?? inbox.speechVolume;
+      inbox.readerVolume = level('reader') ?? inbox.readerVolume;
+      inbox.timerVolume = level('timer') ?? inbox.timerVolume;
+      if (data['dnd'] is bool) inbox.dndMuted = data['dnd'] as bool;
       await _config.save();
     } else if (request.method != 'GET') {
       request.response.statusCode = HttpStatus.methodNotAllowed;
@@ -703,6 +712,9 @@ class DashboardService extends ChangeNotifier {
     return await _json(request, {
       'notification': inbox.notificationVolume.round(),
       'speech': inbox.speechVolume.round(),
+      'reader': inbox.readerVolume.round(),
+      'timer': inbox.timerVolume.round(),
+      'dnd': inbox.dndMuted,
     });
   }
 
@@ -719,7 +731,8 @@ class DashboardService extends ChangeNotifier {
     final current = settings;
     // The editor owns the layout and the theme; it has no business changing
     // whether the mode exists or which port it is served on, both of which
-    // belong to the kiosk's own settings screen.
+    // belong to the kiosk's own settings screen — nor whether someone has
+    // paused the pages on the panel itself.
     current.themeId = incoming.themeId;
     current.roundedCorners = incoming.roundedCorners;
     current.tileShadows = incoming.tileShadows;
@@ -813,7 +826,7 @@ class DashboardService extends ChangeNotifier {
     if (path == '/api/sounds/play' && request.method == 'POST') {
       unawaited(sounds.play(
         id,
-        volume: _config.config.shareInbox.notificationVolume,
+        volume: _config.config.shareInbox.timerVolume,
       ));
       return await _json(request, {'playing': id});
     }

@@ -45,12 +45,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ('Music', Icons.music_note_outlined),
     ('Home', Icons.home_outlined),
     ('Display', Icons.tv_outlined),
+    ('Volumes', Icons.volume_up_outlined),
     ('Sharing', Icons.ios_share),
     ('System', Icons.settings_suggest_outlined),
   ];
 
   /// Remembered while the kiosk runs, so Settings opens where it was left.
   static int _lastTab = 0;
+
+  /// How much larger than elsewhere Settings' text is drawn.
+  static const double textScale = 1.3;
   int _tab = _lastTab;
 
   List<Widget> _sectionsFor(
@@ -146,22 +150,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [const _ScreenSettingsTile()],
           ),
           GlassSection(
-            title: 'Sound',
-            children: [const _SoundSettingsTile()],
-          ),
-          GlassSection(
             title: 'Dashboard',
             children: [const _DashboardSettingsTile()],
           ),
         ];
-      case 4: // Sharing
+      case 4: // Volumes
+        return [
+          GlassSection(
+            title: 'Volumes',
+            children: [const _SoundSettingsTile()],
+          ),
+        ];
+      case 5: // Sharing
         return [
           GlassSection(
             title: 'Share Inbox',
             children: [const _ShareInboxSettingsTile()],
           ),
         ];
-      case 5: // System
+      case 6: // System
         return [
           GlassSection(
             title: 'Device',
@@ -304,44 +311,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
             : 'Connected to ${Uri.tryParse(config.immichUrl)?.host ?? config.immichUrl}',
       ),
       // A readable column rather than rows stretched across 1,920 pixels, and
-      // larger type throughout: this is read standing, at arm's length.
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1180),
-          child: ListTileTheme(
-            data: ListTileThemeData(
-              contentPadding: EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-              minVerticalPadding: 12,
-              iconColor: context.look.textSecondary,
-              titleTextStyle: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: context.look.textPrimary,
-              ),
-              subtitleTextStyle: TextStyle(
-                fontSize: 16,
-                height: 1.35,
-                color: context.look.textSecondary,
-              ),
-            ),
-            child: ListView(
-              // A new list per tab, so each opens at the top rather than
-              // wherever the last one was scrolled to.
-              key: ValueKey(_tab),
-              padding: const EdgeInsets.fromLTRB(32, 12, 32, 48),
-              children: [
-                ..._sectionsFor(_tab, config, locked, maskedKey),
-                const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    'HomeCanvas',
-                    style: TextStyle(
-                      color: context.look.wash(0.3),
-                    ),
+      // larger type throughout — every piece of it, section headings and help
+      // text included: this is read standing, often from across the room.
+      // The tabs above keep their size so all of them still fit.
+      body: MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: const TextScaler.linear(textScale)),
+        child: IconTheme.merge(
+          data: const IconThemeData(size: 30),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1440),
+              child: ListTileTheme(
+                data: ListTileThemeData(
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 4,
+                  ),
+                  minVerticalPadding: 12,
+                  iconColor: context.look.textSecondary,
+                  titleTextStyle: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: context.look.textPrimary,
+                  ),
+                  subtitleTextStyle: TextStyle(
+                    fontSize: 16,
+                    height: 1.35,
+                    color: context.look.textSecondary,
                   ),
                 ),
-              ],
+                child: ListView(
+                  // A new list per tab, so each opens at the top rather than
+                  // wherever the last one was scrolled to.
+                  key: ValueKey(_tab),
+                  padding: const EdgeInsets.fromLTRB(32, 12, 32, 48),
+                  children: [
+                    ..._sectionsFor(_tab, config, locked, maskedKey),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        'HomeCanvas',
+                        style: TextStyle(color: context.look.wash(0.3)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -1392,7 +1410,11 @@ class _ShareInboxDialogState extends State<_ShareInboxDialog> {
 /// touch brings it back — see [ScreenIdleService].
 /// The volumes of the sounds the panel makes by itself, apart from the
 /// music: saved as you drag, so you can judge them by ear. The web editor's
-/// Sound card sets the same two.
+/// Sound card sets the same ones.
+///
+/// Do Not Disturb sits at the top because it mutes every one of them. The
+/// sliders keep their levels while it is on, so turning it off puts each
+/// back where it was.
 class _SoundSettingsTile extends StatelessWidget {
   const _SoundSettingsTile();
 
@@ -1400,6 +1422,7 @@ class _SoundSettingsTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final service = context.watch<ConfigService>();
     final s = service.config.shareInbox;
+    final muted = s.dndMuted;
 
     Widget slider({
       required IconData icon,
@@ -1408,40 +1431,62 @@ class _SoundSettingsTile extends StatelessWidget {
       required double value,
       required void Function(double) set,
     }) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            leading: Icon(icon),
-            title: Text(title),
-            subtitle: Slider(
-              value: value.clamp(0, 100),
-              max: 100,
-              divisions: 20,
-              label: '${value.round()}%',
-              onChanged: (v) {
-                set(v);
-                service.save();
-              },
+      return Opacity(
+        opacity: muted ? 0.45 : 1,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: Icon(icon),
+              title: Text(title),
+              subtitle: Slider(
+                value: value.clamp(0, 100),
+                max: 100,
+                divisions: 20,
+                label: '${value.round()}%',
+                // Still movable while muted: set it now, hear it later.
+                onChanged: (v) {
+                  set(v);
+                  service.save();
+                },
+              ),
+              trailing: Text(muted ? 'Muted' : '${value.round()}%'),
             ),
-            trailing: Text('${value.round()}%'),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(72, 0, 16, 12),
-            child: Text(
-              help,
-              style: TextStyle(
-                color: context.look.textSecondary,
-                fontSize: 13,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(80, 0, 24, 12),
+              child: Text(
+                help,
+                style: TextStyle(color: context.look.textSecondary, fontSize: 14),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
 
     return Column(
       children: [
+        SwitchListTile(
+          secondary: Icon(
+            muted
+                ? Icons.notifications_off_outlined
+                : Icons.notifications_outlined,
+          ),
+          title: const Text('Do Not Disturb'),
+          subtitle: Text(
+            muted
+                ? 'On — everything below is muted. Turn it off to hear them '
+                      'again at the same levels.'
+                : 'Mutes every sound below at once, and keeps the screen '
+                      'from waking for shares. The same switch as the top bar.',
+          ),
+          value: muted,
+          onChanged: (on) {
+            s.dndMuted = on;
+            service.save();
+          },
+        ),
+        const Divider(height: 1),
         slider(
           icon: Icons.notifications,
           title: 'Notifications',
@@ -1451,13 +1496,24 @@ class _SoundSettingsTile extends StatelessWidget {
         ),
         slider(
           icon: Icons.record_voice_over,
-          title: 'Speech, reader & timers',
-          help:
-              'Notes read aloud, news articles read out, and the kitchen '
-              "timers' sound and voice. Kept below the music by default: a "
-              'voice at the same level is startling in a quiet room.',
+          title: 'Speech',
+          help: 'Shared notes read aloud, and bin-day reminders.',
           value: s.speechVolume,
           set: (v) => s.speechVolume = v,
+        ),
+        slider(
+          icon: Icons.menu_book_outlined,
+          title: 'News reader',
+          help: 'Articles read out from the news widget.',
+          value: s.readerVolume,
+          set: (v) => s.readerVolume = v,
+        ),
+        slider(
+          icon: Icons.timer_outlined,
+          title: 'Timers',
+          help: "A kitchen timer's sound, and its voice saying which it was.",
+          value: s.timerVolume,
+          set: (v) => s.timerVolume = v,
         ),
       ],
     );

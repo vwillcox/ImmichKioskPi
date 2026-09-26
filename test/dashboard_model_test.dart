@@ -47,4 +47,10 @@ void main() {
     expect(back.widgets.single.type, 'not-built-yet');
     expect(back.widgets.single.options['keep'], 'me');
   });
+
+  test('a pause from the page dots is kept through a restart', () {
+    expect(DashboardSettings.fromJson({}).pagesPaused, isFalse);
+    final s = DashboardSettings.fromJson({})..pagesPaused = true;
+    expect(DashboardSettings.fromJson(s.toJson()).pagesPaused, isTrue);
+  });
 }

@@ -159,6 +159,11 @@ class DashboardSettings {
   /// Seconds between automatic page turns; 0 leaves it manual.
   int pageSeconds;
 
+  /// The automatic page turn stopped from the page dots. Kept, so a panel
+  /// someone paused stays paused through a restart — until the dots are
+  /// tapped again. The panel's own, never the editor's to change.
+  bool pagesPaused;
+
   /// Tap anywhere on the dashboard to go to the next page.
   ///
   /// Off by default: a dashboard full of tappable widgets would otherwise
@@ -199,6 +204,7 @@ class DashboardSettings {
     this.tileShadows = true,
     this.pageSeconds = 0,
     this.tapToFlip = false,
+    this.pagesPaused = false,
     this.topBar = true,
     List<DashboardPage>? pages,
     this.photoBackground = false,
@@ -229,6 +235,7 @@ class DashboardSettings {
           return v <= 0 ? 0 : v.clamp(3, 3600);
         }(),
         tapToFlip: j['tapToFlip'] as bool? ?? false,
+        pagesPaused: j['pagesPaused'] as bool? ?? false,
         topBar: j['topBar'] as bool? ?? true,
         pages: [
           for (final p in (j['pages'] as List? ?? const []))
@@ -257,6 +264,7 @@ class DashboardSettings {
     'tileShadows': tileShadows,
     'pageSeconds': pageSeconds,
     'tapToFlip': tapToFlip,
+    'pagesPaused': pagesPaused,
     'topBar': topBar,
     'pages': [for (final p in pages) p.toJson()],
     'photoBackground': photoBackground,
