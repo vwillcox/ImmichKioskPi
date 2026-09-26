@@ -130,17 +130,20 @@ if [ -z "$SELF_DIR" ] || [ ! -f "$SELF_DIR/pubspec.yaml" ] ||
   echo "${B}HomeCanvas installer${N}"
   if ! command -v git >/dev/null; then
     echo "  git is needed to fetch HomeCanvas. Installing it (needs your password)…"
-    if command -v apt-get >/dev/null; then
-      sudo apt-get update -qq && sudo apt-get install -y -qq git
-    elif command -v dnf >/dev/null; then
-      sudo dnf install -y -q git
-    elif command -v pacman >/dev/null; then
-      sudo pacman -S --needed --noconfirm git
-    elif command -v zypper >/dev/null; then
-      sudo zypper --non-interactive install git
-    else
-      die "Please install git, then run this again."
-    fi
+    {
+      if command -v apt-get >/dev/null; then
+        sudo apt-get update && sudo apt-get install -y git
+      elif command -v dnf >/dev/null; then
+        sudo dnf install -y git
+      elif command -v pacman >/dev/null; then
+        sudo pacman -S --needed --noconfirm git
+      elif command -v zypper >/dev/null; then
+        sudo zypper --non-interactive install git
+      else
+        false
+      fi
+    } >>"$LOG" 2>&1 || die "Please install git, then run this again."
+    command -v git >/dev/null || die "Please install git, then run this again."
   fi
   if [ -d "$APP_DIR/.git" ]; then
     echo "  Updating the copy in $APP_DIR…"
