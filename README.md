@@ -168,17 +168,21 @@ boot and restarts if it crashes; caches aggressively on disk.
 
 ## Getting started
 
-You need a **Raspberry Pi 5** (or 4) with a DSI touch display, **Raspberry Pi
-OS (trixie)** running labwc, and an **Immich server**. Then, in short:
+You need a **Raspberry Pi 5** (or 4) with a touch display, running **Raspberry
+Pi OS** (trixie), and an **Immich server**. On the Pi, open a terminal and run:
 
 ```bash
-bash scripts/pi-setup.sh                         # on the Pi: Flutter and friends
-cp scripts/local.env.example scripts/local.env  # point the scripts at your Pi
-scripts/run.sh                                   # build on the Pi and start it
+curl -fsSL https://raw.githubusercontent.com/vwillcox/HomeCanvas/main/install.sh | bash
 ```
 
-**[INSTALL.md](INSTALL.md)** has the full walk-through, including the
-touchscreen setup and starting it on boot.
+The installer walks you through everything, asking before it changes anything:
+it installs what's needed, builds HomeCanvas, connects it to Immich, names it
+on your network and starts it on boot. Run the same command again later to
+update. It also works on Debian, Ubuntu, Fedora, Arch and openSUSE, on 64-bit
+ARM or Intel/AMD.
+
+**[INSTALL.md](INSTALL.md)** has the steps done by hand, and the optional
+extras: Spotify, the weather, Home Assistant, sharing from your phone.
 
 ---
 

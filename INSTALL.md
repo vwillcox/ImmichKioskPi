@@ -38,6 +38,41 @@ For how things work underneath, see [TECHNICAL.md](TECHNICAL.md).
 
 ## Install
 
+### The easy way
+
+On the Pi, in a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vwillcox/HomeCanvas/main/install.sh | bash
+```
+
+That's it — the installer asks a few questions and does the rest:
+
+1. checks what's installed on your Linux and installs what's missing
+   (Raspberry Pi OS, Debian, Ubuntu, Fedora, Arch or openSUSE);
+2. installs Flutter and builds HomeCanvas;
+3. connects it to Immich — have your server's address and an API key
+   (**Account Settings → API Keys**) ready, or skip it and do it later;
+4. gives it a name on your network, so it's `homecanvas.local`;
+5. starts it with the desktop, finds the touchscreen and sets it up;
+6. puts the dashboard editor at `http://homecanvas.local`
+   ([details](#the-editor-on-port-80)).
+
+It says what it's about to do before each step, keeps a full log in
+`~/homecanvas-install.log`, and can be run again safely: on an installed Pi
+it offers to **update** instead. If you already have a copy of the code,
+`bash install.sh` in it does the same.
+
+```bash
+bash install.sh --check   # only look: what's installed, what's missing
+bash install.sh --yes     # no questions — take every default
+```
+
+### By hand
+
+The same steps, for doing it yourself — or building on another computer and
+sending it to the Pi, which is quicker while developing.
+
 **1. Install the toolchain on the Pi**
 
 ```bash

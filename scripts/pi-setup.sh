@@ -2,6 +2,10 @@
 # One-time Raspberry Pi setup for the HomeCanvas Immich app.
 # Run this ON THE PI: bash pi-setup.sh
 # It installs the Flutter toolchain + native libs needed to build & run the app.
+#
+# Most people want install.sh instead, which does this and everything after it
+# (building, Immich, the network name, starting on boot) with a few questions.
+# This is the by-hand step 1 in INSTALL.md.
 set -euo pipefail
 
 echo "==> HomeCanvas Pi setup starting"

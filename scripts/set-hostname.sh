@@ -28,10 +28,16 @@ else
 fi
 
 # Raspberry Pi OS ships Avahi, but a Lite image or a trimmed install may not.
-if ! dpkg -s avahi-daemon >/dev/null 2>&1; then
-  echo "==> Installing avahi-daemon..."
-  sudo apt-get update
-  sudo apt-get install -y avahi-daemon
+# (install.sh installs it on other Linuxes; here only apt is tried.)
+if ! command -v avahi-daemon >/dev/null && [ ! -x /usr/sbin/avahi-daemon ]; then
+  if command -v apt-get >/dev/null; then
+    echo "==> Installing avahi-daemon..."
+    sudo apt-get update
+    sudo apt-get install -y avahi-daemon
+  else
+    echo "Avahi isn't installed — install it (avahi, nss-mdns) and run this again." >&2
+    exit 1
+  fi
 fi
 
 # Only announce on real network cards. Left to itself Avahi also announces
